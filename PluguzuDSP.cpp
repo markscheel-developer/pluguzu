@@ -6,6 +6,8 @@
 
 #include "DistrhoPlugin.hpp"
 
+extern "C" void pluguzu_init(void);
+
 START_NAMESPACE_DISTRHO
 
 // --------------------------------------------------------------------------------------------------------------------
@@ -103,8 +105,14 @@ protected:
 
 // --------------------------------------------------------------------------------------------------------------------
 
+bool is_init = false;
+
 Plugin* createPlugin()
 {
+    if (!is_init) {
+      pluguzu_init();
+      is_init = true;
+    }
     return new TextEditorPlugin();
 }
 

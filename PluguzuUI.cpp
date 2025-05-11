@@ -7,6 +7,8 @@
 #include "DistrhoUI.hpp"
 #include "DearImGuiColorTextEditor/TextEditor.h"
 
+#include "Pluguzu_stub.h"
+
 #include <fstream>
 
 START_NAMESPACE_DISTRHO
@@ -86,6 +88,7 @@ protected:
         // wait for first idle with no more text changes
         if (textChanged)
         {
+            someFunc();
             textChanged = false;
             setState("text", getText().c_str());
         }
