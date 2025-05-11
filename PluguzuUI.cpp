@@ -5,6 +5,7 @@
  */
 
 #include "DistrhoUI.hpp"
+#include "DearImGuiColorTextEditor/TextEditor.h"
 
 #include <fstream>
 
@@ -38,7 +39,10 @@ public:
             setSize(width, height);
         }
 
-        showMenu();
+        // showMenu();
+        auto ldef = TextEditor::LanguageDefinition::HLSL();
+        ldef.mName = "UZU";
+        setLanguageDefinition(ldef);
     }
 
 protected:
