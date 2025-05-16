@@ -15,13 +15,13 @@
    Number of audio inputs the plugin has.
    @note This macro is required.
  */
-#define DISTRHO_PLUGIN_NUM_INPUTS 2
+#define DISTRHO_PLUGIN_NUM_INPUTS 0
 
 /**
    Number of audio outputs the plugin has.
    @note This macro is required.
  */
-#define DISTRHO_PLUGIN_NUM_OUTPUTS 2
+#define DISTRHO_PLUGIN_NUM_OUTPUTS 0
 
 /**
    The plugin URI when exporting in LV2 format.
@@ -55,7 +55,7 @@
    @note DO NOT USE THIS UNLESS STRICTLY NECESSARY!!
          Try to avoid it at all costs!
  */
-#define DISTRHO_PLUGIN_WANT_DIRECT_ACCESS 0
+#define DISTRHO_PLUGIN_WANT_DIRECT_ACCESS 1
 
 /**
    Whether the plugin introduces latency during audio or midi processing.
@@ -73,7 +73,7 @@
    Whether the plugin wants MIDI output.
    @see Plugin::writeMidiEvent(const MidiEvent&)
  */
-#define DISTRHO_PLUGIN_WANT_MIDI_OUTPUT 0
+#define DISTRHO_PLUGIN_WANT_MIDI_OUTPUT 1
 
 /**
    Whether the plugin wants to change its own parameter inputs.@n
@@ -111,7 +111,7 @@
    Whether the plugin wants time position information from the host.
    @see Plugin::getTimePosition()
  */
-#define DISTRHO_PLUGIN_WANT_TIMEPOS 0
+#define DISTRHO_PLUGIN_WANT_TIMEPOS 1
 
 /**
    Whether the %UI uses a custom toolkit implementation based on OpenGL.@n

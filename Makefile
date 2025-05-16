@@ -27,10 +27,14 @@ LINK_FLAGS = -L./dist-newstyle/build/x86_64-linux/ghc-9.12.2/pluguzu-0.1/f/plugu
 
 
 TARGETS += clap
+TARGETS += vst2
 
 all: $(TARGETS)
 
 # --------------------------------------------------------------
 
 run:
+	env LD_LIBRARY_PATH=/srv/codeberg.org/TristanCacqueray/pluguzu/dist-newstyle/build/x86_64-linux/ghc-9.12.2/pluguzu-0.1/f/pluguzu/build/pluguzu:/home/fedora/.ghcup/ghc/9.12.2/lib/ghc-9.12.2/lib/x86_64-linux-ghc-9.12.2-5a14/ carla ~/test/test.carxp
+
+run-clap:
 	env LD_LIBRARY_PATH=./dist-newstyle/build/x86_64-linux/ghc-9.12.2/pluguzu-0.1/f/pluguzu/build/pluguzu /srv/github.com/free-audio/clap-host/builds/ninja-system/host/Debug/clap-host -p bin/pluguzu.clap

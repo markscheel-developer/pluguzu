@@ -8,6 +8,15 @@ make
 make run
 ```
 
+## Architecture
+
+- [PluguzuCore.hs](./src/PluguzuCore.hs) contains the logic to convert tidal pattern into MIDI events.
+- [Pluguzu.hs](./src/Pluguzu.hs) is the foreign library called by the plugin.
+- [PluguzuWrapper.c](./PluguzuWrapper.c) is the C wrapper to enable calling Haskell from C.
+- [PluguzuUI.cpp](./PluguzuUI.cpp) is the plugin component in charge of the editor UI and creating the MIDI events.
+- [PluguzuDSP.cpp](./PluguzuDSP.cpp) is the main plugin component in charge of sending the MIDI events.
+- [DistrhoPluginInfo.h](./DistrhoPluginInfo.h) describe the plugin settings for the DPF compilation system.
+
 ## Roadmap
 
 - [x] Setup Haskell RTS and demonstrate function call from the DAW.
