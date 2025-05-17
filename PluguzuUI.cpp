@@ -5,13 +5,21 @@
 
 #include "DearImGuiColorTextEditor/TextEditor.h"
 
+// The CPP plugin state
 #include "Pluguzu.hpp"
 
+// The Haskell state wrapper export
 #include "Pluguzu_stub.h"
 
 #include <fstream>
 
 START_NAMESPACE_DISTRHO
+
+void renderNextBar(HsStablePtr /* hsState */, pluguzuState *fState) {
+  printf("Rendering next bar %d...\n", fState->nextBar);
+  // TODO...
+  fState->lastRenderedBar = fState->nextBar;
+}
 
 // --------------------------------------------------------------------------------------------------------------------
 
@@ -24,7 +32,9 @@ public:
      The UI should be initialized to a default state that matches the plugin
      side.
    */
-  PluguzuUI() : UI(DISTRHO_UI_DEFAULT_WIDTH, DISTRHO_UI_DEFAULT_HEIGHT) {
+  PluguzuUI()
+      : UI(DISTRHO_UI_DEFAULT_WIDTH, DISTRHO_UI_DEFAULT_HEIGHT),
+        hsState(pluguzuNew()) {
     const double scaleFactor = getScaleFactor();
 
     if (d_isEqual(scaleFactor, 1.0)) {
@@ -90,9 +100,20 @@ protected:
     // wait for first idle with no more text changes
     if (textChanged) {
       printf("Is playing? %d\n", fState.isPlaying);
-      someFunc();
+      const char *txt = getText().c_str();
+      pluguzuParse(hsState, (HsPtr)txt);
+      const char *err = (const char *)pluguzuError(hsState);
+      if (err) {
+        printf("Parse error! %s\n", err);
+      } else {
+        renderNextBar(hsState, &fState);
+      }
       textChanged = false;
-      setState("text", getText().c_str());
+      setState("text", txt);
+    }
+
+    if (fState.lastRenderedBar != fState.nextBar) {
+      renderNextBar(hsState, &fState);
     }
   }
 
@@ -126,6 +147,8 @@ protected:
   // ----------------------------------------------------------------------------------------------------------------
 private:
   pluguzuState fState;
+  HsStablePtr hsState;
+  int32_t prevBar;
 
   DISTRHO_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PluguzuUI)
 };

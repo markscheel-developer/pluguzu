@@ -28,12 +28,12 @@ void PluguzuPlugin::run(const float ** /* inputs */, float ** /* outputs */,
   const TimePosition &timePos(getTimePosition());
   if (fState != nullptr) {
     fState->isPlaying = timePos.playing;
-    fState->secondsPerBeat = 60.0 / timePos.bbt.beatsPerMinute;
     if (timePos.playing && timePos.bbt.valid) {
-      double beatFraction = timePos.bbt.tick / timePos.bbt.ticksPerBeat;
-      if (d_isZero(beatFraction)) {
-        printf("New bar! %d %d\n", timePos.bbt.bar, timePos.bbt.beat);
+      if (fState->nextBar == timePos.bbt.bar) {
+        printf("New bar %d!\n", timePos.bbt.bar);
+        // TODO: setup events...
       }
+      fState->nextBar = timePos.bbt.bar + 1;
     }
   }
 }

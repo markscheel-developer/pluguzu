@@ -1,6 +1,14 @@
 {-# LANGUAGE OverloadedRecordDot #-}
 
-module PluguzuCore where
+module PluguzuCore (
+    -- * re-export
+    Pattern.ControlPattern,
+    Parse.parseTidal,
+
+    -- * debug
+    standalone,
+)
+where
 
 import Control.Monad (forM_)
 import Data.Coerce (coerce)

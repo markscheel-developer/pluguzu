@@ -11,7 +11,8 @@ class PluguzuUI;
 // The state shared between the DSP and the UI.
 struct pluguzuState {
   bool isPlaying;
-  double secondsPerBeat;
+  int32_t nextBar;
+  int32_t lastRenderedBar;
 };
 
 START_NAMESPACE_DISTRHO

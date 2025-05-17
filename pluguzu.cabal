@@ -23,7 +23,7 @@ foreign-library pluguzu
     -- other-modules:
     -- other-extensions:
     build-depends:    base, pluguzu
-    hs-source-dirs:   src
+    hs-source-dirs:   .
     c-sources:        PluguzuWrapper.c
     default-language: GHC2021
 
