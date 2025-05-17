@@ -8,11 +8,19 @@
 
 class PluguzuUI;
 
+static const uint32_t maxMidiEvents = 512;
+
 // The state shared between the DSP and the UI.
 struct pluguzuState {
   bool isPlaying;
   int32_t nextBar;
   int32_t lastRenderedBar;
+
+  // next bar
+  uint32_t nextCount;
+  double nextMidisPos[maxMidiEvents];
+  int8_t nextMidisPitch[maxMidiEvents];
+  int8_t nextMidisVelocity[maxMidiEvents];
 };
 
 START_NAMESPACE_DISTRHO
@@ -70,7 +78,13 @@ protected:
   // ----------------------------------------------------------------------------------------------------------------
 private:
   pluguzuState *fState;
+  uint32_t currentPos;
+  uint32_t currentCount;
+  double currentMidisPos[maxMidiEvents];
+  int8_t currentMidisPitch[maxMidiEvents];
+  int8_t currentMidisVelocity[maxMidiEvents];
   friend class PluguzuUI;
+  void sendMidiEvent(uint32_t pos);
 
   DISTRHO_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PluguzuPlugin)
 };

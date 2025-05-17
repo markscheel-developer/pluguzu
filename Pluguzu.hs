@@ -5,9 +5,11 @@ module Pluguzu (pluguzuNew, pluguzuParse, pluguzuError) where
 
 import Data.IORef
 import Data.Maybe (fromMaybe)
+import Foreign (Ptr)
 import Foreign qualified
-import Foreign.C (CString)
+import Foreign.C (CChar, CDouble, CSize, CString)
 import Foreign.C qualified
+import System.Posix.Internals (puts)
 
 import PluguzuCore qualified
 
@@ -16,6 +18,7 @@ type CPluguzuState = Foreign.StablePtr PluguzuState
 foreign export ccall pluguzuNew :: IO CPluguzuState
 foreign export ccall pluguzuParse :: CPluguzuState -> Foreign.C.CString -> IO ()
 foreign export ccall pluguzuError :: CPluguzuState -> IO Foreign.C.CString
+foreign export ccall pluguzuRender :: CPluguzuState -> CSize -> Ptr CDouble -> Ptr CChar -> Ptr CChar -> IO CSize
 
 data PluguzuState = PluguzuState
     { error :: IORef (Maybe CString)
@@ -55,3 +58,8 @@ pluguzuError pState = do
     state <- Foreign.deRefStablePtr pState
     mError <- readIORef state.error
     pure $ fromMaybe Foreign.nullPtr mError
+
+pluguzuRender :: CPluguzuState -> CSize -> Ptr CDouble -> Ptr CChar -> Ptr CChar -> IO CSize
+pluguzuRender _pState startArc _pPos _pPitch _pVel = do
+    puts $ "Let's go!" <> show (toInteger startArc)
+    pure 0

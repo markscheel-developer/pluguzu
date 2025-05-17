@@ -15,9 +15,9 @@
 
 START_NAMESPACE_DISTRHO
 
-void renderNextBar(HsStablePtr /* hsState */, pluguzuState *fState) {
+void renderNextBar(HsStablePtr hsState, pluguzuState *fState) {
   printf("Rendering next bar %d...\n", fState->nextBar);
-  // TODO...
+  fState->nextCount = pluguzuRender(hsState, (HsWord64)fState->nextBar, (HsPtr)fState->nextMidisPos, (HsPtr)fState->nextMidisPitch, (HsPtr)fState->nextMidisVelocity);
   fState->lastRenderedBar = fState->nextBar;
 }
 
@@ -53,6 +53,9 @@ public:
     setLanguageDefinition(ldef);
 
     fState.isPlaying = false;
+    fState.nextBar = -1;
+    fState.lastRenderedBar = -1;
+    fState.nextCount = 0;
   }
 
 protected:

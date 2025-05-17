@@ -11,7 +11,7 @@ START_NAMESPACE_DISTRHO
 
 PluguzuPlugin::PluguzuPlugin()
     : Plugin(0, 0, 1), // parameters, programs, states
-      fState(nullptr) {}
+      fState(nullptr), currentPos(0), currentCount(0) {}
 
 void PluguzuPlugin::initState(uint32_t index, State &state) {
   if (index != 0)
@@ -31,11 +31,48 @@ void PluguzuPlugin::run(const float ** /* inputs */, float ** /* outputs */,
     if (timePos.playing && timePos.bbt.valid) {
       if (fState->nextBar == timePos.bbt.bar) {
         printf("New bar %d!\n", timePos.bbt.bar);
-        // TODO: setup events...
+
+        // Send left-over events
+        for (; currentPos < currentCount; currentPos++)
+          sendMidiEvent(currentPos);
+
+        // Copy the midi events from the pluguzuState
+        currentPos = 0;
+        currentCount = fState->nextCount;
+        memcpy(currentMidisPos, fState->nextMidisPos,
+               currentCount * sizeof(double));
+        memcpy(currentMidisPitch, fState->nextMidisPitch,
+               currentCount * sizeof(int8_t));
+        memcpy(currentMidisVelocity, fState->nextMidisVelocity,
+               currentCount * sizeof(int8_t));
       }
       fState->nextBar = timePos.bbt.bar + 1;
+
+      // Send the current midi events
+      double beatFraction = timePos.bbt.tick / timePos.bbt.ticksPerBeat;
+      double barFraction =
+          (beatFraction + (timePos.bbt.beat - 1)) / timePos.bbt.beatsPerBar;
+      for (; currentPos < currentCount; currentPos++) {
+        if (currentMidisPos[currentPos] > barFraction) {
+          break;
+        }
+        sendMidiEvent(currentPos);
+      }
     }
   }
+}
+
+void PluguzuPlugin::sendMidiEvent(uint32_t pos) {
+  int8_t chan = 1;
+  MidiEvent ev;
+  ev.frame = 0; // TODO: calculate offset
+  ev.size = 3;
+  ev.data[0] = (currentMidisVelocity[pos] != 0 ? 0x90 : 0x80) | chan;
+  ev.data[1] = currentMidisPitch[pos];
+  ev.data[2] = currentMidisVelocity[pos];
+  ev.dataExt = NULL;
+  printf("Sending event!\n");
+  writeMidiEvent(ev);
 }
 
 // --------------------------------------------------------------------------------------------------------------------
