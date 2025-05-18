@@ -10,17 +10,21 @@ class PluguzuUI;
 
 static const uint32_t maxMidiEvents = 512;
 
+struct midiEvent {
+  double time;
+  int8_t pitch;
+  int8_t velocity;
+};
+
 // The state shared between the DSP and the UI.
 struct pluguzuState {
   bool isPlaying;
-  int32_t nextBar;
+  int32_t lastSyncBar;
   int32_t lastRenderedBar;
 
   // next bar
   uint32_t nextCount;
-  double nextMidisPos[maxMidiEvents];
-  int8_t nextMidisPitch[maxMidiEvents];
-  int8_t nextMidisVelocity[maxMidiEvents];
+  midiEvent nextEvents[maxMidiEvents];
 };
 
 START_NAMESPACE_DISTRHO
@@ -80,9 +84,7 @@ private:
   pluguzuState *fState;
   uint32_t currentPos;
   uint32_t currentCount;
-  double currentMidisPos[maxMidiEvents];
-  int8_t currentMidisPitch[maxMidiEvents];
-  int8_t currentMidisVelocity[maxMidiEvents];
+  midiEvent currentEvents[maxMidiEvents];
   friend class PluguzuUI;
   void sendMidiEvent(uint32_t pos);
 

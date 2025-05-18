@@ -1,8 +1,13 @@
 {-# LANGUAGE OverloadedRecordDot #-}
 
 module PluguzuCore (
+    patternToEvents,
+    mkArc,
+    MidiEvent,
+
     -- * re-export
     Pattern.ControlPattern,
+    Time.Arc (..),
     Parse.parseTidal,
 
     -- * debug
@@ -12,9 +17,13 @@ where
 
 import Control.Monad (forM_)
 import Data.Coerce (coerce)
+import Data.Int (Int8)
 import Data.List (sortOn)
 import Data.Map.Strict qualified as Map
 import Data.Maybe (mapMaybe)
+import Foreign.Storable qualified as Storable
+import Foreign.Storable.Generic (GStorable)
+import GHC.Generics (Generic)
 
 import Sound.Tidal.Parse qualified as Parse
 import Sound.Tidal.Pattern qualified as Pattern
@@ -26,20 +35,49 @@ import Sound.Tidal.Time qualified as Time
 
 standalone :: IO ()
 standalone =
-    forM_ (patternToMidi testPattern firstBar) $ \(arc, note) -> do
+    forM_ (patternToNotes testPattern firstBar) $ \(arc, note) -> do
         print (midiNote note, rat2float $ Time.start arc, rat2float $ Time.stop arc)
 
-rat2float :: Rational -> Float
+rat2float :: Rational -> Double
 rat2float = fromRational
 
-midiNote :: Pattern.Note -> Word
+midiNote :: Pattern.Note -> Int8
 midiNote (Pattern.Note n) = round $ n + 60
 
-patternToMidi :: Pattern.ControlPattern -> Time.Arc -> [(Time.Arc, Pattern.Note)]
-patternToMidi pat arc = mapMaybe eventToMidi $ sortOn (Pattern.start . Pattern.part) $ Pattern.queryArc pat arc
+mkArc :: Rational -> Rational -> Time.Arc
+mkArc start stop = Time.Arc start stop
 
-eventToMidi :: Pattern.Event Pattern.ValueMap -> Maybe (Time.Arc, Pattern.Note)
-eventToMidi ev = do
+{- | The event generated from pattern.
+Note that this needs to be kept in sync with the 'midiEvent' defined in Pluguzu.hpp
+-}
+data MidiEvent = MidiEvent
+    { barFraction :: Double
+    , pitch :: Int8
+    , velocity :: Int8
+    }
+    deriving (Show, Generic)
+
+instance GStorable MidiEvent
+
+patternToEvents :: Pattern.ControlPattern -> Time.Arc -> [MidiEvent]
+patternToEvents pat arc = sortOn barFraction $ concatMap eventToMidi $ Pattern.queryArc pat arc
+
+eventToMidi :: Pattern.Event Pattern.ValueMap -> [MidiEvent]
+eventToMidi ev = case eventToNote ev of
+    Nothing -> []
+    Just (arc, note) ->
+        let pitch = midiNote note
+            start = rat2float (Pattern.start arc)
+            stop_ = rat2float (Pattern.stop arc)
+         in [ MidiEvent start pitch 100
+            , MidiEvent stop_ pitch 0
+            ]
+
+patternToNotes :: Pattern.ControlPattern -> Time.Arc -> [(Time.Arc, Pattern.Note)]
+patternToNotes pat arc = mapMaybe eventToNote $ sortOn (Pattern.start . Pattern.part) $ Pattern.queryArc pat arc
+
+eventToNote :: Pattern.Event Pattern.ValueMap -> Maybe (Time.Arc, Pattern.Note)
+eventToNote ev = do
     note <- Pattern.getN =<< Map.lookup "n" ev.value
     pure (Pattern.wholeOrPart ev, note)
 

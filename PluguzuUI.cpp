@@ -11,14 +11,15 @@
 // The Haskell state wrapper export
 #include "Pluguzu_stub.h"
 
+#include <iostream>
 #include <fstream>
 
 START_NAMESPACE_DISTRHO
 
-void renderNextBar(HsStablePtr hsState, pluguzuState *fState) {
-  printf("Rendering next bar %d...\n", fState->nextBar);
-  fState->nextCount = pluguzuRender(hsState, (HsWord64)fState->nextBar, (HsPtr)fState->nextMidisPos, (HsPtr)fState->nextMidisPitch, (HsPtr)fState->nextMidisVelocity);
-  fState->lastRenderedBar = fState->nextBar;
+void renderNextBar(HsStablePtr hsState, int32_t bar, pluguzuState *fState) {
+  printf("Rendering next bar %d...\n", bar);
+  fState->nextCount = pluguzuRender(hsState, bar, (HsPtr)fState->nextEvents);
+  fState->lastRenderedBar = bar;
 }
 
 // --------------------------------------------------------------------------------------------------------------------
@@ -53,7 +54,7 @@ public:
     setLanguageDefinition(ldef);
 
     fState.isPlaying = false;
-    fState.nextBar = -1;
+    fState.lastSyncBar = -4;
     fState.lastRenderedBar = -1;
     fState.nextCount = 0;
   }
@@ -103,20 +104,21 @@ protected:
     // wait for first idle with no more text changes
     if (textChanged) {
       printf("Is playing? %d\n", fState.isPlaying);
-      const char *txt = getText().c_str();
+      auto str = getText();
+      const char *txt = str.c_str();
       pluguzuParse(hsState, (HsPtr)txt);
       const char *err = (const char *)pluguzuError(hsState);
       if (err) {
-        printf("Parse error! %s\n", err);
-      } else {
-        renderNextBar(hsState, &fState);
+        printf("Parse error! %s for[\n%s\n]\n", err, txt);
+      } else if (fState.lastRenderedBar != -1) {
+        renderNextBar(hsState, fState.lastRenderedBar, &fState);
       }
       textChanged = false;
       setState("text", txt);
     }
 
-    if (fState.lastRenderedBar != fState.nextBar) {
-      renderNextBar(hsState, &fState);
+    if (fState.lastRenderedBar == -1) {
+      renderNextBar(hsState, fState.lastSyncBar + 4, &fState);
     }
   }
 

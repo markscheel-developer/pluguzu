@@ -21,5 +21,6 @@ make run
 
 - [x] Setup Haskell RTS and demonstrate function call from the DAW.
 - [x] Parse tidal pattern from the plugin text editor UI.
-- [ ] Render the midi events and submit them from the plugin DSP.
+- [x] Render the midi events and submit them from the plugin DSP.
+- [ ] Passthrough midi events.
 - [ ] Package the plugin dependencies (e.g. the libpluguzu.so and libHSrts) so that it works out of the box.

@@ -38,3 +38,10 @@ run:
 
 run-clap:
 	env LD_LIBRARY_PATH=./dist-newstyle/build/x86_64-linux/ghc-9.12.2/pluguzu-0.1/f/pluguzu/build/pluguzu /srv/github.com/free-audio/clap-host/builds/ninja-system/host/Debug/clap-host -p bin/pluguzu.clap
+
+test:
+	g++ $(BUILD_CXX_FLAGS) $(LINK_FLAGS) -o bin/standalone standalone.cpp
+	env LD_LIBRARY_PATH=/srv/codeberg.org/TristanCacqueray/pluguzu/dist-newstyle/build/x86_64-linux/ghc-9.12.2/pluguzu-0.1/f/pluguzu/build/pluguzu:/home/fedora/.ghcup/ghc/9.12.2/lib/ghc-9.12.2/lib/x86_64-linux-ghc-9.12.2-5a14/ ./bin/standalone
+
+ghcid:
+	ghcid -W --test PluguzuCore.standalone

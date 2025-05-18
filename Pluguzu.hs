@@ -7,9 +7,11 @@ import Data.IORef
 import Data.Maybe (fromMaybe)
 import Foreign (Ptr)
 import Foreign qualified
-import Foreign.C (CChar, CDouble, CSize, CString)
+import Foreign.C (CSize, CString)
 import Foreign.C qualified
-import System.Posix.Internals (puts)
+import Foreign.Marshal.Array (pokeArray)
+
+-- import System.Posix.Internals (puts)
 
 import PluguzuCore qualified
 
@@ -18,7 +20,7 @@ type CPluguzuState = Foreign.StablePtr PluguzuState
 foreign export ccall pluguzuNew :: IO CPluguzuState
 foreign export ccall pluguzuParse :: CPluguzuState -> Foreign.C.CString -> IO ()
 foreign export ccall pluguzuError :: CPluguzuState -> IO Foreign.C.CString
-foreign export ccall pluguzuRender :: CPluguzuState -> CSize -> Ptr CDouble -> Ptr CChar -> Ptr CChar -> IO CSize
+foreign export ccall pluguzuRender :: CPluguzuState -> Word -> Ptr PluguzuCore.MidiEvent -> IO CSize
 
 data PluguzuState = PluguzuState
     { error :: IORef (Maybe CString)
@@ -59,7 +61,12 @@ pluguzuError pState = do
     mError <- readIORef state.error
     pure $ fromMaybe Foreign.nullPtr mError
 
-pluguzuRender :: CPluguzuState -> CSize -> Ptr CDouble -> Ptr CChar -> Ptr CChar -> IO CSize
-pluguzuRender _pState startArc _pPos _pPitch _pVel = do
-    puts $ "Let's go!" <> show (toInteger startArc)
-    pure 0
+pluguzuRender :: CPluguzuState -> Word -> Ptr PluguzuCore.MidiEvent -> IO CSize
+pluguzuRender pState startArc pEvs = do
+    state <- Foreign.deRefStablePtr pState
+    pat <- readIORef state.pat
+    let start = fromInteger (toInteger startArc)
+    let arc = PluguzuCore.mkArc start (start + 4)
+    let evs = PluguzuCore.patternToEvents pat arc
+    pokeArray pEvs evs
+    pure (fromInteger (toInteger (length evs)))

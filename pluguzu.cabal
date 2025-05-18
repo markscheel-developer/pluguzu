@@ -28,7 +28,7 @@ foreign-library pluguzu
     default-language: GHC2021
 
 library
-    build-depends:    base, containers, tidal-core, tidal-parse
+    build-depends:    base, containers, derive-storable, tidal-core, tidal-parse
                   -- , tidal, tidal-link
     exposed-modules:  PluguzuCore
     hs-source-dirs:   src
