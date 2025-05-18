@@ -77,7 +77,8 @@ protected:
      outputs.
    */
   void run(const float ** /* inputs */, float ** /* outputs */,
-           uint32_t /* frames */) override;
+           uint32_t /* frames */, const MidiEvent * /* midiEvents */,
+           uint32_t /* midiEventCount */) override;
 
   // ----------------------------------------------------------------------------------------------------------------
 private:

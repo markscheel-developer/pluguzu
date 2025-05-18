@@ -23,13 +23,15 @@ void PluguzuPlugin::initState(uint32_t index, State &state) {
 }
 
 void PluguzuPlugin::run(const float ** /* inputs */, float ** /* outputs */,
-                        uint32_t frames) {
+                        uint32_t frames, const MidiEvent* midiEvents, uint32_t midiEventCount) {
+  // Forward midi input
+  for (uint32_t idx = 0; idx < midiEventCount; idx++) {
+      writeMidiEvent(midiEvents[idx]);
+  }
+
   // Get the current host transport time position.
   // https://distrho.github.io/DPF/structTimePosition.html
   const TimePosition &timePos(getTimePosition());
-
-  // Get sample rate, to compute how long last the current run frames.
-  //
 
   // TODO: setup the state from the DSP
   if (fState != nullptr) {
