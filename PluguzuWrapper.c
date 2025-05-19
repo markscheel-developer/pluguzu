@@ -1,3 +1,6 @@
+// Copyright © 2025 Tristan de Cacqueray
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 #include <stdlib.h>
 #include <stdio.h>
 #include "HsFFI.h"

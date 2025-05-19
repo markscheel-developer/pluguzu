@@ -23,5 +23,5 @@ make run
 - [x] Parse tidal pattern from the plugin text editor UI.
 - [x] Render the midi events and submit them from the plugin DSP.
 - [x] Passthrough midi events.
-- [ ] Handle transport pause/jump.
+- [x] Handle transport pause/jump.
 - [ ] Package the plugin dependencies (e.g. the libpluguzu.so and libHSrts) so that it works out of the box.

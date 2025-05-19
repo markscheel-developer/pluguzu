@@ -5,13 +5,26 @@
 
 extern "C" void pluguzu_init(void);
 
+void renderNextBar(pluguzu_state *pluguzuState, int32_t bar) {
+  printf("Rendering next bar %d...\n", bar);
+  pluguzuState->nextCount = pluguzuRender(pluguzuState->haskellState, bar,
+                                          (HsPtr)pluguzuState->nextEvents);
+  pluguzuState->lastRenderedBar = bar;
+}
+
 START_NAMESPACE_DISTRHO
 
 // --------------------------------------------------------------------------------------------------------------------
 
 PluguzuPlugin::PluguzuPlugin()
     : Plugin(0, 0, 1), // parameters, programs, states
-      fState(nullptr), currentPos(0), currentCount(0) {}
+      currentPos(0), currentCount(0) {
+  pluguzuState.isPlaying = false;
+  pluguzuState.lastSyncedBar = -1;
+  pluguzuState.lastRenderedBar = 0;
+  pluguzuState.haskellState = pluguzuNew();
+  pluguzuState.nextCount = 0;
+}
 
 void PluguzuPlugin::initState(uint32_t index, State &state) {
   if (index != 0)
@@ -20,104 +33,141 @@ void PluguzuPlugin::initState(uint32_t index, State &state) {
   state.hints = kStateIsHostWritable | kStateIsOnlyForUI;
   state.key = "text";
   state.label = "Text";
+  state.description = "The Uzu code";
+}
+
+void PluguzuPlugin::setState(const char *key, const char *value) {
+  if (std::strcmp(key, "text") != 0)
+    return;
+
+  printf("Updating code to --[%s]--\n", value);
+  pluguzuParse(pluguzuState.haskellState, (HsPtr)value);
+  const char *err = (const char *)pluguzuError(pluguzuState.haskellState);
+  if (err) {
+    printf("Parse error! %s for[\n%s\n]\n", err, value);
+  } else {
+    if (pluguzuState.lastRenderedBar == pluguzuState.lastSyncedBar)
+      pluguzuState.lastRenderedBar += 4;
+    renderNextBar(&pluguzuState, pluguzuState.lastRenderedBar);
+  }
 }
 
 void PluguzuPlugin::run(const float ** /* inputs */, float ** /* outputs */,
-                        uint32_t frames, const MidiEvent* midiEvents, uint32_t midiEventCount) {
+                        uint32_t frames, const MidiEvent *midiEvents,
+                        uint32_t midiEventCount) {
+  if (frames == 0) {
+    printf("Running!!!\n");
+  }
   // Forward midi input
   for (uint32_t idx = 0; idx < midiEventCount; idx++) {
-      writeMidiEvent(midiEvents[idx]);
+    writeMidiEvent(midiEvents[idx]);
   }
 
   // Get the current host transport time position.
   // https://distrho.github.io/DPF/structTimePosition.html
   const TimePosition &timePos(getTimePosition());
 
-  // TODO: setup the state from the DSP
-  if (fState != nullptr) {
-    fState->isPlaying = timePos.playing;
-    if (timePos.playing && timePos.bbt.valid) {
-      if (fState->lastRenderedBar == timePos.bbt.bar - 1) {
-        printf("A new bar begin %d!\n", timePos.bbt.bar);
+  if (!timePos.playing) {
+    currentPos = 0;
+  }
 
-        // Send left-over noteOff events
-        for (; currentPos < currentCount; currentPos++) {
-          if (currentEvents[currentPos].velocity == 0)
-            sendMidiEvent(currentPos);
-        }
+  pluguzuState.isPlaying = timePos.playing;
+  if (!timePos.playing || !timePos.bbt.valid)
+    return;
+  int32_t currentBar = timePos.bbt.bar - 1;
 
-        // Copy the midi events from the pluguzuState
-        // Note that there is a slight chance that the copy happens at the same
-        // time of the update, Though we should be able to ensure the events
-        // render happen way before, Otherwise, this could use a mutex.
-        currentPos = 0;
-        currentCount = fState->nextCount;
-        memcpy(currentEvents, fState->nextEvents,
-               currentCount * sizeof(midiEvent));
-        for (uint32_t i = 0; i < currentCount; i++) {
-          printf(" Next event at %.3f %d %d\n", currentEvents[i].time,
-                 currentEvents[i].pitch, currentEvents[i].velocity);
-        }
-        fState->lastSyncBar = fState->lastRenderedBar;
-        fState->lastRenderedBar = -1;
-      }
+  // We are out of sync, we need a new render now
+  if (currentBar < pluguzuState.lastSyncedBar ||
+      currentBar >= pluguzuState.lastSyncedBar + 4) {
+    printf("Maybe render off main thread?\n");
+    renderNextBar(&pluguzuState, currentBar);
+  }
 
-      // Send the current midi events
+  if (pluguzuState.lastRenderedBar != pluguzuState.lastSyncedBar &&
+      pluguzuState.lastRenderedBar == currentBar) {
+    printf("A new bar begin %d!\n", currentBar);
 
-      // Convert the current timePos tick into an absolute bar fraction
-      // Note: the host time is given as a BarBeatTick,
-      // so here we convert the current tick into a bar fraction to match tidal cycle position.
-      double beatFraction = timePos.bbt.tick / timePos.bbt.ticksPerBeat;
-      double barFraction =
-          (beatFraction + (timePos.bbt.beat - 1)) / timePos.bbt.beatsPerBar;
-      double startFraction = (timePos.bbt.bar - 1) + barFraction;
-
-      // Then we need to know how long the current run will last in bar fraction.
-      double runFraction;
-      if (timePos.frame > 0) {
-        // After the first run, we can use the timePos frame using a cross product:
-        // frames        -> ? fraction
-        // timePos.frame -> startFraction
-        runFraction = frames * startFraction / timePos.frame;
-      } else {
-        // Otherwise we can compute the current time based on the sample rate:
-        double runTime = frames / getSampleRate();
-        double beatPerSec = timePos.bbt.beatsPerMinute / 60;
-        double barPerSec = beatPerSec / timePos.bbt.beatsPerBar;
-        // Note: not sure why, but we need to divide by 4 again...
-        runFraction = runTime / barPerSec / 4.0;
-      }
-      double stopFraction = startFraction + runFraction;
-
-      // The goal of the above function is to get a stop time that will match the next start time:
-      // The debug below will print:
-      //    Start/stop: 0.000000 -- 0.010667
-      //    Start/stop: 0.010667 -- 0.021333
-      //    Start/stop: 0.021333 -- 0.032000
-      //    Start/stop: 0.032000 -- 0.042667
-      //    Start/stop: 0.042667 -- 0.053333
-      //    Start/stop: 0.053333 -- 0.064000
-      //    Start/stop: 0.064000 -- 0.074667
-      // printf("Start/stop: %.6f -- %.6f\n", startFraction, stopFraction);
-
-      for (; currentPos < currentCount; currentPos++) {
-        double eventFraction = currentEvents[currentPos].time;
-        if (eventFraction > stopFraction) {
-          // the event will be handled in a future run
-          break;
-        }
-        if (eventFraction < startFraction && currentEvents[currentPos].velocity != 0) {
-          // We somehow missed a tick, or perhaps the host fast forward to a new bar.
-          printf("Drop event! (current %.3f -- %.3f -- %.3f)\n", startFraction, eventFraction, stopFraction);
-          continue;
-        }
-        printf("%.3f: Sending event %.3f\n", startFraction, currentEvents[currentPos].time);
+    // Send left-over noteOff events
+    for (; currentPos < currentCount; currentPos++) {
+      if (currentEvents[currentPos].velocity == 0)
         sendMidiEvent(currentPos);
-      }
     }
-    if (!timePos.playing) {
-      currentPos = 0;
+
+    // Copy the midi events from the pluguzuState
+    // Note that there is a slight chance that the copy happens at the same
+    // time of the update, Though we should be able to ensure the events
+    // render happen way before, Otherwise, this could use a mutex.
+    currentPos = 0;
+    currentCount = pluguzuState.nextCount;
+    memcpy(currentEvents, pluguzuState.nextEvents,
+           currentCount * sizeof(midiEvent));
+    for (uint32_t i = 0; i < currentCount; i++) {
+      printf(" Next event at %.3f %d %d\n", currentEvents[i].time,
+             currentEvents[i].pitch, currentEvents[i].velocity);
     }
+    pluguzuState.lastSyncedBar = pluguzuState.lastRenderedBar;
+  }
+
+  // There are no more events...
+  if (currentPos >= currentCount) {
+    return;
+  }
+
+  // Send the current midi events
+
+  // Convert the current timePos tick into an absolute bar fraction
+  // Note: the host time is given as a BarBeatTick,
+  // so here we convert the current tick into a bar fraction to match tidal
+  // cycle position.
+  double beatFraction = timePos.bbt.tick / timePos.bbt.ticksPerBeat;
+  double barFraction =
+      (beatFraction + (timePos.bbt.beat - 1)) / timePos.bbt.beatsPerBar;
+  double startFraction = currentBar + barFraction;
+
+  // Then we need to know how long the current run will last in bar fraction.
+  double runFraction;
+  if (timePos.frame > 0) {
+    // After the first run, we can use the timePos frame using a cross
+    // product: frames        -> ? fraction timePos.frame -> startFraction
+    runFraction = frames * startFraction / timePos.frame;
+  } else {
+    // Otherwise we can compute the current time based on the sample rate:
+    double runTime = frames / getSampleRate();
+    double beatPerSec = timePos.bbt.beatsPerMinute / 60;
+    double barPerSec = beatPerSec / timePos.bbt.beatsPerBar;
+    // Note: not sure why, but we need to divide by 4 again...
+    runFraction = runTime / barPerSec / 4.0;
+  }
+  double stopFraction = startFraction + runFraction;
+
+  // The goal of the above calculations is to get a stop time that will match
+  // the next start time: The debug below will print:
+  //    Start/stop: 0.000000 -- 0.010667
+  //    Start/stop: 0.010667 -- 0.021333
+  //    Start/stop: 0.021333 -- 0.032000
+  //    Start/stop: 0.032000 -- 0.042667
+  //    Start/stop: 0.042667 -- 0.053333
+  //    Start/stop: 0.053333 -- 0.064000
+  //    Start/stop: 0.064000 -- 0.074667
+  // printf("Start/stop: %.6f -- %.6f\n", startFraction, stopFraction);
+
+  for (; currentPos < currentCount; currentPos++) {
+    double eventFraction = currentEvents[currentPos].time;
+    if (eventFraction > stopFraction) {
+      // the event will be handled in a future run
+      break;
+    }
+    if (eventFraction < startFraction &&
+        currentEvents[currentPos].velocity != 0) {
+      // We somehow missed a tick, or perhaps the host fast forward to a new
+      // bar.
+      printf("Drop event! (current %.3f -- %.3f -- %.3f)\n", startFraction,
+             eventFraction, stopFraction);
+      continue;
+    }
+    printf("%.3f: Sending event %.3f\n", startFraction,
+           currentEvents[currentPos].time);
+    sendMidiEvent(currentPos);
   }
 }
 

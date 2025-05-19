@@ -6,6 +6,9 @@
 
 #include "DistrhoPlugin.hpp"
 
+// The Haskell state wrapper export
+#include "Pluguzu_stub.h"
+
 class PluguzuUI;
 
 static const uint32_t maxMidiEvents = 512;
@@ -17,10 +20,12 @@ struct midiEvent {
 };
 
 // The state shared between the DSP and the UI.
-struct pluguzuState {
+struct pluguzu_state {
   bool isPlaying;
-  int32_t lastSyncBar;
+  int32_t lastSyncedBar;
   int32_t lastRenderedBar;
+
+  HsStablePtr haskellState;
 
   // next bar
   uint32_t nextCount;
@@ -38,35 +43,16 @@ public:
 protected:
   // ----------------------------------------------------------------------------------------------------------------
   // Information
-
-  /**
-     Get the plugin label.@n
-     This label is a short restricted name consisting of only _, a-z, A-Z and
-     0-9 characters.
-   */
   const char *getLabel() const noexcept override { return "Pluguzu"; }
-
-  /**
-     Get the plugin author/maker.
-   */
   const char *getMaker() const noexcept override { return "tristanC"; }
-
-  /**
-     Get the plugin license (a single line of text or a URL).@n
-     For commercial plugins this should return some short copyright information.
-   */
   const char *getLicense() const noexcept override { return "GPLv3"; }
-
-  /**
-     Get the plugin version, in hexadecimal.
-     @see d_version()
-   */
   uint32_t getVersion() const noexcept override { return d_version(1, 0, 0); }
 
   // ----------------------------------------------------------------------------------------------------------------
   // Init
 
   void initState(uint32_t index, State &state) override;
+  void setState(const char *, const char *) override;
 
   // ----------------------------------------------------------------------------------------------------------------
   // Audio/MIDI Processing
@@ -82,7 +68,7 @@ protected:
 
   // ----------------------------------------------------------------------------------------------------------------
 private:
-  pluguzuState *fState;
+  pluguzu_state pluguzuState;
   uint32_t currentPos;
   uint32_t currentCount;
   midiEvent currentEvents[maxMidiEvents];

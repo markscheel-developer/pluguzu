@@ -5,22 +5,13 @@
 
 #include "DearImGuiColorTextEditor/TextEditor.h"
 
-// The CPP plugin state
+// The DSP plugin
 #include "Pluguzu.hpp"
 
-// The Haskell state wrapper export
-#include "Pluguzu_stub.h"
-
-#include <iostream>
 #include <fstream>
+#include <iostream>
 
 START_NAMESPACE_DISTRHO
-
-void renderNextBar(HsStablePtr hsState, int32_t bar, pluguzuState *fState) {
-  printf("Rendering next bar %d...\n", bar);
-  fState->nextCount = pluguzuRender(hsState, bar, (HsPtr)fState->nextEvents);
-  fState->lastRenderedBar = bar;
-}
 
 // --------------------------------------------------------------------------------------------------------------------
 
@@ -28,14 +19,7 @@ class PluguzuUI : public UI {
   bool textChanged = false;
 
 public:
-  /**
-     UI class constructor.
-     The UI should be initialized to a default state that matches the plugin
-     side.
-   */
-  PluguzuUI()
-      : UI(DISTRHO_UI_DEFAULT_WIDTH, DISTRHO_UI_DEFAULT_HEIGHT),
-        hsState(pluguzuNew()) {
+  PluguzuUI() : UI(DISTRHO_UI_DEFAULT_WIDTH, DISTRHO_UI_DEFAULT_HEIGHT) {
     const double scaleFactor = getScaleFactor();
 
     if (d_isEqual(scaleFactor, 1.0)) {
@@ -53,107 +37,56 @@ public:
     ldef.mName = "UZU";
     setLanguageDefinition(ldef);
 
-    fState.isPlaying = false;
-    fState.lastSyncBar = -4;
-    fState.lastRenderedBar = -1;
-    fState.nextCount = 0;
+    textChangedState = false;
   }
 
 protected:
   // ----------------------------------------------------------------------------------------------------------------
   // DSP/Plugin Callbacks
-
-  /**
-     A parameter has changed on the plugin side.@n
-     This is called by the host to inform the UI about parameter changes.
-   */
   void parameterChanged(uint32_t, float) override {}
-
-  /**
-     A state has changed on the plugin side.@n
-     This is called by the host to inform the UI about state changes.
-   */
   void stateChanged(const char *key, const char *value) override {
     if (std::strcmp(key, "text") != 0)
       return;
 
+    textChangedState = true;
     setText(value);
   }
 
   // ----------------------------------------------------------------------------------------------------------------
   // UI Callbacks
-
-  /**
-     UI idle function, called to give idle time to the plugin UI directly from
-     the host. This is called right after OS event handling and Window idle
-     events (within the same cycle). There are no guarantees in terms of timing.
-   */
   void uiIdle() override {
-    if (PluguzuPlugin *const dspPtr =
-            (PluguzuPlugin *)getPluginInstancePointer()) {
-      if (dspPtr->fState == nullptr) {
-        dspPtr->fState = &fState;
+    if (pluguzuState == nullptr) {
+      if (PluguzuPlugin *const dspPtr =
+              (PluguzuPlugin *)getPluginInstancePointer()) {
+        pluguzuState = &dspPtr->pluguzuState;
       }
     }
 
+    // todo: display info about the current state, like errors or when next
+    // cycle begin...
+
     if (hasTextChangedSinceLastTime()) {
-      textChanged = true;
+      if (textChangedState) {
+        textChangedState = false;
+      } else {
+        textChanged = true;
+      }
       return;
     }
 
     // wait for first idle with no more text changes
     if (textChanged) {
-      printf("Is playing? %d\n", fState.isPlaying);
       auto str = getText();
       const char *txt = str.c_str();
-      pluguzuParse(hsState, (HsPtr)txt);
-      const char *err = (const char *)pluguzuError(hsState);
-      if (err) {
-        printf("Parse error! %s for[\n%s\n]\n", err, txt);
-      } else if (fState.lastRenderedBar != -1) {
-        renderNextBar(hsState, fState.lastRenderedBar, &fState);
-      }
       textChanged = false;
       setState("text", txt);
-    }
-
-    if (fState.lastRenderedBar == -1) {
-      renderNextBar(hsState, fState.lastSyncBar + 4, &fState);
-    }
-  }
-
-  /**
-     Window file selected function, called when a path is selected by the user,
-     as triggered by openFileBrowser(). This function is for plugin UIs to be
-     able to override Window::onFileSelected(const char*).
-
-     This action happens after the user confirms the action, so the file browser
-     dialog will be closed at this point. The default implementation does
-     nothing.
-
-     If you need to use files as plugin state, please setup and use states with
-     kStateIsFilenamePath instead.
-   */
-  void uiFileBrowserSelected(const char *const filename) override {
-    // TODO check if this can be null, add to docs if that can happen
-    if (filename == nullptr)
-      return;
-
-    std::ifstream filestream(filename);
-
-    if (filestream.good()) {
-      const std::string text((std::istreambuf_iterator<char>(filestream)),
-                             std::istreambuf_iterator<char>());
-      setText(text);
-      setState("text", text.c_str());
     }
   }
 
   // ----------------------------------------------------------------------------------------------------------------
 private:
-  pluguzuState fState;
-  HsStablePtr hsState;
-  int32_t prevBar;
+  pluguzu_state *pluguzuState;
+  bool textChangedState;
 
   DISTRHO_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PluguzuUI)
 };
