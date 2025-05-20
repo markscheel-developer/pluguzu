@@ -95,7 +95,7 @@ void PluguzuPlugin::run(const float ** /* inputs */, float ** /* outputs */,
     // TODO: check if this is actually needed
     for (; currentPos < currentCount; currentPos++) {
       if (currentEvents[currentPos].velocity == 0)
-        sendMidiEvent(currentPos);
+        sendMidiEvent(0, 0, currentPos);
     }
     syncEvents();
   }
@@ -117,22 +117,16 @@ void PluguzuPlugin::run(const float ** /* inputs */, float ** /* outputs */,
   double startFraction = currentBar + barFraction;
 
   // Then we need to know how long the current run will last in bar fraction.
-  double runFraction;
-  if (timePos.frame > 0) {
-    // After the first run, we can use the timePos frame using a cross
-    // product: frames        -> ? fraction timePos.frame -> startFraction
-    runFraction = frames * startFraction / timePos.frame;
-  } else {
-    // Otherwise we can compute the current time based on the sample rate:
-    double runTime = frames / getSampleRate();
-    double beatPerSec = timePos.bbt.beatsPerMinute / 60;
-    double barPerSec = beatPerSec / timePos.bbt.beatsPerBar;
-    // Note: not sure why, but we need to divide by 4 again...
-    runFraction = runTime / barPerSec / 4.0;
-  }
-  // Both runFraction calculation should be equivalent, but perhaps we should
-  // only do the second one in case the timePos.frame is not monotonic.
+  double runTime = frames / getSampleRate();
+  double beatPerSec = timePos.bbt.beatsPerMinute / 60;
+  double barPerSec = beatPerSec * timePos.bbt.beatType / timePos.bbt.beatsPerBar;
+  double runFraction = runTime / barPerSec;
+
+  // So that we know when the current run stops.
   double stopFraction = startFraction + runFraction;
+
+  // As well as how long a barFraction is in term of frame for the event offset.
+  double framesPerFraction = frames / runFraction;
 
   // The goal of the above calculations is to get a stop time that will match
   // the next start time: The debug below will print:
@@ -144,6 +138,10 @@ void PluguzuPlugin::run(const float ** /* inputs */, float ** /* outputs */,
   //    Start/stop: 0.053333 -- 0.064000
   //    Start/stop: 0.064000 -- 0.074667
   // printf("Start/stop: %.6f -- %.6f\n", startFraction, stopFraction);
+
+  // if (currentPos < 2) {
+  //   printf("Bar per sec: %f, frames: %d, start: %f, stop: %f\n", barPerSec, frames, startFraction, stopFraction);
+  // }
 
   for (; currentPos < currentCount; currentPos++) {
     double eventFraction = currentEvents[currentPos].time;
@@ -161,7 +159,7 @@ void PluguzuPlugin::run(const float ** /* inputs */, float ** /* outputs */,
     }
     printf("%.3f: Sending event %.3f %d\n", startFraction,
            currentEvents[currentPos].time, currentEvents[currentPos].velocity);
-    sendMidiEvent(currentPos);
+    sendMidiEvent(startFraction, framesPerFraction, currentPos);
   }
 
   if (stopFraction > static_cast<double>(pluguzuState.nextBarStart + 4)) {
@@ -179,7 +177,7 @@ void PluguzuPlugin::run(const float ** /* inputs */, float ** /* outputs */,
       printf("%.3f: Sending event %.3f %d\n", startFraction,
              currentEvents[currentPos].time,
              currentEvents[currentPos].velocity);
-      sendMidiEvent(currentPos);
+      sendMidiEvent(startFraction, framesPerFraction, currentPos);
     }
   }
 }
@@ -203,10 +201,11 @@ void PluguzuPlugin::syncEvents() {
   */
 }
 
-void PluguzuPlugin::sendMidiEvent(uint32_t pos) {
+void PluguzuPlugin::sendMidiEvent(double startFraction, double framesPerFraction, uint32_t pos) {
   int8_t chan = 1;
   MidiEvent ev;
-  ev.frame = 0; // TODO: calculate offset
+  uint32_t offset = (currentEvents[pos].time - startFraction) * framesPerFraction;
+  ev.frame = offset;
   ev.size = 3;
   ev.data[0] = (currentEvents[pos].velocity != 0 ? 0x90 : 0x80) | chan;
   ev.data[1] = currentEvents[pos].pitch;

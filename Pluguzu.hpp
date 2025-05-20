@@ -74,7 +74,7 @@ private:
   uint32_t currentCount;
   midiEvent currentEvents[maxMidiEvents];
   friend class PluguzuUI;
-  void sendMidiEvent(uint32_t pos);
+  void sendMidiEvent(double barFraction, double framesPerFraction, uint32_t pos);
 
   void syncEvents();
 
