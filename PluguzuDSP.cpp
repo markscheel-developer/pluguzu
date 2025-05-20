@@ -1,5 +1,5 @@
 // Copyright © 2025 Tristan de Cacqueray
-// SPDX-License-Identifier: GPL-3.0-or-later
+// SPDX-License-Identifier: GPL-3.0
 
 #include "Pluguzu.hpp"
 
@@ -7,8 +7,9 @@ extern "C" void pluguzu_init(void);
 
 void renderNextBar(pluguzu_state *pluguzuState, int32_t bar) {
   printf("Rendering next bar %d...\n", bar);
-  pluguzuState->nextCount = pluguzuRender(pluguzuState->haskellState, bar,
-                                          (HsPtr)pluguzuState->nextEvents);
+  pluguzuState->nextCount =
+      pluguzuRender(pluguzuState->haskellState, bar, bar + 4,
+                    (HsPtr)pluguzuState->nextEvents);
   pluguzuState->lastRenderedBar = bar;
 }
 
@@ -20,7 +21,7 @@ PluguzuPlugin::PluguzuPlugin()
     : Plugin(0, 0, 1), // parameters, programs, states
       currentPos(0), currentCount(0) {
   pluguzuState.isPlaying = false;
-  pluguzuState.lastSyncedBar = -1;
+  pluguzuState.nextBarStart = -1;
   pluguzuState.lastRenderedBar = 0;
   pluguzuState.haskellState = pluguzuNew();
   pluguzuState.nextCount = 0;
@@ -46,8 +47,11 @@ void PluguzuPlugin::setState(const char *key, const char *value) {
   if (err) {
     printf("Parse error! %s for[\n%s\n]\n", err, value);
   } else {
-    if (pluguzuState.lastRenderedBar == pluguzuState.lastSyncedBar)
+    if (pluguzuState.lastRenderedBar == pluguzuState.nextBarStart)
+      // The update happened before the next bar was rendered, so let's render
+      // it now.
       pluguzuState.lastRenderedBar += 4;
+    // otherwise we can override the previously rendered bar.
     renderNextBar(&pluguzuState, pluguzuState.lastRenderedBar);
   }
 }
@@ -55,9 +59,6 @@ void PluguzuPlugin::setState(const char *key, const char *value) {
 void PluguzuPlugin::run(const float ** /* inputs */, float ** /* outputs */,
                         uint32_t frames, const MidiEvent *midiEvents,
                         uint32_t midiEventCount) {
-  if (frames == 0) {
-    printf("Running!!!\n");
-  }
   // Forward midi input
   for (uint32_t idx = 0; idx < midiEventCount; idx++) {
     writeMidiEvent(midiEvents[idx]);
@@ -68,7 +69,10 @@ void PluguzuPlugin::run(const float ** /* inputs */, float ** /* outputs */,
   const TimePosition &timePos(getTimePosition());
 
   if (!timePos.playing) {
+    // Ensure we traverse the whole buffer again on resume.
     currentPos = 0;
+
+    // TODO: send noteOff events.
   }
 
   pluguzuState.isPlaying = timePos.playing;
@@ -77,35 +81,23 @@ void PluguzuPlugin::run(const float ** /* inputs */, float ** /* outputs */,
   int32_t currentBar = timePos.bbt.bar - 1;
 
   // We are out of sync, we need a new render now
-  if (currentBar < pluguzuState.lastSyncedBar ||
-      currentBar >= pluguzuState.lastSyncedBar + 4) {
+  if (currentBar < pluguzuState.nextBarStart ||
+      currentBar >= pluguzuState.nextBarStart + 4) {
     printf("Maybe render off main thread?\n");
     renderNextBar(&pluguzuState, currentBar);
   }
 
-  if (pluguzuState.lastRenderedBar != pluguzuState.lastSyncedBar &&
+  if (pluguzuState.lastRenderedBar != pluguzuState.nextBarStart &&
       pluguzuState.lastRenderedBar == currentBar) {
     printf("A new bar begin %d!\n", currentBar);
 
-    // Send left-over noteOff events
+    // Send any left-over noteOff events
+    // TODO: check if this is actually needed
     for (; currentPos < currentCount; currentPos++) {
       if (currentEvents[currentPos].velocity == 0)
         sendMidiEvent(currentPos);
     }
-
-    // Copy the midi events from the pluguzuState
-    // Note that there is a slight chance that the copy happens at the same
-    // time of the update, Though we should be able to ensure the events
-    // render happen way before, Otherwise, this could use a mutex.
-    currentPos = 0;
-    currentCount = pluguzuState.nextCount;
-    memcpy(currentEvents, pluguzuState.nextEvents,
-           currentCount * sizeof(midiEvent));
-    for (uint32_t i = 0; i < currentCount; i++) {
-      printf(" Next event at %.3f %d %d\n", currentEvents[i].time,
-             currentEvents[i].pitch, currentEvents[i].velocity);
-    }
-    pluguzuState.lastSyncedBar = pluguzuState.lastRenderedBar;
+    syncEvents();
   }
 
   // There are no more events...
@@ -138,6 +130,8 @@ void PluguzuPlugin::run(const float ** /* inputs */, float ** /* outputs */,
     // Note: not sure why, but we need to divide by 4 again...
     runFraction = runTime / barPerSec / 4.0;
   }
+  // Both runFraction calculation should be equivalent, but perhaps we should
+  // only do the second one in case the timePos.frame is not monotonic.
   double stopFraction = startFraction + runFraction;
 
   // The goal of the above calculations is to get a stop time that will match
@@ -157,7 +151,7 @@ void PluguzuPlugin::run(const float ** /* inputs */, float ** /* outputs */,
       // the event will be handled in a future run
       break;
     }
-    if (eventFraction < startFraction &&
+    if (eventFraction + std::numeric_limits<double>::epsilon() < startFraction &&
         currentEvents[currentPos].velocity != 0) {
       // We somehow missed a tick, or perhaps the host fast forward to a new
       // bar.
@@ -165,10 +159,48 @@ void PluguzuPlugin::run(const float ** /* inputs */, float ** /* outputs */,
              eventFraction, stopFraction);
       continue;
     }
-    printf("%.3f: Sending event %.3f\n", startFraction,
-           currentEvents[currentPos].time);
+    printf("%.3f: Sending event %.3f %d\n", startFraction,
+           currentEvents[currentPos].time, currentEvents[currentPos].velocity);
     sendMidiEvent(currentPos);
   }
+
+  if (stopFraction > static_cast<double>(pluguzuState.nextBarStart + 4)) {
+    // The current run overlapped with the end of the rendered bar, e.g. it
+    // was 3.99 -- 4.01
+    int32_t stopBar = std::lround(stopFraction);
+    if (pluguzuState.lastRenderedBar != stopBar) {
+      // The next bar is not ready.
+      renderNextBar(&pluguzuState, stopBar);
+      syncEvents();
+    }
+    for (; currentPos < currentCount; currentPos++) {
+      if (currentEvents[currentPos].time > stopFraction)
+        break;
+      printf("%.3f: Sending event %.3f %d\n", startFraction,
+             currentEvents[currentPos].time,
+             currentEvents[currentPos].velocity);
+      sendMidiEvent(currentPos);
+    }
+  }
+}
+
+void PluguzuPlugin::syncEvents() {
+  // Copy the midi events from the pluguzuState
+  // Note that there is a slight chance that the copy happens at the same
+  // time of the update, Though we should be able to ensure the events
+  // render happen way before, Otherwise, this could use a mutex.
+  currentPos = 0;
+  currentCount = pluguzuState.nextCount;
+  memcpy(currentEvents, pluguzuState.nextEvents,
+         currentCount * sizeof(midiEvent));
+  pluguzuState.nextBarStart = pluguzuState.lastRenderedBar;
+  /*
+  // debug the loaded event
+  for (uint32_t i = 0; i < currentCount; i++) {
+    printf(" Next event at %.3f %d %d\n", currentEvents[i].time,
+           currentEvents[i].pitch, currentEvents[i].velocity);
+  }
+  */
 }
 
 void PluguzuPlugin::sendMidiEvent(uint32_t pos) {

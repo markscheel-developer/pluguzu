@@ -20,7 +20,7 @@ type CPluguzuState = Foreign.StablePtr PluguzuState
 foreign export ccall pluguzuNew :: IO CPluguzuState
 foreign export ccall pluguzuParse :: CPluguzuState -> Foreign.C.CString -> IO ()
 foreign export ccall pluguzuError :: CPluguzuState -> IO Foreign.C.CString
-foreign export ccall pluguzuRender :: CPluguzuState -> Word -> Ptr PluguzuCore.MidiEvent -> IO CSize
+foreign export ccall pluguzuRender :: CPluguzuState -> Word -> Word -> Ptr PluguzuCore.MidiEvent -> IO CSize
 
 data PluguzuState = PluguzuState
     { error :: IORef (Maybe CString)
@@ -61,12 +61,14 @@ pluguzuError pState = do
     mError <- readIORef state.error
     pure $ fromMaybe Foreign.nullPtr mError
 
-pluguzuRender :: CPluguzuState -> Word -> Ptr PluguzuCore.MidiEvent -> IO CSize
-pluguzuRender pState startArc pEvs = do
+pluguzuRender :: CPluguzuState -> Word -> Word -> Ptr PluguzuCore.MidiEvent -> IO CSize
+pluguzuRender pState startArc endArc pEvs = do
     state <- Foreign.deRefStablePtr pState
     pat <- readIORef state.pat
     let start = fromInteger (toInteger startArc)
-    let arc = PluguzuCore.mkArc start (start + 4)
+    let end = fromInteger (toInteger endArc)
+    let arc = PluguzuCore.mkArc start end
     let evs = PluguzuCore.patternToEvents pat arc
+    -- TODO: prevent overflow!
     pokeArray pEvs evs
     pure (fromInteger (toInteger (length evs)))

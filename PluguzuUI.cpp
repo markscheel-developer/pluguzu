@@ -1,5 +1,5 @@
 // Copyright © 2025 Tristan de Cacqueray
-// SPDX-License-Identifier: GPL-3.0-or-later
+// SPDX-License-Identifier: GPL-3.0
 
 #include "DistrhoUI.hpp"
 

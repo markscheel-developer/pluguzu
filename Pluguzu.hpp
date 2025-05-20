@@ -14,6 +14,7 @@ class PluguzuUI;
 static const uint32_t maxMidiEvents = 512;
 
 struct midiEvent {
+  // Time is noted as a bar fraction, independent of the BPM
   double time;
   int8_t pitch;
   int8_t velocity;
@@ -22,12 +23,12 @@ struct midiEvent {
 // The state shared between the DSP and the UI.
 struct pluguzu_state {
   bool isPlaying;
-  int32_t lastSyncedBar;
   int32_t lastRenderedBar;
 
   HsStablePtr haskellState;
 
-  // next bar
+  // The next bar pre-rendered, ready to be copied by the run callback
+  int32_t nextBarStart;
   uint32_t nextCount;
   midiEvent nextEvents[maxMidiEvents];
 };
@@ -74,6 +75,8 @@ private:
   midiEvent currentEvents[maxMidiEvents];
   friend class PluguzuUI;
   void sendMidiEvent(uint32_t pos);
+
+  void syncEvents();
 
   DISTRHO_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PluguzuPlugin)
 };

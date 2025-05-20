@@ -24,4 +24,5 @@ make run
 - [x] Render the midi events and submit them from the plugin DSP.
 - [x] Passthrough midi events.
 - [x] Handle transport pause/jump.
+- [ ] Investigate using a dedicated rendering thread with mutex.
 - [ ] Package the plugin dependencies (e.g. the libpluguzu.so and libHSrts) so that it works out of the box.

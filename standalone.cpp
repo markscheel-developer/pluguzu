@@ -1,5 +1,5 @@
 // Copyright © 2025 Tristan de Cacqueray
-// SPDX-License-Identifier: GPL-3.0-or-later
+// SPDX-License-Identifier: GPL-3.0
 
 // A standalone program to validate the pluguzu wrapper.
 #include <cstdint>
@@ -25,7 +25,7 @@ int main() {
     return 1;
   }
   me evs[512];
-  auto count = (uint32_t)pluguzuRender(state, 4, evs);
+  auto count = (uint32_t)pluguzuRender(state, 4, 8, evs);
   printf("Got %d\n", count);
   for (uint32_t i = 0; i < count; i++) {
     me *ev = &evs[i];
