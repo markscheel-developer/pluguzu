@@ -126,7 +126,7 @@
    This path must be relative to dpf/distrho/DistrhoUI.hpp
    @see DISTRHO_UI_USE_CUSTOM
  */
-#define DISTRHO_UI_CUSTOM_INCLUDE_PATH "DearImGuiColorTextEditor.hpp"
+#define DISTRHO_UI_CUSTOM_INCLUDE_PATH "DearImGui.hpp"
 
 /**
    The top-level-widget typedef to use for the custom toolkit.
@@ -135,7 +135,7 @@
    and define widget type as e.g. DGL_NAMESPACE::MyCustomTopLevelWidget.
    @see DISTRHO_UI_USE_CUSTOM
  */
-#define DISTRHO_UI_CUSTOM_WIDGET_TYPE DGL_NAMESPACE::ImGuiTextEditorTopLevelWidget
+#define DISTRHO_UI_CUSTOM_WIDGET_TYPE DGL_NAMESPACE::ImGuiTopLevelWidget
 
 /**
    Default UI width to use when creating initial and temporary windows.@n

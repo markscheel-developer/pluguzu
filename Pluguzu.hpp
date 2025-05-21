@@ -23,9 +23,12 @@ struct midiEvent {
 // The state shared between the DSP and the UI.
 struct pluguzu_state {
   bool isPlaying;
+  int32_t currentBar;
   int32_t lastRenderedBar;
 
   HsStablePtr haskellState;
+
+  String error;
 
   // The next bar pre-rendered, ready to be copied by the run callback
   int32_t nextBarStart;
@@ -74,7 +77,8 @@ private:
   uint32_t currentCount;
   midiEvent currentEvents[maxMidiEvents];
   friend class PluguzuUI;
-  void sendMidiEvent(double barFraction, double framesPerFraction, uint32_t pos);
+  void sendMidiEvent(double barFraction, double framesPerFraction,
+                     uint32_t pos);
 
   void syncEvents();
 

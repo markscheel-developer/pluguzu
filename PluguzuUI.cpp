@@ -16,11 +16,10 @@ START_NAMESPACE_DISTRHO
 // --------------------------------------------------------------------------------------------------------------------
 
 class PluguzuUI : public UI {
-  bool textChanged = false;
-
 public:
-  PluguzuUI() : UI(DISTRHO_UI_DEFAULT_WIDTH, DISTRHO_UI_DEFAULT_HEIGHT) {
+  PluguzuUI() : UI(DISTRHO_UI_DEFAULT_WIDTH, DISTRHO_UI_DEFAULT_HEIGHT, true) {
     const double scaleFactor = getScaleFactor();
+    // const double scaleFactor = getScaleFactor();
 
     if (d_isEqual(scaleFactor, 1.0)) {
       setGeometryConstraints(DISTRHO_UI_DEFAULT_WIDTH,
@@ -32,12 +31,11 @@ public:
       setSize(width, height);
     }
 
-    // showMenu();
     auto ldef = TextEditor::LanguageDefinition::HLSL();
     ldef.mName = "UZU";
-    setLanguageDefinition(ldef);
-
+    editor.SetLanguageDefinition(ldef);
     textChangedState = false;
+    pluguzuState = nullptr;
   }
 
 protected:
@@ -49,7 +47,30 @@ protected:
       return;
 
     textChangedState = true;
-    setText(value);
+    editor.SetText(value);
+  }
+
+  void onImGuiDisplay() override {
+    ImGuiWindowFlags flags =
+        ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize;
+    ImGui::SetNextWindowPos(ImVec2(0, 0));
+    ImGui::SetNextWindowSize(ImVec2(getWidth(), getHeight()));
+    if (ImGui::Begin("TextEdit", nullptr, flags)) {
+
+      if (pluguzuState == nullptr)
+        ImGui::Text("Disconnected :(");
+      else {
+        ImGui::Text(
+            "%s %d | %d events | %s", pluguzuState->isPlaying ? ">>=" : "|-|",
+            4 + pluguzuState->nextBarStart - pluguzuState->currentBar,
+            pluguzuState->nextCount,
+            pluguzuState->error.length() > 0 ? pluguzuState->error.buffer()
+                                             : "OK");
+      }
+      editor.Render("TextEditor");
+    }
+
+    ImGui::End();
   }
 
   // ----------------------------------------------------------------------------------------------------------------
@@ -65,7 +86,7 @@ protected:
     // todo: display info about the current state, like errors or when next
     // cycle begin...
 
-    if (hasTextChangedSinceLastTime()) {
+    if (editor.IsTextChangedSinceLastTime()) {
       if (textChangedState) {
         textChangedState = false;
       } else {
@@ -76,7 +97,7 @@ protected:
 
     // wait for first idle with no more text changes
     if (textChanged) {
-      auto str = getText();
+      auto str = editor.GetText();
       const char *txt = str.c_str();
       textChanged = false;
       setState("text", txt);
@@ -85,8 +106,10 @@ protected:
 
   // ----------------------------------------------------------------------------------------------------------------
 private:
+  TextEditor editor;
   pluguzu_state *pluguzuState;
   bool textChangedState;
+  bool textChanged = false;
 
   DISTRHO_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PluguzuUI)
 };

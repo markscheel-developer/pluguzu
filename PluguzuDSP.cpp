@@ -25,6 +25,7 @@ PluguzuPlugin::PluguzuPlugin()
   pluguzuState.lastRenderedBar = 0;
   pluguzuState.haskellState = pluguzuNew();
   pluguzuState.nextCount = 0;
+  pluguzuState.currentBar = 0;
 }
 
 void PluguzuPlugin::initState(uint32_t index, State &state) {
@@ -46,7 +47,9 @@ void PluguzuPlugin::setState(const char *key, const char *value) {
   const char *err = (const char *)pluguzuError(pluguzuState.haskellState);
   if (err) {
     printf("Parse error! %s for[\n%s\n]\n", err, value);
+    pluguzuState.error = err;
   } else {
+    pluguzuState.error.clear();
     if (pluguzuState.lastRenderedBar == pluguzuState.nextBarStart)
       // The update happened before the next bar was rendered, so let's render
       // it now.
@@ -79,6 +82,7 @@ void PluguzuPlugin::run(const float ** /* inputs */, float ** /* outputs */,
   if (!timePos.playing || !timePos.bbt.valid)
     return;
   int32_t currentBar = timePos.bbt.bar - 1;
+  pluguzuState.currentBar = currentBar;
 
   // We are out of sync, we need a new render now
   if (currentBar < pluguzuState.nextBarStart ||
@@ -119,7 +123,8 @@ void PluguzuPlugin::run(const float ** /* inputs */, float ** /* outputs */,
   // Then we need to know how long the current run will last in bar fraction.
   double runTime = frames / getSampleRate();
   double beatPerSec = timePos.bbt.beatsPerMinute / 60;
-  double barPerSec = beatPerSec * timePos.bbt.beatType / timePos.bbt.beatsPerBar;
+  double barPerSec =
+      beatPerSec * timePos.bbt.beatType / timePos.bbt.beatsPerBar;
   double runFraction = runTime / barPerSec;
 
   // So that we know when the current run stops.
@@ -140,7 +145,8 @@ void PluguzuPlugin::run(const float ** /* inputs */, float ** /* outputs */,
   // printf("Start/stop: %.6f -- %.6f\n", startFraction, stopFraction);
 
   // if (currentPos < 2) {
-  //   printf("Bar per sec: %f, frames: %d, start: %f, stop: %f\n", barPerSec, frames, startFraction, stopFraction);
+  //   printf("Bar per sec: %f, frames: %d, start: %f, stop: %f\n", barPerSec,
+  //   frames, startFraction, stopFraction);
   // }
 
   for (; currentPos < currentCount; currentPos++) {
@@ -149,7 +155,8 @@ void PluguzuPlugin::run(const float ** /* inputs */, float ** /* outputs */,
       // the event will be handled in a future run
       break;
     }
-    if (eventFraction + std::numeric_limits<double>::epsilon() < startFraction &&
+    if (eventFraction + std::numeric_limits<double>::epsilon() <
+            startFraction &&
         currentEvents[currentPos].velocity != 0) {
       // We somehow missed a tick, or perhaps the host fast forward to a new
       // bar.
@@ -201,10 +208,12 @@ void PluguzuPlugin::syncEvents() {
   */
 }
 
-void PluguzuPlugin::sendMidiEvent(double startFraction, double framesPerFraction, uint32_t pos) {
+void PluguzuPlugin::sendMidiEvent(double startFraction,
+                                  double framesPerFraction, uint32_t pos) {
   int8_t chan = 1;
   MidiEvent ev;
-  uint32_t offset = (currentEvents[pos].time - startFraction) * framesPerFraction;
+  uint32_t offset =
+      (currentEvents[pos].time - startFraction) * framesPerFraction;
   ev.frame = offset;
   ev.size = 3;
   ev.data[0] = (currentEvents[pos].velocity != 0 ? 0x90 : 0x80) | chan;
