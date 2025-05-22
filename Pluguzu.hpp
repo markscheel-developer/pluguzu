@@ -81,6 +81,7 @@ private:
   pluguzu_state pluguzuState;
   uint32_t currentPos;
   uint32_t currentCount;
+  double lastStartFraction;
   midiEvent currentEvents[maxMidiEvents];
   friend class PluguzuUI;
   void sendMidiEvent(double barFraction, double framesPerFraction,

@@ -25,7 +25,8 @@ START_NAMESPACE_DISTRHO
 
 PluguzuPlugin::PluguzuPlugin()
     : Plugin(0, 0, 1), // parameters, programs, states
-      Runner("PluguzuRenderer"), currentPos(0), currentCount(0) {
+      Runner("PluguzuRenderer"), currentPos(0), currentCount(0),
+      lastStartFraction(0.0) {
   pluguzuState.isPlaying = false;
   pluguzuState.nextBarStart = -1;
   pluguzuState.lastRenderedBar = 0;
@@ -90,7 +91,6 @@ void PluguzuPlugin::run(const float ** /* inputs */, float ** /* outputs */,
   if (!timePos.playing) {
     // Ensure we traverse the whole buffer again on resume.
     currentPos = 0;
-
     // TODO: send noteOff events.
   }
 
@@ -124,11 +124,6 @@ void PluguzuPlugin::run(const float ** /* inputs */, float ** /* outputs */,
     syncEvents();
   }
 
-  // There are no more events...
-  if (currentPos >= currentCount) {
-    return;
-  }
-
   // Send the current midi events
 
   // Convert the current timePos tick into an absolute bar fraction
@@ -149,6 +144,12 @@ void PluguzuPlugin::run(const float ** /* inputs */, float ** /* outputs */,
 
   // So that we know when the current run stops.
   double stopFraction = startFraction + runFraction;
+
+  if (startFraction < lastStartFraction) {
+    printf("Went back in time?!\n");
+    currentPos = 0;
+  }
+  lastStartFraction = startFraction;
 
   // As well as how long a barFraction is in term of frame for the event offset.
   double framesPerFraction = frames / runFraction;
