@@ -6,6 +6,9 @@
 
 #include "DistrhoPlugin.hpp"
 
+#include "dpf/distrho/extra/Mutex.hpp"
+#include "dpf/distrho/extra/Runner.hpp"
+
 // The Haskell state wrapper export
 #include "Pluguzu_stub.h"
 
@@ -31,6 +34,7 @@ struct pluguzu_state {
   String error;
 
   // The next bar pre-rendered, ready to be copied by the run callback
+  Mutex mutex;
   int32_t nextBarStart;
   uint32_t nextCount;
   midiEvent nextEvents[maxMidiEvents];
@@ -40,7 +44,7 @@ START_NAMESPACE_DISTRHO
 
 // --------------------------------------------------------------------------------------------------------------------
 
-class PluguzuPlugin : public Plugin {
+class PluguzuPlugin : public Plugin, public Runner {
 public:
   PluguzuPlugin();
 
@@ -69,6 +73,8 @@ protected:
   void run(const float ** /* inputs */, float ** /* outputs */,
            uint32_t /* frames */, const MidiEvent * /* midiEvents */,
            uint32_t /* midiEventCount */) override;
+
+  bool run() override;
 
   // ----------------------------------------------------------------------------------------------------------------
 private:

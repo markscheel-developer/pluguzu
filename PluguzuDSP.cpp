@@ -5,12 +5,18 @@
 
 extern "C" void pluguzu_init(void);
 
-void renderNextBar(pluguzu_state *pluguzuState, int32_t bar) {
-  printf("Rendering next bar %d...\n", bar);
+void doRenderNextBar(pluguzu_state *pluguzuState, int32_t bar) {
   pluguzuState->nextCount =
       pluguzuRender(pluguzuState->haskellState, bar, bar + 4,
                     (HsPtr)pluguzuState->nextEvents);
   pluguzuState->lastRenderedBar = bar;
+}
+
+void renderNextBar(pluguzu_state *pluguzuState, int32_t bar) {
+  printf("Rendering next bar %d...\n", bar);
+  pluguzuState->mutex.lock();
+  doRenderNextBar(pluguzuState, bar);
+  pluguzuState->mutex.unlock();
 }
 
 START_NAMESPACE_DISTRHO
@@ -19,7 +25,7 @@ START_NAMESPACE_DISTRHO
 
 PluguzuPlugin::PluguzuPlugin()
     : Plugin(0, 0, 1), // parameters, programs, states
-      currentPos(0), currentCount(0) {
+      Runner("PluguzuRenderer"), currentPos(0), currentCount(0) {
   pluguzuState.isPlaying = false;
   pluguzuState.nextBarStart = -1;
   pluguzuState.lastRenderedBar = 0;
@@ -43,10 +49,11 @@ void PluguzuPlugin::setState(const char *key, const char *value) {
     return;
 
   printf("Updating code to --[%s]--\n", value);
+  pluguzuState.mutex.lock();
   pluguzuParse(pluguzuState.haskellState, (HsPtr)value);
   const char *err = (const char *)pluguzuError(pluguzuState.haskellState);
   if (err) {
-    printf("Parse error! %s for[\n%s\n]\n", err, value);
+    // printf("Parse error! %s for[\n%s\n]\n", err, value);
     pluguzuState.error = err;
   } else {
     pluguzuState.error.clear();
@@ -55,8 +62,17 @@ void PluguzuPlugin::setState(const char *key, const char *value) {
       // it now.
       pluguzuState.lastRenderedBar += 4;
     // otherwise we can override the previously rendered bar.
-    renderNextBar(&pluguzuState, pluguzuState.lastRenderedBar);
+    doRenderNextBar(&pluguzuState, pluguzuState.lastRenderedBar);
   }
+  pluguzuState.mutex.unlock();
+}
+
+bool PluguzuPlugin::run() {
+  if (pluguzuState.nextBarStart == pluguzuState.lastRenderedBar) {
+    printf("Rendering next bar in the background!\n");
+    renderNextBar(&pluguzuState, pluguzuState.lastRenderedBar + 4);
+  }
+  return pluguzuState.isPlaying;
 }
 
 void PluguzuPlugin::run(const float ** /* inputs */, float ** /* outputs */,
@@ -81,13 +97,17 @@ void PluguzuPlugin::run(const float ** /* inputs */, float ** /* outputs */,
   pluguzuState.isPlaying = timePos.playing;
   if (!timePos.playing || !timePos.bbt.valid)
     return;
+  if (!isRunnerActive())
+    startRunner(1000);
+
   int32_t currentBar = timePos.bbt.bar - 1;
   pluguzuState.currentBar = currentBar;
 
   // We are out of sync, we need a new render now
-  if (currentBar < pluguzuState.nextBarStart ||
-      currentBar >= pluguzuState.nextBarStart + 4) {
-    printf("Maybe render off main thread?\n");
+  if ((currentBar < pluguzuState.nextBarStart ||
+       currentBar >= pluguzuState.nextBarStart + 4) &&
+      currentBar != pluguzuState.lastRenderedBar) {
+    printf("We are out of sync and the current bar is not pre-rendered\n");
     renderNextBar(&pluguzuState, currentBar);
   }
 
@@ -175,9 +195,10 @@ void PluguzuPlugin::run(const float ** /* inputs */, float ** /* outputs */,
     int32_t stopBar = std::lround(stopFraction);
     if (pluguzuState.lastRenderedBar != stopBar) {
       // The next bar is not ready.
+      printf("Weird, the next bar is not ready!\n");
       renderNextBar(&pluguzuState, stopBar);
-      syncEvents();
     }
+    syncEvents();
     for (; currentPos < currentCount; currentPos++) {
       if (currentEvents[currentPos].time > stopFraction)
         break;
@@ -191,14 +212,13 @@ void PluguzuPlugin::run(const float ** /* inputs */, float ** /* outputs */,
 
 void PluguzuPlugin::syncEvents() {
   // Copy the midi events from the pluguzuState
-  // Note that there is a slight chance that the copy happens at the same
-  // time of the update, Though we should be able to ensure the events
-  // render happen way before, Otherwise, this could use a mutex.
   currentPos = 0;
+  pluguzuState.mutex.lock();
   currentCount = pluguzuState.nextCount;
   memcpy(currentEvents, pluguzuState.nextEvents,
          currentCount * sizeof(midiEvent));
   pluguzuState.nextBarStart = pluguzuState.lastRenderedBar;
+  pluguzuState.mutex.unlock();
   /*
   // debug the loaded event
   for (uint32_t i = 0; i < currentCount; i++) {
