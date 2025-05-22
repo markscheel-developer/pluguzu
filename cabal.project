@@ -1,0 +1,6 @@
+source-repository-package
+    type: git
+    location: https://github.com/tidalcycles/Tidal
+    tag: 94b7eddfaca70a5b87c1c5b2915c16a2c1d87b6f
+    subdir: tidal-core tidal-parse
+packages: .
