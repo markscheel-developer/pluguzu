@@ -15,10 +15,11 @@ struct me {
 
 extern "C" void pluguzu_init(void);
 
-int main() {
+int main(int argc, const char **argv) {
   pluguzu_init();
   auto state = pluguzuNew();
-  pluguzuParse(state, (HsPtr) "n \"[c3 f3]\"");
+  const char *code = argc > 1 ? argv[1] : "n \"[c3 f3]\"";
+  pluguzuParse(state, (HsPtr)code);
   const char *err = (char *)pluguzuError(state);
   if (err != NULL) {
     printf("Parse error: %s\n", err);
