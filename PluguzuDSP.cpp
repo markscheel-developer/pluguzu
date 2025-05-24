@@ -39,13 +39,13 @@ void PluguzuPlugin::initState(uint32_t index, State &state) {
     return;
 
   state.hints = kStateIsHostWritable | kStateIsOnlyForUI;
-  state.key = "text";
+  state.key = "uzu-code";
   state.label = "Text";
   state.description = "The Uzu code";
 }
 
 void PluguzuPlugin::setState(const char *key, const char *value) {
-  if (std::strcmp(key, "text") != 0)
+  if (std::strcmp(key, "uzu-code") != 0)
     return;
 
   printf("Updating code to --[%s]--\n", value);

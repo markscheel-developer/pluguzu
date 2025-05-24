@@ -43,7 +43,7 @@ protected:
   // DSP/Plugin Callbacks
   void parameterChanged(uint32_t, float) override {}
   void stateChanged(const char *key, const char *value) override {
-    if (std::strcmp(key, "text") != 0)
+    if (std::strcmp(key, "uzu-code") != 0)
       return;
 
     textChangedState = true;
@@ -100,7 +100,7 @@ protected:
       auto str = editor.GetText();
       const char *txt = str.c_str();
       textChanged = false;
-      setState("text", txt);
+      setState("uzu-code", txt);
     }
   }
 
