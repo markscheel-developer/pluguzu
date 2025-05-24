@@ -9,7 +9,7 @@ void doRenderNextBar(pluguzu_state *pluguzuState, int32_t bar) {
   pluguzuState->nextCount =
       pluguzuRender(pluguzuState->haskellState, bar, bar + 4,
                     (HsPtr)pluguzuState->nextEvents);
-  pluguzuState->lastRenderedBar = bar;
+  pluguzuState->nextStartBar = bar;
 }
 
 void renderNextBar(pluguzu_state *pluguzuState, int32_t bar) {
@@ -25,11 +25,10 @@ START_NAMESPACE_DISTRHO
 
 PluguzuPlugin::PluguzuPlugin()
     : Plugin(0, 0, 1), // parameters, programs, states
-      Runner("PluguzuRenderer"), currentPos(0), currentCount(0),
-      lastStartFraction(0.0) {
+      Runner("PluguzuRenderer"), lastStartFraction(0.0), currentPos(0),
+      currentStartBar(-1), currentCount(0) {
   pluguzuState.isPlaying = false;
-  pluguzuState.nextBarStart = -1;
-  pluguzuState.lastRenderedBar = 0;
+  pluguzuState.nextStartBar = 0;
   pluguzuState.haskellState = pluguzuNew();
   pluguzuState.nextCount = 0;
   pluguzuState.currentBar = 0;
@@ -58,20 +57,20 @@ void PluguzuPlugin::setState(const char *key, const char *value) {
     pluguzuState.error = err;
   } else {
     pluguzuState.error.clear();
-    if (pluguzuState.lastRenderedBar == pluguzuState.nextBarStart)
+    if (pluguzuState.nextStartBar == currentStartBar)
       // The update happened before the next bar was rendered, so let's render
       // it now.
-      pluguzuState.lastRenderedBar += 4;
+      pluguzuState.nextStartBar += 4;
     // otherwise we can override the previously rendered bar.
-    doRenderNextBar(&pluguzuState, pluguzuState.lastRenderedBar);
+    doRenderNextBar(&pluguzuState, pluguzuState.nextStartBar);
   }
   pluguzuState.mutex.unlock();
 }
 
 bool PluguzuPlugin::run() {
-  if (pluguzuState.nextBarStart == pluguzuState.lastRenderedBar) {
+  if (currentStartBar == pluguzuState.nextStartBar) {
     printf("Rendering next bar in the background!\n");
-    renderNextBar(&pluguzuState, pluguzuState.lastRenderedBar + 4);
+    renderNextBar(&pluguzuState, pluguzuState.nextStartBar + 4);
   }
   return pluguzuState.isPlaying;
 }
@@ -104,15 +103,14 @@ void PluguzuPlugin::run(const float ** /* inputs */, float ** /* outputs */,
   pluguzuState.currentBar = currentBar;
 
   // We are out of sync, we need a new render now
-  if ((currentBar < pluguzuState.nextBarStart ||
-       currentBar >= pluguzuState.nextBarStart + 4) &&
-      currentBar != pluguzuState.lastRenderedBar) {
+  if ((currentBar < currentStartBar || currentBar >= currentStartBar + 4) &&
+      currentBar != pluguzuState.nextStartBar) {
     printf("We are out of sync and the current bar is not pre-rendered\n");
     renderNextBar(&pluguzuState, currentBar);
   }
 
-  if (pluguzuState.lastRenderedBar != pluguzuState.nextBarStart &&
-      pluguzuState.lastRenderedBar == currentBar) {
+  if (pluguzuState.nextStartBar != currentStartBar &&
+      pluguzuState.nextStartBar == currentBar) {
     printf("A new bar begin %d!\n", currentBar);
 
     // Send any left-over noteOff events
@@ -190,11 +188,11 @@ void PluguzuPlugin::run(const float ** /* inputs */, float ** /* outputs */,
     sendMidiEvent(startFraction, framesPerFraction, currentPos);
   }
 
-  if (stopFraction > static_cast<double>(pluguzuState.nextBarStart + 4)) {
+  if (stopFraction > static_cast<double>(currentStartBar + 4)) {
     // The current run overlapped with the end of the rendered bar, e.g. it
     // was 3.99 -- 4.01
     int32_t stopBar = std::lround(stopFraction);
-    if (pluguzuState.lastRenderedBar != stopBar) {
+    if (pluguzuState.nextStartBar != stopBar) {
       // The next bar is not ready.
       printf("Weird, the next bar is not ready!\n");
       renderNextBar(&pluguzuState, stopBar);
@@ -218,7 +216,7 @@ void PluguzuPlugin::syncEvents() {
   currentCount = pluguzuState.nextCount;
   memcpy(currentEvents, pluguzuState.nextEvents,
          currentCount * sizeof(midiEvent));
-  pluguzuState.nextBarStart = pluguzuState.lastRenderedBar;
+  currentStartBar = pluguzuState.nextStartBar;
   pluguzuState.mutex.unlock();
   /*
   // debug the loaded event

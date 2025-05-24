@@ -27,7 +27,6 @@ struct midiEvent {
 struct pluguzu_state {
   bool isPlaying;
   int32_t currentBar;
-  int32_t lastRenderedBar;
 
   HsStablePtr haskellState;
 
@@ -35,7 +34,7 @@ struct pluguzu_state {
 
   // The next bar pre-rendered, ready to be copied by the run callback
   Mutex mutex;
-  int32_t nextBarStart;
+  int32_t nextStartBar;
   uint32_t nextCount;
   midiEvent nextEvents[maxMidiEvents];
 };
@@ -79,9 +78,10 @@ protected:
   // ----------------------------------------------------------------------------------------------------------------
 private:
   pluguzu_state pluguzuState;
-  uint32_t currentPos;
-  uint32_t currentCount;
   double lastStartFraction;
+  uint32_t currentPos;
+  int32_t currentStartBar;
+  uint32_t currentCount;
   midiEvent currentEvents[maxMidiEvents];
   friend class PluguzuUI;
   void sendMidiEvent(double barFraction, double framesPerFraction,

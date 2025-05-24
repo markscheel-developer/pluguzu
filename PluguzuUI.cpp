@@ -62,7 +62,7 @@ protected:
       else {
         ImGui::Text(
             "%s %d | %d events | %s", pluguzuState->isPlaying ? ">>=" : "|-|",
-            4 + pluguzuState->nextBarStart - pluguzuState->currentBar,
+            pluguzuState->nextStartBar - pluguzuState->currentBar,
             pluguzuState->nextCount,
             pluguzuState->error.length() > 0 ? pluguzuState->error.buffer()
                                              : "OK");
