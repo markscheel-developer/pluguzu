@@ -3,9 +3,8 @@
 A PoC uzu-lang running as CLAP plugin (or VST) through the DISTRHO Plugin Framework.
 
 ```ShellSession
-cabal build
-make
-make run
+# Compile the plugin in the bin directory.
+make haskell-lib vst2 clap
 ```
 
 ## Architecture

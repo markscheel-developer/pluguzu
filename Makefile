@@ -19,29 +19,51 @@ FILES_UI  = \
 
 include dpf/Makefile.plugins.mk
 
-BUILD_CXX_FLAGS += -I./dpf-widgets/opengl -I./dist-newstyle/build/x86_64-linux/ghc-9.12.2/pluguzu-0.1/f/pluguzu/build/pluguzu/pluguzu-tmp/ -I/home/fedora/.ghcup/ghc/9.12.2/lib/ghc-9.12.2/lib/x86_64-linux-ghc-9.12.2-5a14/rts-1.0.2/include/
-LINK_FLAGS = -L./dist-newstyle/build/x86_64-linux/ghc-9.12.2/pluguzu-0.1/f/pluguzu/build/pluguzu/ -lpluguzu
+# Add the dear-imgui header path
+BUILD_CXX_FLAGS += -I./dpf-widgets/opengl
+
+# Add the haskell rts and stub header path
+BUILD_CXX_FLAGS += -I./bin -I./bin/rts-header
+
+# Add the foreign library and inject the special '$ORIGIN' rpath so that it can load the libpluguzu.so from the plugin folder.
+LINK_FLAGS = -L./bin '-Wl,-rpath,$$ORIGIN' -lpluguzu
+
+# vst3 puts the lib in a nested folder, so we need to patch to adjust the libpuguzu location
+vst3-fix: vst3
+	@ln -sf ../../../libpluguzu.so bin/pluguzu.vst3/Contents/x86_64-linux/
+
+# --------------------------------------------------------------
+# Haskell lib
+
+haskell-lib:
+	@cabal build
+	@mkdir -p bin
+	@find $(PWD)/dist-newstyle/ -name libpluguzu.so  -exec ln -sf {} bin/ \;
+	@find $(PWD)/dist-newstyle/ -name Pluguzu_stub.h -exec ln -sf {} bin/ \;
+	@find ~/.ghcup/ -name "rts-*" -type d -exec ln -sf {}/include bin/rts-header \;
+
 
 # --------------------------------------------------------------
 # Enable all possible plugin types
 
-
 TARGETS += clap
 TARGETS += vst2
+TARGETS += vst3
 
-all: $(TARGETS)
+all: haskell-lib vst3-fix $(TARGETS)
 
 # --------------------------------------------------------------
+# Test helper
 
-run:
-	env LD_LIBRARY_PATH=/srv/codeberg.org/TristanCacqueray/pluguzu/dist-newstyle/build/x86_64-linux/ghc-9.12.2/pluguzu-0.1/f/pluguzu/build/pluguzu:/home/fedora/.ghcup/ghc/9.12.2/lib/ghc-9.12.2/lib/x86_64-linux-ghc-9.12.2-5a14/ carla ~/test/test.carxp
+run-carla:
+	carla ./demo.carxp
 
 run-clap:
-	env LD_LIBRARY_PATH=./dist-newstyle/build/x86_64-linux/ghc-9.12.2/pluguzu-0.1/f/pluguzu/build/pluguzu /srv/github.com/free-audio/clap-host/builds/ninja-system/host/Debug/clap-host -p bin/pluguzu.clap
+	/srv/github.com/free-audio/clap-host/builds/ninja-system/host/Debug/clap-host -p bin/pluguzu.clap
 
-test:
-	g++ $(BUILD_CXX_FLAGS) $(LINK_FLAGS) -o bin/standalone standalone.cpp
-	env LD_LIBRARY_PATH=/srv/codeberg.org/TristanCacqueray/pluguzu/dist-newstyle/build/x86_64-linux/ghc-9.12.2/pluguzu-0.1/f/pluguzu/build/pluguzu:/home/fedora/.ghcup/ghc/9.12.2/lib/ghc-9.12.2/lib/x86_64-linux-ghc-9.12.2-5a14/ ./bin/standalone
+run-standalone:
+	@g++ $(BUILD_CXX_FLAGS) $(LINK_FLAGS) -o bin/standalone standalone.cpp
+	./bin/standalone
 
 ghcid:
 	ghcid -W --test PluguzuCore.standalone

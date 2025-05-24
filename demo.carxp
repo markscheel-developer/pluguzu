@@ -1,0 +1,23 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<!DOCTYPE CARLA-PROJECT>
+<CARLA-PROJECT VERSION='2.5'>
+ <!-- Pluguzu -->
+ <Plugin>
+  <Info>
+   <Type>VST2</Type>
+   <Name>Pluguzu</Name>
+   <Binary>bin/pluguzu-vst.so</Binary>
+   <UniqueID>1683257460</UniqueID>
+  </Info>
+
+  <Data>
+   <Active>Yes</Active>
+   <ControlChannel>1</ControlChannel>
+   <Options>0x9</Options>
+
+   <Chunk>
+dGV4dABuICI8W2MyIGYyXT4iCgAA
+   </Chunk>
+  </Data>
+ </Plugin>
+</CARLA-PROJECT>
