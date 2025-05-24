@@ -75,6 +75,21 @@ bool PluguzuPlugin::run() {
   return pluguzuState.isPlaying;
 }
 
+// Convert the current time position into an absolute bar fraction.
+double getBarFraction(const TimePosition::BarBeatTick *bbt) {
+  // The current position is the tick within the current beat.
+  double beatFraction = bbt->tick / bbt->ticksPerBeat;
+  double barFraction = (beatFraction + (bbt->beat - 1)) / bbt->beatsPerBar;
+  return bbt->bar - 1 + barFraction;
+}
+
+// Compute how long a run time last in term of bar fraction.
+double getRunFraction(double runTime, const TimePosition::BarBeatTick *bbt) {
+  double beatPerSec = bbt->beatsPerMinute / 60;
+  double barPerSec = beatPerSec * bbt->beatType / bbt->beatsPerBar;
+  return runTime / barPerSec;
+}
+
 void PluguzuPlugin::run(const float ** /* inputs */, float ** /* outputs */,
                         uint32_t frames, const MidiEvent *midiEvents,
                         uint32_t midiEventCount) {
@@ -113,8 +128,8 @@ void PluguzuPlugin::run(const float ** /* inputs */, float ** /* outputs */,
       pluguzuState.nextStartBar == currentBar) {
     printf("A new bar begin %d!\n", currentBar);
 
-    // Send any left-over noteOff events
-    // TODO: check if this is actually needed
+    // TODO: requeue any left-over noteOff events
+    // e.g. notes that ends after the buffer boundary must be taken care of...
     for (; currentPos < currentCount; currentPos++) {
       if (currentEvents[currentPos].velocity == 0)
         sendMidiEvent(0, 0, currentPos);
@@ -124,23 +139,11 @@ void PluguzuPlugin::run(const float ** /* inputs */, float ** /* outputs */,
 
   // Send the current midi events
 
-  // Convert the current timePos tick into an absolute bar fraction
   // Note: the host time is given as a BarBeatTick,
   // so here we convert the current tick into a bar fraction to match tidal
   // cycle position.
-  double beatFraction = timePos.bbt.tick / timePos.bbt.ticksPerBeat;
-  double barFraction =
-      (beatFraction + (timePos.bbt.beat - 1)) / timePos.bbt.beatsPerBar;
-  double startFraction = currentBar + barFraction;
-
-  // Then we need to know how long the current run will last in bar fraction.
-  double runTime = frames / getSampleRate();
-  double beatPerSec = timePos.bbt.beatsPerMinute / 60;
-  double barPerSec =
-      beatPerSec * timePos.bbt.beatType / timePos.bbt.beatsPerBar;
-  double runFraction = runTime / barPerSec;
-
-  // So that we know when the current run stops.
+  double startFraction = getBarFraction(&timePos.bbt);
+  double runFraction = getRunFraction(frames / getSampleRate(), &timePos.bbt);
   double stopFraction = startFraction + runFraction;
 
   if (startFraction < lastStartFraction) {
