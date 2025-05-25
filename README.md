@@ -7,6 +7,8 @@ A PoC uzu-lang running as CLAP plugin (or VST) through the DISTRHO Plugin Framew
 make haskell-lib vst2 clap
 ```
 
+> Checkout the companion post: https://midirus.com/blog/haskell-foreign-library-dpf
+
 ## Architecture
 
 - [PluguzuCore.hs](./src/PluguzuCore.hs) contains the logic to convert tidal pattern into MIDI events.
@@ -24,5 +26,9 @@ make haskell-lib vst2 clap
 - [x] Passthrough midi events.
 - [x] Handle transport pause/jump.
 - [x] Display status and parse error.
-- [ ] Investigate using a dedicated rendering thread with mutex.
+- [x] Investigate using a dedicated rendering thread with mutex.
+- [ ] Update text editor language def to support Haskell syntax.
+- [ ] Handle MIDI CC and sound event, for example by mapping common drum machine samples to their usual notes.
+- [ ] Presets with popular patterns to help getting started.
+- [ ] Global values, for example to share a scale between multiple plugin instance.
 - [ ] Package the plugin dependencies (e.g. the libpluguzu.so and libHSrts) so that it works out of the box.
