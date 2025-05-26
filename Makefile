@@ -40,7 +40,7 @@ vst3-fix: vst3
 haskell-lib:
 	@cabal build
 	@mkdir -p bin
-	@find $(PWD)/dist-newstyle/ -name libpluguzu.so  -or -name Pluguzu_stub.h -exec ln -sf {} bin/ \;
+	@find $(PWD)/dist-newstyle/ \( -name libpluguzu.so  -or -name Pluguzu_stub.h \) -exec ln -sf {} bin/ \;
 	@ln -sf $(shell ghc-pkg field rts include-dirs --simple-output) bin/rts-header
 
 
