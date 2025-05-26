@@ -51,6 +51,11 @@ protected:
   }
 
   void onImGuiDisplay() override {
+    if (pluguzuState == nullptr) {
+      // The idle callback usually sets the pointer before the display,
+      // in case it didn't, let's wait
+      return;
+    }
     ImGuiWindowFlags flags =
         ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize;
     ImGui::SetNextWindowPos(ImVec2(0, 0));
