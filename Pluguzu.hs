@@ -69,6 +69,5 @@ pluguzuRender pState startArc endArc pEvs = do
     let end = fromInteger (toInteger endArc)
     let arc = PluguzuCore.mkArc start end
     let evs = PluguzuCore.patternToEvents pat arc
-    -- TODO: prevent overflow!
-    pokeArray pEvs evs
+    pokeArray pEvs (take 512 evs)
     pure (fromInteger (toInteger (length evs)))

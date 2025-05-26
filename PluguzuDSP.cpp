@@ -9,6 +9,11 @@ void doRenderNextBar(pluguzu_state *pluguzuState, int32_t bar) {
   pluguzuState->nextCount =
       pluguzuRender(pluguzuState->haskellState, bar, bar + 4,
                     (HsPtr)pluguzuState->nextEvents);
+  if (pluguzuState->nextCount > 512) {
+    // TODO: increase the buffer size?
+    printf("Too many events rendered: %d\n", pluguzuState->nextCount);
+    pluguzuState->nextCount = 512;
+  }
   pluguzuState->nextStartBar = bar;
 }
 
