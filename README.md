@@ -2,12 +2,37 @@
 
 A PoC uzu-lang running as CLAP plugin (or VST) through the DISTRHO Plugin Framework.
 
-```ShellSession
-# Compile the plugin in the bin directory.
-make haskell-lib vst2 clap
+> Checkout the companion post: https://midirus.com/blog/haskell-foreign-library-dpf
+
+## Build Instructions
+
+- Install the system libraries and the Haskell toolchain:
+
+```bash
+sudo dnf install -y mesa-libGL-devel libXext-devel libXrandr-devel libXfixes-devel dbus-devel gcc gcc-c++ gmp gmp-devel make ncurses ncurses-compat-libs xz perl pkg-config git
+curl --proto '=https' --tlsv1.2 -sSf https://get-ghcup.haskell.org | env BOOTSTRAP_HASKELL_GHC_VERSION=latest BOOTSTRAP_HASKELL_NONINTERACTIVE=1 sh
+source ~/.ghcup/env
 ```
 
-> Checkout the companion post: https://midirus.com/blog/haskell-foreign-library-dpf
+- Get the sources:
+
+```
+git clone --recursive https://codeberg.org/TristanCacqueray/pluguzu
+cd pluguzu
+```
+
+- Build the plugin:
+
+```bash
+make         # or: make haskell-lib vst2 clap
+make install # or: make install-vst2 install-clap
+```
+
+- Validate by making sure this command doesn't output a missing dependencies:
+
+```bash
+ldd ~/.vst/pluguzu-vst.so | grep "not found"
+```
 
 ## Architecture
 

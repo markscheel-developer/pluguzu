@@ -14,6 +14,7 @@ FILES_UI  = \
 	dpf-widgets/opengl/DearImGui.cpp \
 	dpf-widgets/opengl/DearImGuiColorTextEditor.cpp
 
+
 # --------------------------------------------------------------
 # Do some magic
 
@@ -32,15 +33,15 @@ LINK_FLAGS = -L./bin '-Wl,-rpath,$$ORIGIN' -lpluguzu
 vst3-fix: vst3
 	@ln -sf ../../../libpluguzu.so bin/pluguzu.vst3/Contents/x86_64-linux/
 
+
 # --------------------------------------------------------------
 # Haskell lib
 
 haskell-lib:
 	@cabal build
 	@mkdir -p bin
-	@find $(PWD)/dist-newstyle/ -name libpluguzu.so  -exec ln -sf {} bin/ \;
-	@find $(PWD)/dist-newstyle/ -name Pluguzu_stub.h -exec ln -sf {} bin/ \;
-	@find ~/.ghcup/ -name "rts-*" -type d -exec ln -sf {}/include bin/rts-header \;
+	@find $(PWD)/dist-newstyle/ -name libpluguzu.so  -or -name Pluguzu_stub.h -exec ln -sf {} bin/ \;
+	@ln -sf $(shell ghc-pkg field rts include-dirs --simple-output) bin/rts-header
 
 
 # --------------------------------------------------------------
@@ -48,9 +49,23 @@ haskell-lib:
 
 TARGETS += clap
 TARGETS += vst2
-TARGETS += vst3
 
-all: haskell-lib vst3-fix $(TARGETS)
+all: haskell-lib $(TARGETS)
+
+
+# --------------------------------------------------------------
+# Install
+
+install-vst:
+	@mkdir -p ~/.vst
+	@ln -sf $(PWD)/bin/libpluguzu.so $(PWD)/bin/pluguzu-vst.so ~/.vst
+
+install-clap:
+	@mkdir -p ~/.clap
+	@ln -sf $(PWD)/bin/libpluguzu.so $(PWD)/bin/pluguzu.clap ~/.clap
+
+install: install-vst install-clap
+
 
 # --------------------------------------------------------------
 # Test helper
