@@ -18,19 +18,7 @@ START_NAMESPACE_DISTRHO
 class PluguzuUI : public UI {
 public:
   PluguzuUI() : UI(DISTRHO_UI_DEFAULT_WIDTH, DISTRHO_UI_DEFAULT_HEIGHT, true), fScale(1.0) {
-    const double scaleFactor = getScaleFactor();
-    // const double scaleFactor = getScaleFactor();
-
-    if (d_isEqual(scaleFactor, 1.0)) {
-      setGeometryConstraints(DISTRHO_UI_DEFAULT_WIDTH,
-                             DISTRHO_UI_DEFAULT_HEIGHT);
-    } else {
-      const uint width = DISTRHO_UI_DEFAULT_WIDTH * scaleFactor;
-      const uint height = DISTRHO_UI_DEFAULT_HEIGHT * scaleFactor;
-      setGeometryConstraints(width, height);
-      setSize(width, height);
-    }
-
+    setGeometryConstraints(80, 60);
     auto ldef = TextEditor::LanguageDefinition::HLSL();
     ldef.mName = "UZU";
     editor.SetLanguageDefinition(ldef);
@@ -89,6 +77,9 @@ protected:
   void setScale(float multiplier) {
     fScale = std::max((float)0.2, multiplier * fScale);
     ImGui::SetWindowFontScale(fScale);
+    uint newWidth = std::max((uint)80, (uint)(multiplier * (float)getWidth()));
+    uint newHeight = std::max((uint)60, (uint)(multiplier * (float)getHeight()));
+    setSize(newWidth, newHeight);
   }
 
   // ----------------------------------------------------------------------------------------------------------------
