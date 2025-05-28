@@ -17,7 +17,7 @@ START_NAMESPACE_DISTRHO
 
 class PluguzuUI : public UI {
 public:
-  PluguzuUI() : UI(DISTRHO_UI_DEFAULT_WIDTH, DISTRHO_UI_DEFAULT_HEIGHT, true) {
+  PluguzuUI() : UI(DISTRHO_UI_DEFAULT_WIDTH, DISTRHO_UI_DEFAULT_HEIGHT, true), fScale(1.0) {
     const double scaleFactor = getScaleFactor();
     // const double scaleFactor = getScaleFactor();
 
@@ -66,16 +66,29 @@ protected:
         ImGui::Text("Disconnected :(");
       else {
         ImGui::Text(
-            "%s %d | %d events | %s", pluguzuState->isPlaying ? ">>=" : "|-|",
+            "%s %d | %d events | %s  ", pluguzuState->isPlaying ? ">>=" : "|-|",
             pluguzuState->nextStartBar - pluguzuState->currentBar,
             pluguzuState->nextCount,
             pluguzuState->error.length() > 0 ? pluguzuState->error.buffer()
                                              : "OK");
+        ImGui::SameLine();
+        if (ImGui::Button("+")) {
+          setScale(1.3);
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("-")) {
+          setScale(0.7);
+        }
       }
       editor.Render("TextEditor");
     }
 
     ImGui::End();
+  }
+
+  void setScale(float multiplier) {
+    fScale = std::max((float)0.2, multiplier * fScale);
+    ImGui::SetWindowFontScale(fScale);
   }
 
   // ----------------------------------------------------------------------------------------------------------------
@@ -115,6 +128,7 @@ private:
   pluguzu_state *pluguzuState;
   bool textChangedState;
   bool textChanged = false;
+  float fScale;
 
   DISTRHO_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PluguzuUI)
 };
