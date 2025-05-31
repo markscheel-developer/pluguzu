@@ -42,7 +42,7 @@ rat2float :: Rational -> Double
 rat2float = fromRational
 
 midiNote :: Pattern.Note -> Int8
-midiNote (Pattern.Note n) = round $ n + 60
+midiNote (Pattern.Note n) = round $ n + 72
 
 mkArc :: Rational -> Rational -> Time.Arc
 mkArc start stop = Time.Arc start stop
