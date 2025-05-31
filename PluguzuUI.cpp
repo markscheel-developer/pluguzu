@@ -5,6 +5,8 @@
 
 #include "DearImGuiColorTextEditor/TextEditor.h"
 
+#include "dpf-widgets/generic/ResizeHandle.hpp"
+
 // The DSP plugin
 #include "Pluguzu.hpp"
 
@@ -17,7 +19,7 @@ START_NAMESPACE_DISTRHO
 
 class PluguzuUI : public UI {
 public:
-  PluguzuUI() : UI(DISTRHO_UI_DEFAULT_WIDTH, DISTRHO_UI_DEFAULT_HEIGHT, true), fScale(0.0) {
+  PluguzuUI() : UI(DISTRHO_UI_DEFAULT_WIDTH, DISTRHO_UI_DEFAULT_HEIGHT, true), fScale(0.0), fResizeHandle(this) {
     setGeometryConstraints(80, 60);
     auto ldef = TextEditor::LanguageDefinition::HLSL();
     ldef.mName = "UZU";
@@ -173,6 +175,7 @@ private:
   bool textChangedState;
   bool textChanged = false;
   float fScale;
+  ResizeHandle fResizeHandle;
 
   DISTRHO_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PluguzuUI)
 };
