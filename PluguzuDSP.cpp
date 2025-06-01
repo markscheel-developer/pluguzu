@@ -55,7 +55,8 @@ void PluguzuPlugin::initState(uint32_t index, State &state) {
   if (index != 0)
     return;
 
-  state.hints = kStateIsHostWritable | kStateIsOnlyForUI;
+  state.hints =
+      kStateIsHostWritable | kStateIsHostReadable | kStateIsOnlyForDSP;
   state.key = "uzu-code";
   state.label = "Text";
   state.description = "The Uzu code";
@@ -80,6 +81,10 @@ void PluguzuPlugin::setState(const char *key, const char *value) {
       pluguzuState.nextStartBar += 4;
     // otherwise we can override the previously rendered bar.
     doRenderNextBar(&pluguzuState, pluguzuState.nextStartBar);
+
+    // tell the host that the state change, unfortunately, that doesn't tell
+    // REAPER that the project can be saved.
+    updateStateValue("uzu-code", value);
   }
   pluguzuState.mutex.unlock();
 }
