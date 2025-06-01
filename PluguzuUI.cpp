@@ -47,6 +47,7 @@ protected:
       return;
     }
 
+    int offset = 0;
     ImGuiWindowFlags flags =
         ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize;
     ImGui::SetNextWindowPos(ImVec2(0, 0));
@@ -57,10 +58,10 @@ protected:
       else {
         // Font size controller
         if (ImGui::Button("+"))
-          updateFont(2);
+          offset = 2;
         ImGui::SameLine();
         if (ImGui::Button(" - "))
-          updateFont(-2);
+          offset = -2;
         ImGui::SameLine();
 
         // Status line
@@ -75,10 +76,14 @@ protected:
     }
 
     ImGui::End();
+
+    if (offset != 0) {
+      updateFont(offset);
+    }
   }
 
-  void updateFont(float offset) {
-    float newSize = std::max((float)2, ImGui::GetFontSize() + offset);
+  void updateFont(int offset) {
+    float newSize = std::min((float)42, std::max((float)2, ImGui::GetFontSize() + (float)offset));
     setFontSize(round(newSize));
   }
 
