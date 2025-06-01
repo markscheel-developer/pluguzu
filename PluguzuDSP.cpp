@@ -29,7 +29,7 @@ START_NAMESPACE_DISTRHO
 // --------------------------------------------------------------------------------------------------------------------
 
 PluguzuPlugin::PluguzuPlugin()
-    : Plugin(0, 0, 1), // parameters, programs, states
+    : Plugin(0, sizeof(uzu_programs) / sizeof(uzu_programs[0]), 1), // parameters, programs, states
       Runner("PluguzuRenderer"), lastStartFraction(0.0), currentPos(0),
       currentStartBar(-1), currentCount(0) {
   pluguzuState.isPlaying = false;
@@ -37,6 +37,14 @@ PluguzuPlugin::PluguzuPlugin()
   pluguzuState.haskellState = pluguzuNew();
   pluguzuState.nextCount = 0;
   pluguzuState.currentBar = 0;
+}
+
+void PluguzuPlugin::initProgramName(uint32_t index, String &name) {
+  name = uzu_programs[index].name;
+}
+
+void PluguzuPlugin::loadProgram(uint32_t index) {
+  setState("uzu-code", uzu_programs[index].code);
 }
 
 void PluguzuPlugin::initState(uint32_t index, State &state) {

@@ -54,6 +54,6 @@ ldd ~/.vst/pluguzu-vst.so | grep "not found"
 - [x] Investigate using a dedicated rendering thread with mutex.
 - [ ] Update text editor language def to support Haskell syntax.
 - [ ] Handle MIDI CC and sound event, for example by mapping common drum machine samples to their usual notes.
-- [ ] Presets with popular patterns to help getting started.
+- [x] Presets with popular patterns to help getting started.
 - [ ] Global values, for example to share a scale between multiple plugin instance.
 - [ ] Package the plugin dependencies (e.g. the libpluguzu.so and libHSrts) so that it works out of the box.

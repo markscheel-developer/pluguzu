@@ -12,6 +12,18 @@
 // The Haskell state wrapper export
 #include "Pluguzu_stub.h"
 
+// The default programs
+struct uzu_program {
+  const char *name;
+  const char *code;
+};
+
+const uzu_program uzu_programs[] = {
+  {"Default", "-- welcome"},
+  {"Scales", "n \"[0 .. 24]\""},
+};
+// --
+
 class PluguzuUI;
 
 static const uint32_t maxMidiEvents = 512;
@@ -60,6 +72,9 @@ protected:
 
   void initState(uint32_t index, State &state) override;
   void setState(const char *, const char *) override;
+
+  void initProgramName(uint32_t, String&) override;
+  void loadProgram(uint32_t) override;
 
   // ----------------------------------------------------------------------------------------------------------------
   // Audio/MIDI Processing

@@ -40,6 +40,10 @@ protected:
     editor.SetText(value);
   }
 
+  void programLoaded(uint32_t index) override {
+    stateChanged("uzu-code", uzu_programs[index].code);
+  }
+
   void onImGuiDisplay() override {
     if (pluguzuState == nullptr) {
       // The idle callback usually sets the pointer before the display,
