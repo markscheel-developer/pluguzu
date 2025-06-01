@@ -84,7 +84,7 @@ void PluguzuPlugin::setState(const char *key, const char *value) {
 
     // tell the host that the state change, unfortunately, that doesn't tell
     // REAPER that the project can be saved.
-    updateStateValue("uzu-code", value);
+    // updateStateValue("uzu-code", value);
   }
   pluguzuState.mutex.unlock();
 }
