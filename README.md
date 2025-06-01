@@ -52,7 +52,7 @@ ldd ~/.vst/pluguzu-vst.so | grep "not found"
 - [x] Handle transport pause/jump.
 - [x] Display status and parse error.
 - [x] Investigate using a dedicated rendering thread with mutex.
-- [ ] Update text editor language def to support Haskell syntax.
+- [x] Update text editor language def to support Haskell syntax.
 - [ ] Handle MIDI CC and sound event, for example by mapping common drum machine samples to their usual notes.
 - [x] Presets with popular patterns to help getting started.
 - [ ] Global values, for example to share a scale between multiple plugin instance.
