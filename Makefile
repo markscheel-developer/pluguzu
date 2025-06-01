@@ -49,6 +49,7 @@ haskell-lib:
 
 TARGETS += clap
 TARGETS += vst2
+TARGETS += vst3
 
 all: haskell-lib $(TARGETS)
 
@@ -60,6 +61,11 @@ install-vst2:
 	@mkdir -p ~/.vst
 	@ln -sf $(PWD)/bin/libpluguzu.so $(PWD)/bin/pluguzu-vst.so ~/.vst
 
+install-vst3:
+	@mkdir -p ~/.vst3
+	@ln -sf $(PWD)/bin/pluguzu.vst3 ~/.vst3
+	@ln -sf $(PWD)/bin/libpluguzu.so bin/pluguzu.vst3/Contents/x86_64-linux
+
 install-clap:
 	@mkdir -p ~/.clap
 	@ln -sf $(PWD)/bin/libpluguzu.so $(PWD)/bin/pluguzu.clap ~/.clap
@@ -67,7 +73,7 @@ install-clap:
 # backward compat
 install-vst: install-vst2
 
-install: install-vst2 install-clap
+install: install-vst2 install-vst3 install-clap
 
 
 # --------------------------------------------------------------
