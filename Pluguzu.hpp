@@ -58,6 +58,7 @@ START_NAMESPACE_DISTRHO
 class PluguzuPlugin : public Plugin, public Runner {
 public:
   PluguzuPlugin();
+  ~PluguzuPlugin() override;
 
 protected:
   // ----------------------------------------------------------------------------------------------------------------

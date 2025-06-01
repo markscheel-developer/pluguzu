@@ -3,7 +3,10 @@
 
 #include "Pluguzu.hpp"
 
-extern "C" void pluguzu_init(void);
+extern "C" {
+void pluguzu_init(void);
+void pluguzu_exit(void);
+}
 
 void doRenderNextBar(pluguzu_state *pluguzuState, int32_t bar) {
   pluguzuState->nextCount =
@@ -261,14 +264,20 @@ void PluguzuPlugin::sendMidiEvent(double startFraction,
 
 // --------------------------------------------------------------------------------------------------------------------
 
-bool is_init = false;
+static uint32_t count = 0;
 
 Plugin *createPlugin() {
-  if (!is_init) {
+  if (!count) {
     pluguzu_init();
-    is_init = true;
   }
+  count++;
   return new PluguzuPlugin();
+}
+
+PluguzuPlugin::~PluguzuPlugin() {
+  if (!--count) {
+    pluguzu_exit();
+  }
 }
 
 // --------------------------------------------------------------------------------------------------------------------
