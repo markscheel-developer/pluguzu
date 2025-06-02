@@ -51,10 +51,12 @@ class PluguzuUI : public UI {
 public:
   PluguzuUI()
       : UI(DISTRHO_UI_DEFAULT_WIDTH, DISTRHO_UI_DEFAULT_HEIGHT, true),
-        fResizeHandle(this) {
+        fResizeHandle(this), fontSize(15) {
     setGeometryConstraints(80, 60);
     editor.SetLanguageDefinition(UZULang());
     textChangedState = false;
+    // Ensure font is the right size.
+    updateFont(0);
     pluguzuState = nullptr;
   }
 
@@ -117,9 +119,8 @@ protected:
   }
 
   void updateFont(int offset) {
-    float newSize = std::min(
-        (float)42, std::max((float)2, ImGui::GetFontSize() + (float)offset));
-    setFontSize(round(newSize));
+    fontSize = std::min(42, std::max(2, fontSize + offset));
+    setFontSize(fontSize);
   }
 
   // ----------------------------------------------------------------------------------------------------------------
@@ -164,6 +165,7 @@ private:
   bool textChangedState;
   bool textChanged = false;
   ResizeHandle fResizeHandle;
+  int fontSize;
 
   DISTRHO_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PluguzuUI)
 };
