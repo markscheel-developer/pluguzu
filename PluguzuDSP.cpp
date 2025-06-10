@@ -8,20 +8,22 @@ void pluguzu_init(void);
 void pluguzu_exit(void);
 }
 
+// doRenderNextBar updates the background buffer.
 void doRenderNextBar(pluguzu_state *pluguzuState, int32_t bar) {
   pluguzuState->nextCount =
       pluguzuRender(pluguzuState->haskellState, bar, bar + 4,
                     (HsPtr)pluguzuState->nextEvents);
   if (pluguzuState->nextCount > 512) {
     // TODO: increase the buffer size?
-    printf("Too many events rendered: %d\n", pluguzuState->nextCount);
+    pluguzu_debug("Too many events rendered: %d", pluguzuState->nextCount);
     pluguzuState->nextCount = 512;
   }
   pluguzuState->nextStartBar = bar;
 }
 
 void renderNextBar(pluguzu_state *pluguzuState, int32_t bar) {
-  printf("Rendering next bar %d...\n", bar);
+  pluguzu_debug("Rendering next bar %d (currentBar %d)...", bar,
+                pluguzuState->currentBar);
   pluguzuState->mutex.lock();
   doRenderNextBar(pluguzuState, bar);
   pluguzuState->mutex.unlock();
@@ -66,7 +68,7 @@ void PluguzuPlugin::setState(const char *key, const char *value) {
   if (std::strcmp(key, "uzu-code") != 0)
     return;
 
-  printf("Updating code to --[%s]--\n", value);
+  pluguzu_debug("Updating code to --[%s]--", value);
   pluguzuState.mutex.lock();
   pluguzuParse(pluguzuState.haskellState, (HsPtr)value);
   const char *err = (const char *)pluguzuError(pluguzuState.haskellState);
@@ -75,12 +77,15 @@ void PluguzuPlugin::setState(const char *key, const char *value) {
     pluguzuState.error = err;
   } else {
     pluguzuState.error.clear();
-    if (pluguzuState.nextStartBar == currentStartBar)
-      // The update happened before the next bar was rendered, so let's render
-      // it now.
-      pluguzuState.nextStartBar += 4;
-    // otherwise we can override the previously rendered bar.
-    doRenderNextBar(&pluguzuState, pluguzuState.nextStartBar);
+    // We'll override the last background buffer.
+    int32_t nextBar = pluguzuState.nextStartBar;
+    if (pluguzuState.nextStartBar == currentStartBar) {
+      // This is odd: the code was updated after the background buffer was
+      // copied, but before it got updated. In that situation, we can create the
+      // next background buffer.
+      nextBar += 4;
+    }
+    doRenderNextBar(&pluguzuState, nextBar);
 
     // tell the host that the state change, unfortunately, that doesn't tell
     // REAPER that the project can be saved.
@@ -91,7 +96,8 @@ void PluguzuPlugin::setState(const char *key, const char *value) {
 
 bool PluguzuPlugin::run() {
   if (currentStartBar == pluguzuState.nextStartBar) {
-    printf("Rendering next bar in the background!\n");
+    pluguzu_debug("Rendering next bar in the background (currentStartBar %d)!",
+                  currentStartBar);
     renderNextBar(&pluguzuState, pluguzuState.nextStartBar + 4);
   }
   return pluguzuState.isPlaying;
@@ -134,21 +140,23 @@ void PluguzuPlugin::run(const float ** /* inputs */, float ** /* outputs */,
   if (!timePos.playing || !timePos.bbt.valid)
     return;
   if (!isRunnerActive())
-    startRunner(1000);
+    startRunner(500);
 
   int32_t currentBar = timePos.bbt.bar - 1;
   pluguzuState.currentBar = currentBar;
 
   // We are out of sync, we need a new render now
-  if ((currentBar < currentStartBar || currentBar >= currentStartBar + 4) &&
+  if ((currentBar < currentStartBar || currentBar > currentStartBar + 4) &&
       currentBar != pluguzuState.nextStartBar) {
-    printf("We are out of sync and the current bar is not pre-rendered\n");
+    pluguzu_debug("Rendering (currentBar: %d) in the foreground!", currentBar);
     renderNextBar(&pluguzuState, currentBar);
   }
 
   if (pluguzuState.nextStartBar != currentStartBar &&
       pluguzuState.nextStartBar == currentBar) {
-    printf("A new bar begin %d!\n", currentBar);
+    pluguzu_debug("A new bar begin (currentBar: %d, currentStartBar: %d, "
+                  "nextStartBar: %d)!",
+                  currentBar, currentStartBar, pluguzuState.nextStartBar);
 
     // TODO: requeue any left-over noteOff events
     // e.g. notes that ends after the buffer boundary must be taken care of...
@@ -169,7 +177,9 @@ void PluguzuPlugin::run(const float ** /* inputs */, float ** /* outputs */,
   double stopFraction = startFraction + runFraction;
 
   if (startFraction < lastStartFraction) {
-    printf("Went back in time?!\n");
+    pluguzu_debug(
+        "Went back in time (startFraction: %f, lastStartFaction: %f)?!",
+        startFraction, lastStartFraction);
     currentPos = 0;
   }
   lastStartFraction = startFraction;
@@ -189,8 +199,8 @@ void PluguzuPlugin::run(const float ** /* inputs */, float ** /* outputs */,
   // printf("Start/stop: %.6f -- %.6f\n", startFraction, stopFraction);
 
   // if (currentPos < 2) {
-  //   printf("Bar per sec: %f, frames: %d, start: %f, stop: %f\n", barPerSec,
-  //   frames, startFraction, stopFraction);
+  //   pluguzu_debug("Bar per sec: %f, frames: %d, start: %f, stop: %f",
+  //   barPerSec, frames, startFraction, stopFraction);
   // }
 
   for (; currentPos < currentCount; currentPos++) {
@@ -204,31 +214,37 @@ void PluguzuPlugin::run(const float ** /* inputs */, float ** /* outputs */,
         currentEvents[currentPos].velocity != 0) {
       // We somehow missed a tick, or perhaps the host fast forward to a new
       // bar.
-      printf("Drop event! (current %.3f -- %.3f -- %.3f)\n", startFraction,
-             eventFraction, stopFraction);
+      pluguzu_debug("Drop event! (%.3f -- %.3f -- %.3f)", startFraction,
+                    eventFraction, stopFraction);
       continue;
     }
-    printf("%.3f: Sending event %.3f %d\n", startFraction,
-           currentEvents[currentPos].time, currentEvents[currentPos].velocity);
+    pluguzu_debug("%.3f: Sending event %.3f %d", startFraction,
+                  currentEvents[currentPos].time,
+                  currentEvents[currentPos].velocity);
     sendMidiEvent(startFraction, framesPerFraction, currentPos);
   }
 
-  if (stopFraction > static_cast<double>(currentStartBar + 4)) {
+  if (stopFraction + std::numeric_limits<double>::epsilon() >
+      static_cast<double>(currentStartBar + 4)) {
     // The current run overlapped with the end of the rendered bar, e.g. it
     // was 3.99 -- 4.01
-    int32_t stopBar = std::lround(stopFraction);
+    int32_t stopBar = std::floor(stopFraction);
     if (pluguzuState.nextStartBar != stopBar) {
       // The next bar is not ready.
-      printf("Weird, the next bar is not ready!\n");
+      pluguzu_debug("Weird, the next bar is not ready!");
       renderNextBar(&pluguzuState, stopBar);
+    } else {
+      pluguzu_debug("Current run overlapped with next bar (stopFraction: %f, "
+                    "stopBar: %d)...",
+                    stopFraction, stopBar);
     }
     syncEvents();
     for (; currentPos < currentCount; currentPos++) {
       if (currentEvents[currentPos].time > stopFraction)
         break;
-      printf("%.3f: Sending event %.3f %d\n", startFraction,
-             currentEvents[currentPos].time,
-             currentEvents[currentPos].velocity);
+      pluguzu_debug("%.3f: Sending event %.3f %d", startFraction,
+                    currentEvents[currentPos].time,
+                    currentEvents[currentPos].velocity);
       sendMidiEvent(startFraction, framesPerFraction, currentPos);
     }
   }
@@ -237,6 +253,9 @@ void PluguzuPlugin::run(const float ** /* inputs */, float ** /* outputs */,
 void PluguzuPlugin::syncEvents() {
   // Copy the midi events from the pluguzuState
   currentPos = 0;
+  pluguzu_debug(
+      "Copying background buffer (nextStartBar: %d, currentStartBar: %d)",
+      pluguzuState.nextStartBar, currentStartBar);
   pluguzuState.mutex.lock();
   currentCount = pluguzuState.nextCount;
   memcpy(currentEvents, pluguzuState.nextEvents,
@@ -246,7 +265,7 @@ void PluguzuPlugin::syncEvents() {
   /*
   // debug the loaded event
   for (uint32_t i = 0; i < currentCount; i++) {
-    printf(" Next event at %.3f %d %d\n", currentEvents[i].time,
+    pluguzu_debug(" Next event at %.3f %d %d\n", currentEvents[i].time,
            currentEvents[i].pitch, currentEvents[i].velocity);
   }
   */

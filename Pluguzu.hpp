@@ -12,6 +12,9 @@
 // The Haskell state wrapper export
 #include "Pluguzu_stub.h"
 
+// Set to 0 to disable printf debug
+#define PLUGUZU_DEBUG 1
+
 // The default programs
 struct uzu_program {
   const char *name;
@@ -50,6 +53,13 @@ struct pluguzu_state {
   uint32_t nextCount;
   midiEvent nextEvents[maxMidiEvents];
 };
+
+#define pluguzu_debug(fmt, ...)                                                \
+  do {                                                                         \
+    if (PLUGUZU_DEBUG) {                                                       \
+      printf("[pluguzu] " fmt "\n", ##__VA_ARGS__);                            \
+    }                                                                          \
+  } while (0)
 
 START_NAMESPACE_DISTRHO
 
