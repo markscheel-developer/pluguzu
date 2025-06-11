@@ -113,9 +113,9 @@ double getBarFraction(const TimePosition::BarBeatTick *bbt) {
 
 // Compute how long a run time last in term of bar fraction.
 double getRunFraction(double runTime, const TimePosition::BarBeatTick *bbt) {
-  double beatPerSec = bbt->beatsPerMinute / 60;
-  double barPerSec = beatPerSec * bbt->beatType / bbt->beatsPerBar;
-  return runTime / barPerSec;
+  double beatPerSec = 60 / bbt->beatsPerMinute;
+  double barLength = beatPerSec * bbt->beatsPerBar;
+  return runTime / barLength;
 }
 
 void PluguzuPlugin::run(const float ** /* inputs */, float ** /* outputs */,
