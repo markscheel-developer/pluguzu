@@ -36,8 +36,8 @@ START_NAMESPACE_DISTRHO
 PluguzuPlugin::PluguzuPlugin()
     : Plugin(0, sizeof(uzu_programs) / sizeof(uzu_programs[0]),
              1), // parameters, programs, states
-      Runner("PluguzuRenderer"), lastStartFraction(0.0), currentPos(0),
-      currentStartBar(-1), currentCount(0) {
+      Runner("PluguzuRenderer"), lastStartFraction(0.0), lastStopFraction(0.0),
+      currentPos(0), currentStartBar(-1), currentCount(0) {
   pluguzuState.isPlaying = false;
   pluguzuState.nextStartBar = 0;
   pluguzuState.haskellState = pluguzuNew();
@@ -175,6 +175,14 @@ void PluguzuPlugin::run(const float ** /* inputs */, float ** /* outputs */,
   double startFraction = getBarFraction(&timePos.bbt);
   double runFraction = getRunFraction(frames / getSampleRate(), &timePos.bbt);
   double stopFraction = startFraction + runFraction;
+
+  if (lastStopFraction > 0 &&
+      std::abs(startFraction - lastStopFraction) > 0.0001) {
+    pluguzu_debug(
+        "Buffer start/end time don't align: previous was %f - %f, new is %f %f",
+        lastStartFraction, lastStopFraction, startFraction, stopFraction);
+  }
+  lastStopFraction = stopFraction;
 
   if (startFraction < lastStartFraction) {
     pluguzu_debug(

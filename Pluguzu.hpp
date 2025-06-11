@@ -105,6 +105,7 @@ protected:
 private:
   pluguzu_state pluguzuState;
   double lastStartFraction;
+  double lastStopFraction;
   uint32_t currentPos;
   int32_t currentStartBar;
   uint32_t currentCount;
