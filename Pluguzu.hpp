@@ -106,6 +106,7 @@ private:
   pluguzu_state pluguzuState;
   double lastStartFraction;
   double lastStopFraction;
+  double lastTick;
   uint32_t currentPos;
   int32_t currentStartBar;
   uint32_t currentCount;

@@ -37,7 +37,7 @@ PluguzuPlugin::PluguzuPlugin()
     : Plugin(0, sizeof(uzu_programs) / sizeof(uzu_programs[0]),
              1), // parameters, programs, states
       Runner("PluguzuRenderer"), lastStartFraction(0.0), lastStopFraction(0.0),
-      currentPos(0), currentStartBar(-1), currentCount(0) {
+      lastTick(-1), currentPos(0), currentStartBar(-1), currentCount(0) {
   pluguzuState.isPlaying = false;
   pluguzuState.nextStartBar = 0;
   pluguzuState.haskellState = pluguzuNew();
@@ -176,12 +176,22 @@ void PluguzuPlugin::run(const float ** /* inputs */, float ** /* outputs */,
   double runFraction = getRunFraction(frames / getSampleRate(), &timePos.bbt);
   double stopFraction = startFraction + runFraction;
 
-  if (lastStopFraction > 0 &&
-      std::abs(startFraction - lastStopFraction) > 0.0001) {
+  if (std::abs(lastTick - timePos.bbt.tick) < 0.00001) {
     pluguzu_debug(
-        "Buffer start/end time don't align: previous was %f - %f, new is %f %f",
-        lastStartFraction, lastStopFraction, startFraction, stopFraction);
+        "The host time position didn't move since the last callback (previous "
+        "was %f %f - %f, new is %f %f - %f). We adjust the time nonetheless.",
+        lastTick, lastStartFraction, lastStopFraction, timePos.bbt.tick,
+        startFraction, stopFraction);
+    startFraction = lastStopFraction;
+    stopFraction = lastStopFraction + runFraction;
+  } else if (lastStopFraction > 0 &&
+             std::abs(startFraction - lastStopFraction) > 0.0001) {
+    pluguzu_debug("Buffer start/end time don't align: previous was %f - %f, "
+                  "new is %f - %f",
+                  lastStartFraction, lastStopFraction, startFraction,
+                  stopFraction);
   }
+  lastTick = timePos.bbt.tick;
   lastStopFraction = stopFraction;
 
   if (startFraction < lastStartFraction) {
