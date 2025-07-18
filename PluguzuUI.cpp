@@ -58,6 +58,11 @@ public:
     // Ensure font is the right size.
     updateFont(0);
     pluguzuState = nullptr;
+    for (int i = 0; i < uzu_presets_count; i++) {
+      for (std::string tag : uzu_programs[i].tags) {
+        selectedTags[tag] = true;
+      }
+    }
   }
 
 protected:
@@ -77,45 +82,91 @@ protected:
   }
 
   void onImGuiDisplay() override {
-    if (pluguzuState == nullptr) {
-      // The idle callback usually sets the pointer before the display,
-      // in case it didn't, let's wait
-      return;
-    }
-
     int offset = 0;
     ImGuiWindowFlags flags =
         ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize;
     ImGui::SetNextWindowPos(ImVec2(0, 0));
     ImGui::SetNextWindowSize(ImVec2(getWidth(), getHeight()));
     if (ImGui::Begin("TextEdit", nullptr, flags)) {
-      if (pluguzuState == nullptr)
-        ImGui::Text("Disconnected :(");
-      else {
-        // Font size controller
-        if (ImGui::Button("+"))
-          offset = 2;
-        ImGui::SameLine();
-        if (ImGui::Button(" - "))
-          offset = -2;
-        ImGui::SameLine();
-
-        // Status line
-        ImGui::Text(
-            " %s %d | %d events | %s", pluguzuState->isPlaying ? ">>=" : "|-|",
-            pluguzuState->nextStartBar - pluguzuState->currentBar,
-            pluguzuState->nextCount,
-            pluguzuState->error.length() > 0 ? pluguzuState->error.buffer()
-                                             : "OK");
+      if (showPresetSelector) {
+        displayPresetSelector();
+      } else {
+        displayEditor(&offset);
       }
-      editor.Render("TextEditor");
     }
-
     ImGui::End();
 
     if (offset != 0) {
       updateFont(offset);
     }
+  }
+
+  void displayPresetSelector() {
+    for (auto &tag : selectedTags) {
+      ImGui::SameLine();
+      ImGui::Checkbox(tag.first.c_str(), &tag.second);
+    }
+    if (ImGui::BeginListBox("", ImVec2(-FLT_MIN, 17 * ImGui::GetTextLineHeightWithSpacing()))) {
+      for (int i = 0; i < uzu_presets_count; i++) {
+        bool is_visible = false;
+        for (std::string tag : uzu_programs[i].tags) {
+          if (selectedTags[tag]) {
+            is_visible = true;
+            break;
+          }
+        }
+        if (!is_visible)
+          continue;
+        const bool is_selected = (selectedPreset == i);
+        if (ImGui::Selectable(uzu_programs[i].name, is_selected))
+          selectedPreset = i;
+        // Set the initial focus when opening the combo (scrolling + keyboard
+        // navigation focus)
+        if (is_selected)
+          ImGui::SetItemDefaultFocus();
+      }
+      ImGui::EndListBox();
+    }
+
+    if (ImGui::Button("Load")) {
+      stateChanged("uzu-code", uzu_programs[selectedPreset].code);
+      showPresetSelector = false;
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Cancel"))
+      showPresetSelector = false;
+  }
+
+  void displayEditor(int *offset) {
+    if (pluguzuState == nullptr) {
+      // The idle callback usually sets the pointer before the display,
+      // in case it didn't, let's wait
+      return;
+    }
+
+    if (pluguzuState == nullptr)
+      ImGui::Text("Disconnected :(");
+    else {
+      // Font size controller
+      if (ImGui::Button("+"))
+        *offset = 2;
+      ImGui::SameLine();
+      if (ImGui::Button(" - "))
+        *offset = -2;
+      ImGui::SameLine();
+      if (ImGui::Button("Load"))
+        showPresetSelector = true;
+      ImGui::SameLine();
+
+      // Status line
+      ImGui::Text(
+          " %s %d | %d events | %s", pluguzuState->isPlaying ? ">>=" : "|-|",
+          pluguzuState->nextStartBar - pluguzuState->currentBar,
+          pluguzuState->nextCount,
+          pluguzuState->error.length() > 0 ? pluguzuState->error.buffer()
+                                           : "OK");
+    }
+    editor.Render("TextEditor");
   }
 
   void updateFont(int offset) {
@@ -166,6 +217,9 @@ private:
   bool textChanged = false;
   ResizeHandle fResizeHandle;
   int fontSize;
+  bool showPresetSelector = false;
+  std::map<std::string, bool> selectedTags;
+  int selectedPreset = 0;
 
   DISTRHO_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PluguzuUI)
 };

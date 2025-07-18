@@ -34,8 +34,7 @@ START_NAMESPACE_DISTRHO
 // --------------------------------------------------------------------------------------------------------------------
 
 PluguzuPlugin::PluguzuPlugin()
-    : Plugin(0, sizeof(uzu_programs) / sizeof(uzu_programs[0]),
-             1), // parameters, programs, states
+    : Plugin(0, uzu_presets_count, 1), // parameters, programs, states
       Runner("PluguzuRenderer"), lastStartFraction(0.0), lastStopFraction(0.0),
       lastTick(-1), currentPos(0), currentStartBar(-1), currentCount(0) {
   pluguzuState.isPlaying = false;

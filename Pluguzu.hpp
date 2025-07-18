@@ -12,6 +12,9 @@
 // The Haskell state wrapper export
 #include "Pluguzu_stub.h"
 
+#include <string>
+#include <vector>
+
 // Set to 0 to disable printf debug
 #define PLUGUZU_DEBUG 1
 
@@ -19,12 +22,14 @@
 struct uzu_program {
   const char *name;
   const char *code;
+  const std::vector<std::string> tags;
 };
 
 const uzu_program uzu_programs[] = {
-    {"Default", "-- welcome"},
-    {"Scales", "n \"[0 .. 24]\""},
+    {"Default", "-- welcome", {"comment"}},
+    {"Scales", "n \"[0 .. 24]\"", {"demo"}},
 };
+const int uzu_presets_count = sizeof(uzu_programs) / sizeof(uzu_programs[0]);
 // --
 
 class PluguzuUI;
