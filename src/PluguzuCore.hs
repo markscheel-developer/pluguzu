@@ -15,12 +15,13 @@ module PluguzuCore (
 )
 where
 
+import Control.Applicative ((<|>))
 import Control.Monad (forM_)
 import Data.Coerce (coerce)
 import Data.Int (Int8)
 import Data.List (sortOn)
 import Data.Map.Strict qualified as Map
-import Data.Maybe (mapMaybe)
+import Data.Maybe (fromMaybe, mapMaybe)
 import Foreign.Storable qualified as Storable
 import Foreign.Storable.Generic (GStorable)
 import GHC.Generics (Generic)
@@ -35,8 +36,8 @@ import Sound.Tidal.Time qualified as Time
 
 standalone :: IO ()
 standalone =
-    forM_ (patternToNotes testPattern firstBar) $ \(arc, note) -> do
-        print (midiNote note, rat2float $ Time.start arc, rat2float $ Time.stop arc)
+    forM_ (patternToNotes testPattern firstBar) $ \(arc, note, velocity) -> do
+        print (midiNote note, velocity, rat2float $ Time.start arc, rat2float $ Time.stop arc)
 
 rat2float :: Rational -> Double
 rat2float = fromRational
@@ -65,21 +66,30 @@ patternToEvents pat arc = sortOn barFraction $ concatMap eventToMidi $ Pattern.q
 eventToMidi :: Pattern.Event Pattern.ValueMap -> [MidiEvent]
 eventToMidi ev = case eventToNote ev of
     Nothing -> []
-    Just (arc, note) ->
+    Just (arc, note, velocity) ->
         let pitch = midiNote note
             start = rat2float (Pattern.start arc)
             stop_ = rat2float (Pattern.stop arc)
-         in [ MidiEvent start pitch 100
+         in [ MidiEvent start pitch velocity
             , MidiEvent stop_ pitch 0
             ]
 
-patternToNotes :: Pattern.ControlPattern -> Time.Arc -> [(Time.Arc, Pattern.Note)]
+patternToNotes :: Pattern.ControlPattern -> Time.Arc -> [(Time.Arc, Pattern.Note, Int8)]
 patternToNotes pat arc = mapMaybe eventToNote $ sortOn (Pattern.start . Pattern.part) $ Pattern.queryArc pat arc
 
-eventToNote :: Pattern.Event Pattern.ValueMap -> Maybe (Time.Arc, Pattern.Note)
+eventToNote :: Pattern.Event Pattern.ValueMap -> Maybe (Time.Arc, Pattern.Note, Int8)
 eventToNote ev = do
     note <- Pattern.getN =<< Map.lookup "n" ev.value
-    pure (Pattern.wholeOrPart ev, note)
+    pure (Pattern.wholeOrPart ev, note, v)
+  where
+    v = fromIntegral $ max 0 $ min 127 $ round $ fromMaybe 100 mVelocity
+    mVelocity :: Maybe Double
+    mVelocity = getF "velocity" <|> (ampToVel <$> getF "amp") <|> (gainToVel <$> getF "gain")
+    getF name = Map.lookup name ev.value >>= Pattern.getF
+
+    -- Based on https://tidalcycles.org/docs/configuration/MIDIOSC/midi/#velocity
+    ampToVel amp = 127 * amp
+    gainToVel gain = 127 * (gain - 0.3) ** 2.5
 
 firstBar :: Time.Arc
 firstBar = Time.Arc 0 4
