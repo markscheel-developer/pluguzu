@@ -4,14 +4,12 @@ module PluguzuCore (
     patternToEvents,
     mkArc,
     MidiEvent,
+    SoundMap,
 
     -- * re-export
     Pattern.ControlPattern,
     Time.Arc (..),
     Parse.parseTidal,
-
-    -- * debug
-    standalone,
 )
 where
 
@@ -34,10 +32,7 @@ import Sound.Tidal.Time qualified as Time
 -- import Sound.Tidal.Link qualified as Link
 -- import Sound.Tidal.Stream.Process qualified as Process
 
-standalone :: IO ()
-standalone =
-    forM_ (patternToNotes testPattern firstBar) $ \(arc, note, velocity) -> do
-        print (midiNote note, velocity, rat2float $ Time.start arc, rat2float $ Time.stop arc)
+type SoundMap = Map.Map String Int8
 
 rat2float :: Rational -> Double
 rat2float = fromRational
@@ -60,28 +55,29 @@ data MidiEvent = MidiEvent
 
 instance GStorable MidiEvent
 
-patternToEvents :: Pattern.ControlPattern -> Time.Arc -> [MidiEvent]
-patternToEvents pat arc = sortOn barFraction $ concatMap eventToMidi $ Pattern.queryArc pat arc
+patternToEvents :: SoundMap -> Pattern.ControlPattern -> Time.Arc -> [MidiEvent]
+patternToEvents sm pat arc = sortOn barFraction $ concatMap (eventToMidi sm) $ Pattern.queryArc pat arc
 
-eventToMidi :: Pattern.Event Pattern.ValueMap -> [MidiEvent]
-eventToMidi ev = case eventToNote ev of
+eventToMidi :: SoundMap -> Pattern.Event Pattern.ValueMap -> [MidiEvent]
+eventToMidi sm ev = case eventToNote sm ev of
     Nothing -> []
-    Just (arc, note, velocity) ->
-        let pitch = midiNote note
-            start = rat2float (Pattern.start arc)
+    Just (arc, pitch, velocity) ->
+        let start = rat2float (Pattern.start arc)
             stop_ = rat2float (Pattern.stop arc)
          in [ MidiEvent start pitch velocity
             , MidiEvent stop_ pitch 0
             ]
 
-patternToNotes :: Pattern.ControlPattern -> Time.Arc -> [(Time.Arc, Pattern.Note, Int8)]
-patternToNotes pat arc = mapMaybe eventToNote $ sortOn (Pattern.start . Pattern.part) $ Pattern.queryArc pat arc
-
-eventToNote :: Pattern.Event Pattern.ValueMap -> Maybe (Time.Arc, Pattern.Note, Int8)
-eventToNote ev = do
-    note <- Pattern.getN =<< Map.lookup "n" ev.value
+eventToNote :: SoundMap -> Pattern.Event Pattern.ValueMap -> Maybe (Time.Arc, Int8, Int8)
+eventToNote sm ev = do
+    note <- midiNote <$> noteEvent <|> soundEvent
     pure (Pattern.wholeOrPart ev, note, v)
   where
+    noteEvent = Pattern.getN =<< Map.lookup "n" ev.value
+    soundEvent = do
+        s <- Pattern.getS =<< Map.lookup "s" ev.value
+        pure $ fromMaybe 72 $ Map.lookup s sm
+
     v = fromIntegral $ max 0 $ min 127 $ round $ fromMaybe 100 mVelocity
     mVelocity :: Maybe Double
     mVelocity = getF "velocity" <|> (ampToVel <$> getF "amp") <|> (gainToVel <$> getF "gain")

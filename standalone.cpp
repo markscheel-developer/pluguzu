@@ -19,6 +19,8 @@ int main(int argc, const char **argv) {
   pluguzu_init();
   auto state = pluguzuNew();
   const char *code = argc > 1 ? argv[1] : "n \"[c3 f3]\"";
+  pluguzuSoundMap(state, (HsPtr)"bd", 42);
+  pluguzuSoundMap(state, (HsPtr)"sd", 23);
   pluguzuParse(state, (HsPtr)code);
   const char *err = (char *)pluguzuError(state);
   if (err != NULL) {

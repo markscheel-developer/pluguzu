@@ -48,12 +48,11 @@ ldd ~/.vst/pluguzu-vst.so | grep "not found"
 - [x] Setup Haskell RTS and demonstrate function call from the DAW.
 - [x] Parse tidal pattern from the plugin text editor UI.
 - [x] Render the midi events and submit them from the plugin DSP.
-- [x] Passthrough midi events.
 - [x] Handle transport pause/jump.
 - [x] Display status and parse error.
-- [x] Investigate using a dedicated rendering thread with mutex.
 - [x] Update text editor language def to support Haskell syntax.
-- [ ] Handle MIDI CC and sound event, for example by mapping common drum machine samples to their usual notes.
-- [x] Presets with popular patterns to help getting started.
+- [ ] Add UI/config-file to define custom sound to note mapping, e.g. for "bd", "sd", ...
+- [ ] Add config-file to define preset pattern to help getting started.
+- [ ] Handle MIDI CC
 - [ ] Global values, for example to share a scale between multiple plugin instance.
 - [ ] Package the plugin dependencies (e.g. the libpluguzu.so and libHSrts) so that it works out of the box.
