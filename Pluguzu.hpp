@@ -56,6 +56,8 @@ struct pluguzu_state {
 
   std::map<std::string, uint8_t> soundMap;
 
+  std::string soundMapFile;
+
   // The next bar pre-rendered, ready to be copied by the run callback
   Mutex mutex;
   int32_t nextStartBar;

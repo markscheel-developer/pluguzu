@@ -12,16 +12,38 @@
 
 #include <fstream>
 #include <iostream>
+#include <sys/stat.h>
 
-void loadSoundMap(std::map<std::string, uint8_t> *map) {
-  // TODO: load from user setting file
-  (*map)["bd"] = 42;
+void loadSoundMap(const char *fp, std::map<std::string, uint8_t> *map) {
+  struct stat buffer;
+  if (stat(fp, &buffer) == 0) {
+    pluguzu_debug("%s: loading soundmap", fp);
+    std::ifstream ConfFile(fp);
+    std::string line;
+    while (std::getline(ConfFile, line)) {
+      auto sep = line.find(" = ");
+      std::string key = line.substr(0, sep);
+      std::string value = line.substr(sep + 3);
+      (*map)[key] = std::stoi(value);
+    }
+  }
+  if (map->empty()) {
+    // Defaults from https://x42-plugins.com/x42/x42-avldrums
+    (*map)["bd"] = 36;
+    (*map)["sd"] = 37;
+    (*map)["clap"] = 39;
+    (*map)["lt"] = 41;
+    (*map)["hh"] = 42;
+    (*map)["oh"] = 46;
+    (*map)["cb"] = 56;
+  }
 }
 
-void saveSoundMap(std::map<std::string, uint8_t> *map) {
+void saveSoundMap(const char *fp, std::map<std::string, uint8_t> *map) {
   // TODO: serialize to user setting file
+  std::ofstream ofile(fp);
   for (auto &sm : *map) {
-    printf("%s = %d\n", sm.first.c_str(), sm.second);
+    ofile << sm.first << " = " << std::to_string(sm.second) << "\n";
   }
 }
 
@@ -180,7 +202,7 @@ protected:
     }
     if (to_delete) {
       pluguzuState->soundMap.erase(to_delete);
-      saveSoundMap(&pluguzuState->soundMap);
+      saveSoundMap(pluguzuState->soundMapFile.c_str(), &pluguzuState->soundMap);
     }
     ImGui::InputText("SoundName", inputSoundName, IM_ARRAYSIZE(inputSoundName));
     ImGui::InputInt("SoundVal", &inputSoundValue);
@@ -190,7 +212,8 @@ protected:
         pluguzuState->soundMap[inputSoundName] = inputSoundValue;
         pluguzuSoundMap(pluguzuState->haskellState, (HsPtr)inputSoundName,
                         inputSoundValue);
-        saveSoundMap(&pluguzuState->soundMap);
+        saveSoundMap(pluguzuState->soundMapFile.c_str(),
+                     &pluguzuState->soundMap);
         clearInput();
       }
       ImGui::SameLine();
