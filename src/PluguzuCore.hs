@@ -18,6 +18,7 @@ where
 
 import Control.Applicative ((<|>))
 import Control.Monad (forM_)
+import Data.Bits ((.|.))
 import Data.Coerce (coerce)
 import Data.List (sortBy)
 import Data.Map.Strict qualified as Map
@@ -70,15 +71,17 @@ compareEvent e1 e2 = case compare e1.barFraction e2.barFraction of
 
 eventToMidi :: SoundMap -> Pattern.Event Pattern.ValueMap -> [MidiEvent]
 eventToMidi sm ev = case eventToCC ev of
-    Just (ccn, ccv) -> [MidiEvent (rat2float (Pattern.wholeStart ev)) 0xb0 ccn ccv]
+    Just (ccn, ccv) -> [MidiEvent (rat2float (Pattern.wholeStart ev)) (0xb0 .|. chan) ccn ccv]
     Nothing -> case eventToNote sm ev of
         Nothing -> []
         Just (arc, pitch, velocity) ->
             let start = rat2float (Pattern.start arc)
                 stop_ = rat2float (Pattern.stop arc)
-             in [ MidiEvent start 0x90 pitch velocity
-                , MidiEvent stop_ 0x80 pitch 0
+             in [ MidiEvent start (0x90 .|. chan) pitch velocity
+                , MidiEvent stop_ (0x80 .|. chan) pitch 0
                 ]
+  where
+    chan = (+ 1) $ round $ max 0 $ min 15 $ fromMaybe 0 $ Pattern.getF =<< Map.lookup "midichan" ev.value
 
 eventToCC :: Pattern.Event Pattern.ValueMap -> Maybe (Word8, Word8)
 eventToCC ev = do

@@ -29,8 +29,7 @@ void renderNextBar(pluguzu_state *pluguzuState, int32_t bar) {
   pluguzuState->mutex.unlock();
 }
 
-bool isNoteOff(midiEvent *ev) { return ev->d0 == 0x80; }
-bool isNoteOn(midiEvent *ev) { return ev->d0 == 0x90; }
+bool isNoteOff(midiEvent *ev) { return (ev->d0 & 0xF0) == 0x80; }
 
 START_NAMESPACE_DISTRHO
 
@@ -289,13 +288,12 @@ void PluguzuPlugin::syncEvents() {
 
 void PluguzuPlugin::sendMidiEvent(double startFraction,
                                   double framesPerFraction, uint32_t pos) {
-  int8_t chan = 1;
   MidiEvent ev;
   uint32_t offset =
       (currentEvents[pos].time - startFraction) * framesPerFraction;
   ev.frame = offset;
   ev.size = 3;
-  ev.data[0] = currentEvents[pos].d0 | chan;
+  ev.data[0] = currentEvents[pos].d0;
   ev.data[1] = currentEvents[pos].d1;
   ev.data[2] = currentEvents[pos].d2;
   ev.dataExt = NULL;
