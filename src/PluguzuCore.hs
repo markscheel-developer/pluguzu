@@ -73,7 +73,7 @@ eventToNote sm ev = do
     note <- midiNote <$> noteEvent <|> soundEvent
     pure (Pattern.wholeOrPart ev, note, v)
   where
-    noteEvent = Pattern.getN =<< Map.lookup "n" ev.value
+    noteEvent = Pattern.getN =<< (Map.lookup "n" ev.value <|> Map.lookup "note" ev.value <|> Map.lookup "midinote" ev.value)
     soundEvent = do
         s <- Pattern.getS =<< Map.lookup "s" ev.value
         pure $ fromMaybe 72 $ Map.lookup s sm
