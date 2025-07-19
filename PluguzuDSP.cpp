@@ -31,6 +31,8 @@ void renderNextBar(pluguzu_state *pluguzuState, int32_t bar) {
 
 bool isNoteOff(midiEvent *ev) { return (ev->d0 & 0xF0) == 0x80; }
 
+extern void loadSoundMap(std::map<std::string, uint8_t> *map);
+
 START_NAMESPACE_DISTRHO
 
 // --------------------------------------------------------------------------------------------------------------------
@@ -44,6 +46,11 @@ PluguzuPlugin::PluguzuPlugin()
   pluguzuState.haskellState = pluguzuNew(maxMidiEvents);
   pluguzuState.nextCount = 0;
   pluguzuState.currentBar = 0;
+  loadSoundMap(&pluguzuState.soundMap);
+  for (auto &sm : pluguzuState.soundMap) {
+    pluguzuSoundMap(pluguzuState.haskellState, (HsPtr)sm.first.c_str(),
+                    sm.second);
+  }
 }
 
 void PluguzuPlugin::initProgramName(uint32_t index, String &name) {

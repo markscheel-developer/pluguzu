@@ -13,6 +13,18 @@
 #include <fstream>
 #include <iostream>
 
+void loadSoundMap(std::map<std::string, uint8_t> *map) {
+  // TODO: load from user setting file
+  (*map)["bd"] = 42;
+}
+
+void saveSoundMap(std::map<std::string, uint8_t> *map) {
+  // TODO: serialize to user setting file
+  for (auto &sm : *map) {
+    printf("%s = %d\n", sm.first.c_str(), sm.second);
+  }
+}
+
 START_NAMESPACE_DISTRHO
 
 // --------------------------------------------------------------------------------------------------------------------
@@ -52,6 +64,8 @@ public:
   PluguzuUI()
       : UI(DISTRHO_UI_DEFAULT_WIDTH, DISTRHO_UI_DEFAULT_HEIGHT, true),
         fResizeHandle(this), fontSize(15) {
+    inputSoundName[0] = 0;
+    inputSoundValue = 0;
     setGeometryConstraints(80, 60);
     editor.SetLanguageDefinition(UZULang());
     textChangedState = false;
@@ -91,7 +105,16 @@ protected:
       if (showPresetSelector) {
         displayPresetSelector();
       } else {
-        displayEditor(&offset);
+        if (pluguzuState == nullptr) {
+          // The idle callback usually sets the pointer before the display,
+          // in case it didn't, let's wait
+          return;
+        }
+        if (showConfigurator) {
+          displayConfigurator();
+        } else {
+          displayEditor(&offset);
+        }
       }
     }
     ImGui::End();
@@ -106,7 +129,8 @@ protected:
       ImGui::SameLine();
       ImGui::Checkbox(tag.first.c_str(), &tag.second);
     }
-    if (ImGui::BeginListBox("", ImVec2(-FLT_MIN, 17 * ImGui::GetTextLineHeightWithSpacing()))) {
+    if (ImGui::BeginListBox(
+            "", ImVec2(-FLT_MIN, 17 * ImGui::GetTextLineHeightWithSpacing()))) {
       for (int i = 0; i < uzu_presets_count; i++) {
         bool is_visible = false;
         for (std::string tag : uzu_programs[i].tags) {
@@ -136,14 +160,45 @@ protected:
     if (ImGui::Button("Cancel"))
       showPresetSelector = false;
   }
-
-  void displayEditor(int *offset) {
-    if (pluguzuState == nullptr) {
-      // The idle callback usually sets the pointer before the display,
-      // in case it didn't, let's wait
-      return;
+  void clearInput() {
+    inputSoundName[0] = 0;
+    inputSoundValue = 0;
+  }
+  void displayConfigurator() {
+    const char *to_delete = NULL;
+    if (ImGui::BeginListBox("sound map")) {
+      for (auto &sm : pluguzuState->soundMap) {
+        ImGui::PushID(sm.first.c_str());
+        if (ImGui::Button("Remove")) {
+          to_delete = sm.first.c_str();
+        }
+        ImGui::PopID();
+        ImGui::SameLine();
+        ImGui::Text("%s = %d", sm.first.c_str(), sm.second);
+      }
+      ImGui::EndListBox();
     }
+    if (to_delete) {
+      pluguzuState->soundMap.erase(to_delete);
+      saveSoundMap(&pluguzuState->soundMap);
+    }
+    ImGui::InputText("SoundName", inputSoundName, IM_ARRAYSIZE(inputSoundName));
+    ImGui::InputInt("SoundVal", &inputSoundValue);
 
+    if (inputSoundName[0] != 0 && inputSoundValue >= 0) {
+      if (ImGui::Button("Add")) {
+        pluguzuState->soundMap[inputSoundName] = inputSoundValue;
+        pluguzuSoundMap(pluguzuState->haskellState, (HsPtr)inputSoundName,
+                        inputSoundValue);
+        saveSoundMap(&pluguzuState->soundMap);
+        clearInput();
+      }
+      ImGui::SameLine();
+    }
+    if (ImGui::Button("Close"))
+      showConfigurator = false;
+  }
+  void displayEditor(int *offset) {
     if (pluguzuState == nullptr)
       ImGui::Text("Disconnected :(");
     else {
@@ -156,6 +211,11 @@ protected:
       ImGui::SameLine();
       if (ImGui::Button("Load"))
         showPresetSelector = true;
+      ImGui::SameLine();
+      if (ImGui::Button("Conf")) {
+        clearInput();
+        showConfigurator = true;
+      }
       ImGui::SameLine();
 
       // Status line
@@ -218,9 +278,12 @@ private:
   ResizeHandle fResizeHandle;
   int fontSize;
   bool showPresetSelector = false;
+  bool showConfigurator = false;
   std::map<std::string, bool> selectedTags;
   int selectedPreset = 0;
 
+  char inputSoundName[42];
+  int inputSoundValue;
   DISTRHO_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PluguzuUI)
 };
 

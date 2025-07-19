@@ -12,6 +12,7 @@
 // The Haskell state wrapper export
 #include "Pluguzu_stub.h"
 
+#include <map>
 #include <string>
 #include <vector>
 
@@ -52,6 +53,8 @@ struct pluguzu_state {
   HsStablePtr haskellState;
 
   String error;
+
+  std::map<std::string, uint8_t> soundMap;
 
   // The next bar pre-rendered, ready to be copied by the run callback
   Mutex mutex;
@@ -117,12 +120,12 @@ private:
   int32_t currentStartBar;
   uint32_t currentCount;
   midiEvent currentEvents[maxMidiEvents];
+
   friend class PluguzuUI;
   void sendMidiEvent(double barFraction, double framesPerFraction,
                      uint32_t pos);
 
   void syncEvents();
-
   DISTRHO_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PluguzuPlugin)
 };
 
