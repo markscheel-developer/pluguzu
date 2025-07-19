@@ -277,12 +277,14 @@ void PluguzuPlugin::syncEvents() {
   currentStartBar = pluguzuState.nextStartBar;
   pluguzuState.mutex.unlock();
 
+  /*
   // debug the loaded event
   for (uint32_t i = 0; i < currentCount; i++) {
     pluguzu_debug(" Next event at %.3f %X %d %d", currentEvents[i].time,
                   currentEvents[i].d0, currentEvents[i].d1,
                   currentEvents[i].d2);
   }
+  */
 }
 
 void PluguzuPlugin::sendMidiEvent(double startFraction,
