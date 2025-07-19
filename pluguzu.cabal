@@ -25,6 +25,7 @@ foreign-library pluguzu
     build-depends:    base, containers, pluguzu
     hs-source-dirs:   .
     c-sources:        PluguzuWrapper.c
+    ghc-options:      -threaded
     default-language: GHC2021
 
 library
