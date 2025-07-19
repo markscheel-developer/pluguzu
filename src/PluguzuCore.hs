@@ -10,6 +10,9 @@ module PluguzuCore (
     Pattern.ControlPattern,
     Time.Arc (..),
     Parse.parseTidal,
+
+    -- * debug
+    traceEvent,
 )
 where
 
@@ -20,6 +23,7 @@ import Data.Int (Int8)
 import Data.List (sortOn)
 import Data.Map.Strict qualified as Map
 import Data.Maybe (fromMaybe, mapMaybe)
+import Debug.Trace (traceShow)
 import Foreign.Storable qualified as Storable
 import Foreign.Storable.Generic (GStorable)
 import GHC.Generics (Generic)
@@ -92,6 +96,21 @@ firstBar = Time.Arc 0 4
 
 testPattern :: Pattern.ControlPattern
 testPattern = either error id $ Parse.parseTidal "n \"<[c3 f3] [c4 f4]>\""
+
+traceEvent :: Pattern.Event Pattern.ValueMap -> a -> a
+traceEvent ev = traceShow (showValue <$> ev.value)
+
+showValue :: Pattern.Value -> String
+showValue v = case v of
+    Pattern.VS s -> s
+    Pattern.VF d -> show d
+    Pattern.VN n -> show n
+    Pattern.VI i -> show i
+    Pattern.VR r -> show r
+    Pattern.VB b -> show b
+    Pattern.VPattern p -> "pattern"
+    Pattern.VList xs -> show $ map showValue xs
+    Pattern.VState s -> "state"
 
 {-
 -- Previous attempt using tidal-link
