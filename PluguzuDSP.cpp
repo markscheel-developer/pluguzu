@@ -29,6 +29,9 @@ void renderNextBar(pluguzu_state *pluguzuState, int32_t bar) {
   pluguzuState->mutex.unlock();
 }
 
+bool isNoteOff(midiEvent *ev) { return ev->d0 == 0x80; }
+bool isNoteOn(midiEvent *ev) { return ev->d0 == 0x90; }
+
 START_NAMESPACE_DISTRHO
 
 // --------------------------------------------------------------------------------------------------------------------
@@ -160,7 +163,7 @@ void PluguzuPlugin::run(const float ** /* inputs */, float ** /* outputs */,
     // TODO: requeue any left-over noteOff events
     // e.g. notes that ends after the buffer boundary must be taken care of...
     for (; currentPos < currentCount; currentPos++) {
-      if (currentEvents[currentPos].velocity == 0)
+      if (isNoteOff(&currentEvents[currentPos]))
         sendMidiEvent(0, 0, currentPos);
     }
     syncEvents();
@@ -228,16 +231,13 @@ void PluguzuPlugin::run(const float ** /* inputs */, float ** /* outputs */,
     }
     if (eventFraction + std::numeric_limits<double>::epsilon() <
             startFraction &&
-        currentEvents[currentPos].velocity != 0) {
+        !isNoteOff(&currentEvents[currentPos])) {
       // We somehow missed a tick, or perhaps the host fast forward to a new
       // bar.
       pluguzu_debug("Drop event! (%.3f -- %.3f -- %.3f)", startFraction,
                     eventFraction, stopFraction);
       continue;
     }
-    pluguzu_debug("%.3f: Sending event %.3f %d", startFraction,
-                  currentEvents[currentPos].time,
-                  currentEvents[currentPos].velocity);
     sendMidiEvent(startFraction, framesPerFraction, currentPos);
   }
 
@@ -259,9 +259,6 @@ void PluguzuPlugin::run(const float ** /* inputs */, float ** /* outputs */,
     for (; currentPos < currentCount; currentPos++) {
       if (currentEvents[currentPos].time > stopFraction)
         break;
-      pluguzu_debug("%.3f: Sending event %.3f %d", startFraction,
-                    currentEvents[currentPos].time,
-                    currentEvents[currentPos].velocity);
       sendMidiEvent(startFraction, framesPerFraction, currentPos);
     }
   }
@@ -279,13 +276,13 @@ void PluguzuPlugin::syncEvents() {
          currentCount * sizeof(midiEvent));
   currentStartBar = pluguzuState.nextStartBar;
   pluguzuState.mutex.unlock();
-  /*
+
   // debug the loaded event
   for (uint32_t i = 0; i < currentCount; i++) {
-    pluguzu_debug(" Next event at %.3f %d %d\n", currentEvents[i].time,
-           currentEvents[i].pitch, currentEvents[i].velocity);
+    pluguzu_debug(" Next event at %.3f %X %d %d", currentEvents[i].time,
+                  currentEvents[i].d0, currentEvents[i].d1,
+                  currentEvents[i].d2);
   }
-  */
 }
 
 void PluguzuPlugin::sendMidiEvent(double startFraction,
@@ -296,10 +293,13 @@ void PluguzuPlugin::sendMidiEvent(double startFraction,
       (currentEvents[pos].time - startFraction) * framesPerFraction;
   ev.frame = offset;
   ev.size = 3;
-  ev.data[0] = (currentEvents[pos].velocity != 0 ? 0x90 : 0x80) | chan;
-  ev.data[1] = currentEvents[pos].pitch;
-  ev.data[2] = currentEvents[pos].velocity;
+  ev.data[0] = currentEvents[pos].d0 | chan;
+  ev.data[1] = currentEvents[pos].d1;
+  ev.data[2] = currentEvents[pos].d2;
   ev.dataExt = NULL;
+  pluguzu_debug("%.3f: Sending event %.3f %X %d %d", startFraction,
+                currentEvents[pos].time, currentEvents[pos].d0,
+                currentEvents[pos].d1, currentEvents[pos].d2);
   writeMidiEvent(ev);
 }
 

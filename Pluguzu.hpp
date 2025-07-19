@@ -39,8 +39,9 @@ static const uint32_t maxMidiEvents = 512;
 struct midiEvent {
   // Time is noted as a bar fraction, independent of the BPM
   double time;
-  int8_t pitch;
-  int8_t velocity;
+  uint8_t d0;
+  uint8_t d1;
+  uint8_t d2;
 };
 
 // The state shared between the DSP and the UI.

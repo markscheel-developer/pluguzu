@@ -19,10 +19,10 @@ where
 import Control.Applicative ((<|>))
 import Control.Monad (forM_)
 import Data.Coerce (coerce)
-import Data.Int (Int8)
 import Data.List (sortOn)
 import Data.Map.Strict qualified as Map
 import Data.Maybe (fromMaybe, mapMaybe)
+import Data.Word (Word8)
 import Debug.Trace (traceShow)
 import Foreign.Storable qualified as Storable
 import Foreign.Storable.Generic (GStorable)
@@ -36,12 +36,12 @@ import Sound.Tidal.Time qualified as Time
 -- import Sound.Tidal.Link qualified as Link
 -- import Sound.Tidal.Stream.Process qualified as Process
 
-type SoundMap = Map.Map String Int8
+type SoundMap = Map.Map String Word8
 
 rat2float :: Rational -> Double
 rat2float = fromRational
 
-midiNote :: Pattern.Note -> Int8
+midiNote :: Pattern.Note -> Word8
 midiNote (Pattern.Note n) = round $ n + 72
 
 mkArc :: Rational -> Rational -> Time.Arc
@@ -52,8 +52,9 @@ Note that this needs to be kept in sync with the 'midiEvent' defined in Pluguzu.
 -}
 data MidiEvent = MidiEvent
     { barFraction :: Double
-    , pitch :: Int8
-    , velocity :: Int8
+    , data0 :: Word8
+    , data1 :: Word8
+    , data2 :: Word8
     }
     deriving (Show, Generic)
 
@@ -68,11 +69,11 @@ eventToMidi sm ev = case eventToNote sm ev of
     Just (arc, pitch, velocity) ->
         let start = rat2float (Pattern.start arc)
             stop_ = rat2float (Pattern.stop arc)
-         in [ MidiEvent start pitch velocity
-            , MidiEvent stop_ pitch 0
+         in [ MidiEvent start 0x90 pitch velocity
+            , MidiEvent stop_ 0x80 pitch 0
             ]
 
-eventToNote :: SoundMap -> Pattern.Event Pattern.ValueMap -> Maybe (Time.Arc, Int8, Int8)
+eventToNote :: SoundMap -> Pattern.Event Pattern.ValueMap -> Maybe (Time.Arc, Word8, Word8)
 eventToNote sm ev = do
     note <- midiNote <$> noteEvent <|> soundEvent
     pure (Pattern.wholeOrPart ev, note, v)
