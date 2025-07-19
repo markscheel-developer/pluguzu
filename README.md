@@ -51,8 +51,8 @@ ldd ~/.vst/pluguzu-vst.so | grep "not found"
 - [x] Handle transport pause/jump.
 - [x] Display status and parse error.
 - [x] Update text editor language def to support Haskell syntax.
-- [ ] Add UI/config-file to define custom sound to note mapping, e.g. for "bd", "sd", ...
+- [x] Add UI/config-file to define custom sound to note mapping, e.g. for "bd", "sd", ...
+- [x] Handle MIDI CC
 - [ ] Add config-file to define preset pattern to help getting started.
-- [ ] Handle MIDI CC
-- [ ] Global values, for example to share a scale between multiple plugin instance.
+- [ ] Visualize the pattern, e.g. a pianoroll in the background.
 - [ ] Package the plugin dependencies (e.g. the libpluguzu.so and libHSrts) so that it works out of the box.
