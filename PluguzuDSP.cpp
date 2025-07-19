@@ -13,10 +13,10 @@ void doRenderNextBar(pluguzu_state *pluguzuState, int32_t bar) {
   pluguzuState->nextCount =
       pluguzuRender(pluguzuState->haskellState, bar, bar + 4,
                     (HsPtr)pluguzuState->nextEvents);
-  if (pluguzuState->nextCount > 512) {
+  if (pluguzuState->nextCount > maxMidiEvents) {
     // TODO: increase the buffer size?
     pluguzu_debug("Too many events rendered: %d", pluguzuState->nextCount);
-    pluguzuState->nextCount = 512;
+    pluguzuState->nextCount = maxMidiEvents;
   }
   pluguzuState->nextStartBar = bar;
 }
@@ -39,7 +39,7 @@ PluguzuPlugin::PluguzuPlugin()
       lastTick(-1), currentPos(0), currentStartBar(-1), currentCount(0) {
   pluguzuState.isPlaying = false;
   pluguzuState.nextStartBar = 0;
-  pluguzuState.haskellState = pluguzuNew();
+  pluguzuState.haskellState = pluguzuNew(maxMidiEvents);
   pluguzuState.nextCount = 0;
   pluguzuState.currentBar = 0;
 }

@@ -19,14 +19,16 @@ import PluguzuCore qualified
 
 type CPluguzuState = Foreign.StablePtr PluguzuState
 
-foreign export ccall pluguzuNew :: IO CPluguzuState
+foreign export ccall pluguzuNew :: Word -> IO CPluguzuState
 foreign export ccall pluguzuParse :: CPluguzuState -> Foreign.C.CString -> IO ()
 foreign export ccall pluguzuError :: CPluguzuState -> IO Foreign.C.CString
 foreign export ccall pluguzuRender :: CPluguzuState -> Word -> Word -> Ptr PluguzuCore.MidiEvent -> IO CSize
 foreign export ccall pluguzuSoundMap :: CPluguzuState -> CString -> Word -> IO ()
 
 data PluguzuState = PluguzuState
-    { error :: IORef (Maybe CString)
+    { maxEvent :: Int
+    -- ^ The maximum number of a event per query
+    , error :: IORef (Maybe CString)
     -- ^ The last parse error.
     , pat :: IORef PluguzuCore.ControlPattern
     -- ^ The current pattern
@@ -34,9 +36,9 @@ data PluguzuState = PluguzuState
     }
 
 -- | Create a new state.
-pluguzuNew :: IO CPluguzuState
-pluguzuNew = do
-    state <- PluguzuState <$> newIORef Nothing <*> newIORef mempty <*> newIORef mempty
+pluguzuNew :: Word -> IO CPluguzuState
+pluguzuNew maxEvent = do
+    state <- PluguzuState (fromIntegral maxEvent) <$> newIORef Nothing <*> newIORef mempty <*> newIORef mempty
     Foreign.newStablePtr state
 
 writeError :: IORef (Maybe CString) -> Maybe CString -> IO ()
@@ -86,7 +88,7 @@ pluguzuRender pState startArc endArc pEvs = handle catchException $ do
     let end = fromInteger (toInteger endArc)
     let arc = PluguzuCore.mkArc start end
     let evs = PluguzuCore.patternToEvents sm pat arc
-    pokeArray pEvs (take 512 evs)
+    pokeArray pEvs (take state.maxEvent evs)
     pure (fromInteger (toInteger (length evs)))
   where
     catchException :: SomeException -> IO CSize
