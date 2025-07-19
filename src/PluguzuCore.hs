@@ -19,7 +19,7 @@ where
 import Control.Applicative ((<|>))
 import Control.Monad (forM_)
 import Data.Coerce (coerce)
-import Data.List (sortOn)
+import Data.List (sortBy)
 import Data.Map.Strict qualified as Map
 import Data.Maybe (fromMaybe, mapMaybe)
 import Data.Word (Word8)
@@ -61,7 +61,12 @@ data MidiEvent = MidiEvent
 instance GStorable MidiEvent
 
 patternToEvents :: SoundMap -> Pattern.ControlPattern -> Time.Arc -> [MidiEvent]
-patternToEvents sm pat arc = sortOn barFraction $ concatMap (eventToMidi sm) $ Pattern.queryArc pat arc
+patternToEvents sm pat arc = sortBy compareEvent $ concatMap (eventToMidi sm) $ Pattern.queryArc pat arc
+
+compareEvent :: MidiEvent -> MidiEvent -> Ordering
+compareEvent e1 e2 = case compare e1.barFraction e2.barFraction of
+    EQ -> compare e1.data0 e2.data0
+    c -> c
 
 eventToMidi :: SoundMap -> Pattern.Event Pattern.ValueMap -> [MidiEvent]
 eventToMidi sm ev = case eventToNote sm ev of
