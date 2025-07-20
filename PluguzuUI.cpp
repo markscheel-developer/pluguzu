@@ -40,10 +40,13 @@ void loadSoundMap(const char *fp, std::map<std::string, uint8_t> *map) {
 }
 
 void saveSoundMap(const char *fp, std::map<std::string, uint8_t> *map) {
-  // TODO: serialize to user setting file
-  std::ofstream ofile(fp);
-  for (auto &sm : *map) {
-    ofile << sm.first << " = " << std::to_string(sm.second) << "\n";
+  try {
+    std::ofstream ofile(fp);
+    for (auto &sm : *map) {
+      ofile << sm.first << " = " << std::to_string(sm.second) << "\n";
+    }
+  } catch (...) {
+    pluguzu_debug("Couldn't save soundmap!");
   }
 }
 
@@ -188,38 +191,81 @@ protected:
   }
   void displayConfigurator() {
     const char *to_delete = NULL;
-    if (ImGui::BeginListBox("sound map")) {
+    if (ImGui::BeginListBox(
+            "sound map",
+            ImVec2(-FLT_MIN, 15 * ImGui::GetTextLineHeightWithSpacing()))) {
       for (auto &sm : pluguzuState->soundMap) {
         ImGui::PushID(sm.first.c_str());
+
         if (ImGui::Button("Remove")) {
           to_delete = sm.first.c_str();
+          soundMapDirty = true;
         }
-        ImGui::PopID();
         ImGui::SameLine();
-        ImGui::Text("%s = %d", sm.first.c_str(), sm.second);
+
+        int value = sm.second;
+        ImGui::SetNextItemWidth(90);
+        if (ImGui::InputInt("###pitch", &value)) {
+          pluguzuState->soundMap[sm.first] = value;
+          soundMapDirty = true;
+        }
+        ImGui::SameLine();
+        ImGui::TextUnformatted(sm.first.c_str());
+        ImGui::PopID();
       }
       ImGui::EndListBox();
     }
     if (to_delete) {
       pluguzuState->soundMap.erase(to_delete);
-      saveSoundMap(pluguzuState->soundMapFile.c_str(), &pluguzuState->soundMap);
     }
-    ImGui::InputText("SoundName", inputSoundName, IM_ARRAYSIZE(inputSoundName));
-    ImGui::InputInt("SoundVal", &inputSoundValue);
+    ImGui::SetNextItemWidth(90);
+    ImGui::InputInt("###SoundVal", &inputSoundValue);
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(300);
+    ImGui::InputText("New Sound", inputSoundName, IM_ARRAYSIZE(inputSoundName));
 
     if (inputSoundName[0] != 0 && inputSoundValue >= 0) {
+      ImGui::SameLine();
       if (ImGui::Button("Add")) {
         pluguzuState->soundMap[inputSoundName] = inputSoundValue;
-        pluguzuSoundMap(pluguzuState->haskellState, (HsPtr)inputSoundName,
-                        inputSoundValue);
+        soundMapDirty = true;
+        clearInput();
+      }
+    }
+
+    if (soundMapUnsaved || soundMapDirty) {
+      if (ImGui::Button("Save")) {
+        applySoundMap();
         saveSoundMap(pluguzuState->soundMapFile.c_str(),
                      &pluguzuState->soundMap);
-        clearInput();
+        soundMapUnsaved = soundMapDirty = showConfigurator = false;
       }
       ImGui::SameLine();
     }
-    if (ImGui::Button("Close"))
-      showConfigurator = false;
+
+    if (soundMapDirty) {
+      if (ImGui::Button("Apply")) {
+        soundMapUnsaved = true;
+        applySoundMap();
+        soundMapDirty = showConfigurator = false;
+      }
+      ImGui::SameLine();
+    }
+
+    if (ImGui::Button(soundMapDirty ? "Revert" : "Close")) {
+      if (soundMapDirty)
+        pluguzuState->soundMap = soundMapBackup;
+      soundMapDirty = showConfigurator = false;
+    }
+  }
+  void applySoundMap() {
+    for (auto &sm : pluguzuState->soundMap) {
+      if (soundMapBackup.count(sm.first) == 0 || soundMapBackup[sm.first] != sm.second) {
+        pluguzu_debug("Setting key: %s", sm.first.c_str());
+        pluguzuSoundMap(pluguzuState->haskellState, (HsPtr)sm.first.c_str(),
+                        sm.second);
+      }
+    }
   }
   void displayEditor(int *offset) {
     if (pluguzuState == nullptr)
@@ -235,8 +281,9 @@ protected:
       if (ImGui::Button("Load"))
         showPresetSelector = true;
       ImGui::SameLine();
-      if (ImGui::Button("Conf")) {
+      if (ImGui::Button(soundMapUnsaved ? "Conf*" : "Conf")) {
         clearInput();
+        soundMapBackup = pluguzuState->soundMap;
         showConfigurator = true;
       }
       ImGui::SameLine();
@@ -305,6 +352,9 @@ private:
   std::map<std::string, bool> selectedTags;
   int selectedPreset = 0;
 
+  bool soundMapUnsaved = false;
+  bool soundMapDirty = false;
+  std::map<std::string, uint8_t> soundMapBackup;
   char inputSoundName[42];
   int inputSoundValue;
   DISTRHO_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PluguzuUI)
