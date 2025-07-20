@@ -178,7 +178,9 @@ protected:
     }
 
     if (ImGui::Button("Load")) {
-      stateChanged("uzu-code", uzu_programs[selectedPreset].code);
+      const char* code = uzu_programs[selectedPreset].code;
+      editor.SetText(code);
+      setState("uzu-code", code);
       showPresetSelector = false;
     }
     ImGui::SameLine();
