@@ -4,6 +4,20 @@ A PoC uzu-lang running as CLAP plugin (or VST) through the DISTRHO Plugin Framew
 
 > Checkout the companion post: https://midirus.com/blog/haskell-foreign-library-dpf
 
+## Supported Platforms
+
+Pluguzu is known to work on the following system:
+
+- [x] Linux x86
+
+… with the following host:
+
+- [x] Carla (VST2/VST3), but the windows must not overlap to avoid lag
+- [x] Ardour8 (VST3), select option to "allow plugin to receive keyboard events".
+- [x] REAPER (CLAP), select option to "send all keyboard input to plugin".
+- [x] BespokeSynth (VST3). Keyboard events for edition doesn't presently work, only presets can be used.
+
+
 ## Build Instructions
 
 - Install the system libraries and the Haskell toolchain:
@@ -53,6 +67,6 @@ ldd ~/.vst/pluguzu-vst.so | grep "not found"
 - [x] Update text editor language def to support Haskell syntax.
 - [x] Add UI/config-file to define custom sound to note mapping, e.g. for "bd", "sd", ...
 - [x] Handle MIDI CC
-- [ ] Add config-file to define preset pattern to help getting started.
+- [x] Add config-file to define preset pattern to help getting started.
 - [ ] Visualize the pattern, e.g. a pianoroll in the background.
 - [ ] Package the plugin dependencies (e.g. the libpluguzu.so and libHSrts) so that it works out of the box.
