@@ -75,6 +75,8 @@ install-vst: install-vst2
 
 install: install-vst2 install-vst3 install-clap
 
+render-presets:
+	@echo "renderPresetData" | cabal repl
 
 # --------------------------------------------------------------
 # Test helper

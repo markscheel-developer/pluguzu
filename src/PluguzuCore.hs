@@ -11,13 +11,18 @@ module PluguzuCore (
     Time.Arc (..),
     Parse.parseTidal,
 
+    -- * presets
+    Preset (..),
+    readPresets,
+    renderPresetData,
+
     -- * debug
     traceEvent,
 )
 where
 
 import Control.Applicative ((<|>))
-import Control.Monad (forM_)
+import Control.Monad (forM_, void)
 import Data.Bits ((.|.))
 import Data.Coerce (coerce)
 import Data.List (sortBy)
@@ -178,3 +183,45 @@ eval now cconf cref (st, end) state pat = do
                     }
                 )
 -}
+
+data Preset = Preset
+    { category :: String
+    , name :: String
+    , code :: String
+    }
+    deriving (Show)
+
+readPresets :: FilePath -> IO [Preset]
+readPresets fp = parsePresets "" "" . lines <$> readFile fp
+  where
+    parsePresets :: String -> String -> [String] -> [Preset]
+    parsePresets _ _ [] = []
+    parsePresets _ _ (('#' : '#' : ' ' : cat) : xs) = parsePresets cat "" xs
+    parsePresets cat _ (('#' : '#' : '#' : ' ' : name) : xs) = parsePresets cat name xs
+    parsePresets cat name ("```haskell" : xs) =
+        let (code, rest) = break (== "```") xs
+         in Preset cat name (unlines code) : parsePresets cat "" xs
+    parsePresets cat name (_ : xs) = parsePresets cat name xs
+
+renderPresetData :: IO ()
+renderPresetData = do
+    presets <- readPresets "pluguzu-presets.md"
+    writeFile "pluguzu-presets.h" $ unlines $ renderHeader presets
+  where
+    renderHeader presets =
+        [ "// Pluguzu presets"
+        , "#include <string>"
+        , "#include <vector>"
+        , ""
+        , "struct uzu_program {"
+        , "  const char *name;"
+        , "  const char *code;"
+        , "  const std::vector<std::string> tags;"
+        , "};"
+        , ""
+        , "const uzu_program uzu_programs[] = {"
+        , unlines (map mkProgram presets) ++ "};"
+        , ""
+        , "const int uzu_presets_count = sizeof(uzu_programs) / sizeof(uzu_programs[0]);"
+        ]
+    mkProgram preset = "  {" ++ show preset.name ++ ", " ++ show preset.code ++ ", {" ++ show preset.category ++ "}},"

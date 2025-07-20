@@ -14,23 +14,11 @@
 
 #include <map>
 #include <string>
-#include <vector>
 
 // Set to 0 to disable printf debug
 #define PLUGUZU_DEBUG 1
 
-// The default programs
-struct uzu_program {
-  const char *name;
-  const char *code;
-  const std::vector<std::string> tags;
-};
-
-const uzu_program uzu_programs[] = {
-    {"Default", "-- welcome", {"comment"}},
-    {"Scales", "n \"[0 .. 24]\"", {"demo"}},
-};
-const int uzu_presets_count = sizeof(uzu_programs) / sizeof(uzu_programs[0]);
+#include "pluguzu-presets.h"
 // --
 
 class PluguzuUI;
