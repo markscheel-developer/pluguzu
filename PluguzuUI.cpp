@@ -157,42 +157,47 @@ protected:
   }
 
   void displayPresetSelector() {
-    for (auto &tag : selectedTags) {
-      ImGui::SameLine();
-      ImGui::Checkbox(tag.first.c_str(), &tag.second);
-    }
-    if (ImGui::BeginListBox(
-            "", ImVec2(-FLT_MIN, 17 * ImGui::GetTextLineHeightWithSpacing()))) {
-      for (int i = 0; i < uzu_presets_count; i++) {
-        bool is_visible = false;
-        for (std::string tag : uzu_programs[i].tags) {
-          if (selectedTags[tag]) {
-            is_visible = true;
-            break;
+    if (ImGui::BeginTabBar("MyTabBar")) {
+      for (auto &tag : selectedTags) {
+        if (ImGui::BeginTabItem(tag.first.c_str())) {
+          if (ImGui::BeginListBox(
+                  "", ImVec2(-FLT_MIN,
+                             17 * ImGui::GetTextLineHeightWithSpacing()))) {
+            for (int i = 0; i < uzu_presets_count; i++) {
+              bool is_visible = false;
+              for (std::string ptag : uzu_programs[i].tags) {
+                if (ptag == tag.first) {
+                  is_visible = true;
+                  break;
+                }
+              }
+              if (!is_visible)
+                continue;
+              const bool is_selected = (selectedPreset == i);
+              if (ImGui::Selectable(uzu_programs[i].name, is_selected))
+                selectedPreset = i;
+              // Set the initial focus when opening the combo (scrolling +
+              // keyboard navigation focus)
+              if (is_selected)
+                ImGui::SetItemDefaultFocus();
+            }
+            ImGui::EndListBox();
           }
+          ImGui::EndTabItem();
         }
-        if (!is_visible)
-          continue;
-        const bool is_selected = (selectedPreset == i);
-        if (ImGui::Selectable(uzu_programs[i].name, is_selected))
-          selectedPreset = i;
-        // Set the initial focus when opening the combo (scrolling + keyboard
-        // navigation focus)
-        if (is_selected)
-          ImGui::SetItemDefaultFocus();
       }
-      ImGui::EndListBox();
+      ImGui::EndTabBar();
     }
 
     if (ImGui::Button("Load")) {
-      const char* code = uzu_programs[selectedPreset].code;
+      const char *code = uzu_programs[selectedPreset].code;
       editor.SetText(code);
       setState("uzu-code", code);
       showPresetSelector = false;
     }
     ImGui::SameLine();
     if (ImGui::Button("Append")) {
-      const char* code = uzu_programs[selectedPreset].code;
+      const char *code = uzu_programs[selectedPreset].code;
       editor.SetText(editor.GetText() + "\n{-\n" + code + "-}");
       showPresetSelector = false;
     }
@@ -200,6 +205,7 @@ protected:
     if (ImGui::Button("Cancel"))
       showPresetSelector = false;
   }
+
   void clearInput() {
     inputSoundName[0] = 0;
     inputSoundValue = 0;
@@ -276,7 +282,8 @@ protected:
   }
   void applySoundMap() {
     for (auto &sm : pluguzuState->soundMap) {
-      if (soundMapBackup.count(sm.first) == 0 || soundMapBackup[sm.first] != sm.second) {
+      if (soundMapBackup.count(sm.first) == 0 ||
+          soundMapBackup[sm.first] != sm.second) {
         pluguzu_debug("Setting key: %s", sm.first.c_str());
         pluguzuSoundMap(pluguzuState->haskellState, (HsPtr)sm.first.c_str(),
                         sm.second);
