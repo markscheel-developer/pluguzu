@@ -12,6 +12,7 @@
 
 #include <fstream>
 #include <iostream>
+#include <set>
 #include <sys/stat.h>
 
 void loadSoundMap(const char *fp, std::map<std::string, uint8_t> *map) {
@@ -84,6 +85,30 @@ const TextEditor::LanguageDefinition &UZULang() {
   return langDef;
 }
 
+typedef std::vector<std::pair<std::string, std::vector<const uzu_program *>>>
+    presets_t;
+
+presets_t makePresets() {
+  std::map<std::string, std::vector<const uzu_program *>> tagsMap;
+  std::vector<std::string> tagsOrder;
+  for (int i = 0; i < uzu_presets_count; i++) {
+    const uzu_program *prog = &uzu_programs[i];
+    for (std::string tag : uzu_programs[i].tags) {
+      if (tagsMap.count(tag) == 0) {
+        tagsOrder.push_back(tag);
+        tagsMap[tag] = {prog};
+      } else {
+        tagsMap[tag].push_back(prog);
+      }
+    }
+  }
+  presets_t finalList;
+  for (auto tag : tagsOrder) {
+    finalList.push_back(std::make_pair(tag, tagsMap[tag]));
+  }
+  return finalList;
+}
+
 class PluguzuUI : public UI {
 public:
   PluguzuUI()
@@ -98,11 +123,8 @@ public:
     // Ensure font is the right size.
     updateFont(0);
     pluguzuState = nullptr;
-    for (int i = 0; i < uzu_presets_count; i++) {
-      for (std::string tag : uzu_programs[i].tags) {
-        selectedTags[tag] = true;
-      }
-    }
+    uzuPresets = makePresets();
+    selectedPreset = uzuPresets[0].second[0];
   }
 
 protected:
@@ -158,28 +180,15 @@ protected:
 
   void displayPresetSelector() {
     if (ImGui::BeginTabBar("MyTabBar")) {
-      for (auto &tag : selectedTags) {
-        if (ImGui::BeginTabItem(tag.first.c_str())) {
+      for (auto &tag_presets : uzuPresets) {
+        if (ImGui::BeginTabItem(tag_presets.first.c_str())) {
           if (ImGui::BeginListBox(
                   "", ImVec2(-FLT_MIN,
                              17 * ImGui::GetTextLineHeightWithSpacing()))) {
-            for (int i = 0; i < uzu_presets_count; i++) {
-              bool is_visible = false;
-              for (std::string ptag : uzu_programs[i].tags) {
-                if (ptag == tag.first) {
-                  is_visible = true;
-                  break;
-                }
-              }
-              if (!is_visible)
-                continue;
-              const bool is_selected = (selectedPreset == i);
-              if (ImGui::Selectable(uzu_programs[i].name, is_selected))
-                selectedPreset = i;
-              // Set the initial focus when opening the combo (scrolling +
-              // keyboard navigation focus)
-              if (is_selected)
-                ImGui::SetItemDefaultFocus();
+            for (const uzu_program *prog : tag_presets.second) {
+              const bool is_selected = (selectedPreset == prog);
+              if (ImGui::Selectable(prog->name, is_selected))
+                selectedPreset = prog;
             }
             ImGui::EndListBox();
           }
@@ -190,14 +199,14 @@ protected:
     }
 
     if (ImGui::Button("Load")) {
-      const char *code = uzu_programs[selectedPreset].code;
+      const char *code = selectedPreset->code;
       editor.SetText(code);
       setState("uzu-code", code);
       showPresetSelector = false;
     }
     ImGui::SameLine();
     if (ImGui::Button("Append")) {
-      const char *code = uzu_programs[selectedPreset].code;
+      const char *code = selectedPreset->code;
       editor.SetText(editor.GetText() + "\n{-\n" + code + "-}");
       showPresetSelector = false;
     }
@@ -372,8 +381,8 @@ private:
   int fontSize;
   bool showPresetSelector = false;
   bool showConfigurator = false;
-  std::map<std::string, bool> selectedTags;
-  int selectedPreset = 0;
+  presets_t uzuPresets;
+  const uzu_program *selectedPreset = NULL;
 
   bool soundMapUnsaved = false;
   bool soundMapDirty = false;
