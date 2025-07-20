@@ -31,46 +31,11 @@ void renderNextBar(pluguzu_state *pluguzuState, int32_t bar) {
 
 bool isNoteOff(midiEvent *ev) { return (ev->d0 & 0xF0) == 0x80; }
 
-std::string getConfigDir() {
-  std::string dir;
-  const char *xdg = getenv("XDG_CONFIG_DIRS");
-  if (xdg != 0) {
-    dir = xdg;
-    auto pos = dir.find(":");
-    if (pos != std::string::npos) {
-      dir.resize(pos);
-    }
-  } else {
-    const char *home = getenv("HOME");
-    if (home != 0) {
-      dir = home;
-      dir += "/.config";
-    } else {
-      dir = "/tmp";
-    }
-  }
-  dir += "/pluguzu";
-  return dir;
-}
-
 extern void loadSoundMap(const char *, std::map<std::string, uint8_t> *map);
 
 START_NAMESPACE_DISTRHO
 
 // --------------------------------------------------------------------------------------------------------------------
-
-// TODO: make this cross-plateform. Perhaps using
-// https://github.com/gulrak/filesystem/
-#include <sys/stat.h>
-void create_directories(std::string *confDir) {
-  if (mkdir(confDir->c_str(), 0755) == EEXIST) {
-    return;
-  }
-  // try creating the parent dir...
-  if (mkdir(confDir->substr(0, confDir->rfind('/')).c_str(), 0755) == 0) {
-    mkdir(confDir->c_str(), 0755);
-  }
-}
 
 PluguzuPlugin::PluguzuPlugin()
     : Plugin(0, uzu_presets_count, 1), // parameters, programs, states
@@ -81,9 +46,9 @@ PluguzuPlugin::PluguzuPlugin()
   pluguzuState.haskellState = pluguzuNew(maxMidiEvents);
   pluguzuState.nextCount = 0;
   pluguzuState.currentBar = 0;
-  auto confDir = getConfigDir();
-  create_directories(&confDir);
-  // TODO: create the confDir
+  const char *confDirC = (const char *)pluguzuNewConfigDir();
+  std::string confDir = confDirC;
+  pluguzuFreeConfigDir((HsPtr)confDirC);
   pluguzuState.soundMapFile = confDir + "/soundmap.conf";
   loadSoundMap(pluguzuState.soundMapFile.c_str(), &pluguzuState.soundMap);
   for (auto &sm : pluguzuState.soundMap) {

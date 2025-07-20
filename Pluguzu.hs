@@ -12,6 +12,7 @@ import Foreign qualified
 import Foreign.C (CSize, CString)
 import Foreign.C qualified
 import Foreign.Marshal.Array (pokeArray)
+import System.Directory qualified
 
 -- import System.Posix.Internals (puts)
 
@@ -24,6 +25,8 @@ foreign export ccall pluguzuParse :: CPluguzuState -> Foreign.C.CString -> IO ()
 foreign export ccall pluguzuError :: CPluguzuState -> IO Foreign.C.CString
 foreign export ccall pluguzuRender :: CPluguzuState -> Word -> Word -> Ptr PluguzuCore.MidiEvent -> IO CSize
 foreign export ccall pluguzuSoundMap :: CPluguzuState -> CString -> Word -> IO ()
+foreign export ccall pluguzuNewConfigDir :: IO CString
+foreign export ccall pluguzuFreeConfigDir :: CString -> IO ()
 
 data PluguzuState = PluguzuState
     { maxEvent :: Int
@@ -34,6 +37,15 @@ data PluguzuState = PluguzuState
     -- ^ The current pattern
     , soundMap :: IORef PluguzuCore.SoundMap
     }
+
+pluguzuNewConfigDir :: IO CString
+pluguzuNewConfigDir = do
+    path <- System.Directory.getXdgDirectory System.Directory.XdgConfig "pluguzu"
+    System.Directory.createDirectoryIfMissing True path
+    Foreign.C.newCString path
+
+pluguzuFreeConfigDir :: CString -> IO ()
+pluguzuFreeConfigDir = Foreign.free
 
 -- | Create a new state.
 pluguzuNew :: Word -> IO CPluguzuState
