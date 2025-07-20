@@ -93,6 +93,7 @@ public:
     inputSoundValue = 0;
     setGeometryConstraints(80, 60);
     editor.SetLanguageDefinition(UZULang());
+    editor.SetShowWhitespaces(false);
     textChangedState = false;
     // Ensure font is the right size.
     updateFont(0);
@@ -113,7 +114,13 @@ protected:
       return;
 
     textChangedState = true;
-    editor.SetText(value);
+    if (!strcmp(value, "")) {
+      editor.SetText("-- Welcome to Pluguzu\n-- [ ] Click the Load button to "
+                     "get started!\n");
+      editor.SetCursorPosition(TextEditor::Coordinates(2, 0));
+    } else {
+      editor.SetText(value);
+    }
   }
 
   void programLoaded(uint32_t index) override {
@@ -184,6 +191,12 @@ protected:
       showPresetSelector = false;
     }
     ImGui::SameLine();
+    if (ImGui::Button("Append")) {
+      const char* code = uzu_programs[selectedPreset].code;
+      editor.SetText(editor.GetText() + "\n{-\n" + code + "-}");
+      showPresetSelector = false;
+    }
+    ImGui::SameLine();
     if (ImGui::Button("Cancel"))
       showPresetSelector = false;
   }
@@ -193,6 +206,7 @@ protected:
   }
   void displayConfigurator() {
     const char *to_delete = NULL;
+    ImGui::TextUnformatted(pluguzuState->soundMapFile.c_str());
     if (ImGui::BeginListBox(
             "sound map",
             ImVec2(-FLT_MIN, 15 * ImGui::GetTextLineHeightWithSpacing()))) {
