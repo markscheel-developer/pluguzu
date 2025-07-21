@@ -200,7 +200,7 @@ readPresets fp = parsePresets "" "" . lines <$> readFile fp
     parsePresets cat _ (('#' : '#' : '#' : ' ' : name) : xs) = parsePresets cat name xs
     parsePresets cat name ("```haskell" : xs) =
         let (code, rest) = break (== "```") xs
-         in Preset cat name (unlines code) : parsePresets cat "" xs
+         in Preset cat name (unlines code) : parsePresets cat "" rest
     parsePresets cat name (_ : xs) = parsePresets cat name xs
 
 renderPresetData :: IO ()
