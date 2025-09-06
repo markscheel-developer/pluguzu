@@ -9,6 +9,7 @@
 
 struct me {
   double time;
+  double stop;
   uint8_t d0;
   uint8_t d1;
   uint8_t d2;
@@ -33,7 +34,7 @@ int main(int argc, const char **argv) {
   printf("Got %d\n", count);
   for (uint32_t i = 0; i < count; i++) {
     me *ev = &evs[i];
-    printf("=> %2.4f %X %d %d\n", ev->time, ev->d0, ev->d1, ev->d2);
+    printf("=> %2.4f %2.4f %X %d %d\n", ev->time, ev->stop, ev->d0, ev->d1, ev->d2);
   }
   return 0;
 }

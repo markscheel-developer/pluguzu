@@ -58,6 +58,7 @@ Note that this needs to be kept in sync with the 'midiEvent' defined in Pluguzu.
 -}
 data MidiEvent = MidiEvent
     { barFraction :: Double
+    , stopFraction :: Double
     , data0 :: Word8
     , data1 :: Word8
     , data2 :: Word8
@@ -67,26 +68,20 @@ data MidiEvent = MidiEvent
 instance GStorable MidiEvent
 
 patternToEvents :: SoundMap -> Pattern.ControlPattern -> Time.Arc -> [MidiEvent]
-patternToEvents sm pat arc = sortBy compareEvent $ concatMap (eventToMidi sm) $ Pattern.queryArc pat arc
+patternToEvents sm pat arc = sortBy compareEvent $ mapMaybe (eventToMidi sm) $ Pattern.queryArc pat arc
 
 compareEvent :: MidiEvent -> MidiEvent -> Ordering
-compareEvent e1 e2 = case compare e1.barFraction e2.barFraction of
-    EQ -> compare e1.data0 e2.data0
-    c -> c
+compareEvent e1 e2 = compare e1.barFraction e2.barFraction
 
-eventToMidi :: SoundMap -> Pattern.Event Pattern.ValueMap -> [MidiEvent]
-eventToMidi sm ev = case eventToCC ev of
-    Just (ccn, ccv) -> [MidiEvent (rat2float (Pattern.wholeStart ev)) (0xb0 .|. chan) ccn ccv]
-    Nothing -> case eventToNote sm ev of
-        Nothing -> []
-        Just (arc, pitch, velocity) ->
-            let start = rat2float (Pattern.start arc)
-                stop_ = rat2float (Pattern.stop arc)
-             in [ MidiEvent start (0x90 .|. chan) pitch velocity
-                , MidiEvent stop_ (0x80 .|. chan) pitch 0
-                ]
+eventToMidi :: SoundMap -> Pattern.Event Pattern.ValueMap -> Maybe MidiEvent
+eventToMidi sm ev = (ccToMidi <$> eventToCC ev) <|> (noteToMidi <$> eventToNote sm ev)
   where
     chan = (+ 1) $ round $ max 0 $ min 15 $ fromMaybe 0 $ Pattern.getF =<< Map.lookup "midichan" ev.value
+    ccToMidi (ccn, ccv) = MidiEvent (rat2float (Pattern.wholeStart ev)) 0 (0xb0 .|. chan) ccn ccv
+    noteToMidi (arc, pitch, velocity) =
+        let start = rat2float (Pattern.start arc)
+            stop_ = rat2float (Pattern.stop arc)
+         in MidiEvent start stop_ (0x90 .|. chan) pitch velocity
 
 eventToCC :: Pattern.Event Pattern.ValueMap -> Maybe (Word8, Word8)
 eventToCC ev = do
