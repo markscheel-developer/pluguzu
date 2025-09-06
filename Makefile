@@ -78,6 +78,9 @@ install: install-vst2 install-vst3 install-clap
 render-presets:
 	@echo "renderPresetData" | cabal repl
 
+build-rust:
+	@cargo xtask bundle pluguzu
+
 # --------------------------------------------------------------
 # Test helper
 

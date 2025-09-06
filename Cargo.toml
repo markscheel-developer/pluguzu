@@ -1,0 +1,24 @@
+[package]
+name = "pluguzu"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+nih_plug = { git = "https://github.com/robbert-vdh/nih-plug.git", rev = "ed09eca4301f67f17d43474cd3d21ea10b639046", features = ["assert_process_allocs", "standalone"] }
+nih_plug_egui = { git = "https://github.com/robbert-vdh/nih-plug.git", rev = "ed09eca4301f67f17d43474cd3d21ea10b639046" }
+egui_code_editor = "0.2.17"
+
+[workspace]
+members = ["xtask"]
+
+[lib]
+crate-type = ["cdylib", "lib"]
+
+[profile.release]
+lto = "thin"
+strip = "symbols"
+
+[profile.profiling]
+inherits = "release"
+debug = true
+strip = "none"
