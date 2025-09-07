@@ -1,14 +1,11 @@
-#[link(name = "pluguzu")]
-unsafe extern "C" {
-    pub fn pluguzu_init();
-}
-
 use egui_code_editor::{CodeEditor, ColorTheme, Syntax};
 use nih_plug::prelude::*;
 use nih_plug_egui::{create_egui_editor, egui::Vec2, resizable_window::ResizableWindow, EguiState};
 use std::collections::BTreeSet;
 use std::ops::DerefMut;
 use std::sync::{Arc, Mutex};
+
+pub mod binding;
 
 pub struct Pluguzu {
     params: Arc<PluguzuParams>,
