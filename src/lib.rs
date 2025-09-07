@@ -1,14 +1,31 @@
 use egui_code_editor::{CodeEditor, ColorTheme, Syntax};
 use nih_plug::prelude::*;
 use nih_plug_egui::{create_egui_editor, egui::Vec2, resizable_window::ResizableWindow, EguiState};
+use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 use std::ops::DerefMut;
+use std::sync::atomic::AtomicI32;
+use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
 
 pub mod binding;
+use binding::PluguzuState;
 
 pub struct Pluguzu {
     params: Arc<PluguzuParams>,
+    state: Arc<Mutex<PluguzuState>>,
+    error: Arc<Mutex<Option<String>>>,
+
+    note_offs: BTreeMap<u8, FutureNoteOff>,
+
+    // Keep track of the current playing bar so that code update are queued to the next bar.
+    current_bar: Arc<AtomicI32>,
+
+    buffer: Vec<binding::MidiEvent>,
+    buffer_pos: usize,
+    buffer_start_bar: i32,
+
+    reset_requested: bool,
 }
 
 #[derive(Params)]
@@ -22,10 +39,23 @@ pub struct PluguzuParams {
     code: Arc<Mutex<String>>,
 }
 
+struct FutureNoteOff {
+    when: f64,
+    channel: u8,
+}
+
 impl Default for Pluguzu {
     fn default() -> Self {
         Self {
             params: Arc::new(PluguzuParams::default()),
+            state: Arc::new(Mutex::new(PluguzuState::new(512))),
+            error: Arc::new(Mutex::new(None)),
+            note_offs: BTreeMap::new(),
+            current_bar: Arc::new(AtomicI32::new(0)),
+            buffer_start_bar: -1,
+            buffer_pos: 0,
+            buffer: Vec::with_capacity(512),
+            reset_requested: false,
         }
     }
 }
@@ -34,7 +64,32 @@ impl Default for PluguzuParams {
     fn default() -> Self {
         Self {
             editor_state: EguiState::from_size(300, 180),
-            code: Arc::new(Mutex::new(String::new())),
+            code: Arc::new(Mutex::new(
+                "n \"c2*4\""
+                    // "fast 2 $ n \"[c2 .. c3]\""
+                    .into(),
+            )),
+        }
+    }
+}
+
+pub enum PluguzuTask {
+    Parse,
+    Render(i32),
+}
+
+impl Pluguzu {
+    fn sync_state_buffer(&mut self, cur_bar: i32, ctx: &impl ProcessContext<Self>) {
+        let mut state = self.state.lock().unwrap();
+        if let Some(start) = state.bar_start {
+            if cur_bar >= start {
+                println!("Copying buffer data from {}", start);
+                self.buffer.extend_from_slice(&state.buffer);
+                self.buffer_pos = 0;
+                self.buffer_start_bar = start;
+                state.bar_start = None;
+                ctx.execute_background(PluguzuTask::Render(start + 4))
+            }
         }
     }
 }
@@ -54,7 +109,7 @@ impl Plugin for Pluguzu {
     const SAMPLE_ACCURATE_AUTOMATION: bool = true;
 
     type SysExMessage = ();
-    type BackgroundTask = ();
+    type BackgroundTask = PluguzuTask;
 
     fn params(&self) -> Arc<dyn Params> {
         self.params.clone()
@@ -85,7 +140,7 @@ impl Plugin for Pluguzu {
                         if output.response.changed() {
                             // TODO: sometime alt modifier get stuck after clicking, perhaps it could be manually removed to workaround this weird bug?
                             // egui_ctx.input(|i| println!("HERE: {:?}", i.modifiers));
-                            async_executor.execute_background(())
+                            async_executor.execute_background(PluguzuTask::Parse)
                         }
                     });
             },
@@ -93,23 +148,41 @@ impl Plugin for Pluguzu {
     }
 
     fn task_executor(&mut self) -> TaskExecutor<Self> {
-        // In the default implementation we can simply ignore the value
         let code = self.params.code.clone();
-        Box::new(move |_| println!("Running in background for {}", code.lock().unwrap()))
+        let error = self.error.clone();
+        let state = self.state.clone();
+        let current_bar = self.current_bar.clone();
+        Box::new(move |task| {
+            let mut state = state.lock().unwrap();
+            match task {
+                PluguzuTask::Parse => {
+                    let code = code.lock().unwrap();
+                    println!("Parsing {}", code);
+                    *error.lock().unwrap() = state.parse(&code);
+                    let start = current_bar.load(Ordering::Relaxed) + 1;
+                    state.render(start, start + 4)
+                }
+                PluguzuTask::Render(start) => {
+                    println!("Rendering {}", start);
+                    state.render(start, start + 4)
+                }
+            }
+        })
     }
 
     fn initialize(
         &mut self,
         _audio_io_layout: &AudioIOLayout,
         _buffer_config: &BufferConfig,
-        _context: &mut impl InitContext<Self>,
+        context: &mut impl InitContext<Self>,
     ) -> bool {
+        context.execute(PluguzuTask::Parse);
         true
     }
 
     fn process(
         &mut self,
-        _buffer: &mut Buffer,
+        buffer: &mut Buffer,
         _aux: &mut AuxiliaryBuffers,
         context: &mut impl ProcessContext<Self>,
     ) -> ProcessStatus {
@@ -117,7 +190,70 @@ impl Plugin for Pluguzu {
         while let Some(event) = context.next_event() {
             context.send_event(event)
         }
-        ProcessStatus::Normal
+        let transport = context.transport();
+        let cur_bar = transport.bar_number().unwrap_or(0);
+        self.current_bar.store(cur_bar, Ordering::Relaxed);
+
+        // Copy data
+        self.sync_state_buffer(cur_bar, context);
+
+        // Check that we are ready
+        if cur_bar < self.buffer_start_bar || cur_bar >= self.buffer_start_bar + 4 {
+            if !self.reset_requested {
+                println!("We are out of sync, requesting a reset :/");
+                self.buffer.clear();
+                context.execute_background(PluguzuTask::Render(cur_bar));
+                self.reset_requested = true;
+            } else {
+                println!("Waiting for the render...")
+            }
+            return ProcessStatus::KeepAlive;
+        }
+        self.reset_requested = false;
+
+        let pos = transport.pos_beats().unwrap() / 4.0;
+
+        let frames = buffer.samples() as f64;
+        let beat_per_sec = 60. / transport.tempo.unwrap_or(120.);
+        let bar_length = beat_per_sec * (transport.time_sig_numerator.unwrap_or(4) as f64);
+        let run_time = frames / (transport.sample_rate as f64);
+        let run_fraction = run_time / bar_length;
+        let frames_per_fraction = frames / run_fraction;
+        let stop_fraction = pos + run_fraction;
+
+        // TODO: send note offs!
+
+        while self.buffer_pos < self.buffer.len() {
+            let ev = self.buffer[self.buffer_pos];
+            if pos > ev.start {
+                println!("{} Skipped event {}", pos, ev.start);
+            } else if ev.start <= stop_fraction {
+                let offset = (ev.start * frames_per_fraction) as u32;
+                match NoteEvent::<()>::from_midi(offset, &ev.data) {
+                    Ok(mev) => {
+                        println!("{}: sending event {} {:?}", pos, ev.start, mev);
+                        if let NoteEvent::NoteOn { note, channel, .. } = mev {
+                            let prev = self.note_offs.insert(
+                                note,
+                                FutureNoteOff {
+                                    when: ev.stop,
+                                    channel,
+                                },
+                            );
+                            // TODO: Send previous note off
+                        }
+                        context.send_event(mev);
+                    }
+                    Err(err) => println!("Couldn't decode {:?} {:?}", ev, err),
+                }
+                println!("now {}, ev {}", pos, ev.start);
+            } else {
+                break;
+            }
+            self.buffer_pos += 1;
+        }
+
+        ProcessStatus::KeepAlive
     }
 }
 
