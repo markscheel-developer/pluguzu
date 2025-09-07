@@ -7,7 +7,8 @@ use egui_code_editor::{CodeEditor, ColorTheme, Syntax};
 use nih_plug::prelude::*;
 use nih_plug_egui::{create_egui_editor, egui::Vec2, resizable_window::ResizableWindow, EguiState};
 use std::collections::BTreeSet;
-use std::sync::Arc;
+use std::ops::DerefMut;
+use std::sync::{Arc, Mutex};
 
 pub struct Pluguzu {
     params: Arc<PluguzuParams>,
@@ -19,6 +20,9 @@ pub struct PluguzuParams {
     /// restored.
     #[persist = "editor-state"]
     editor_state: Arc<EguiState>,
+
+    #[persist = "code"]
+    code: Arc<Mutex<String>>,
 }
 
 impl Default for Pluguzu {
@@ -33,6 +37,7 @@ impl Default for PluguzuParams {
     fn default() -> Self {
         Self {
             editor_state: EguiState::from_size(300, 180),
+            code: Arc::new(Mutex::new(String::new())),
         }
     }
 }
@@ -67,28 +72,42 @@ impl Plugin for Pluguzu {
         self.params.clone()
     }
 
-    fn editor(&mut self, _async_executor: AsyncExecutor<Self>) -> Option<Box<dyn Editor>> {
+    fn editor(&mut self, async_executor: AsyncExecutor<Self>) -> Option<Box<dyn Editor>> {
         let params = self.params.clone();
         let egui_state = params.editor_state.clone();
+        let code = params.code.clone();
         create_egui_editor(
             self.params.editor_state.clone(),
-            String::new(),
+            (),
             |_, _| {},
-            move |egui_ctx, _setter, state| {
+            move |egui_ctx, _setter, _state| {
                 ResizableWindow::new("res-wind")
                     .min_size(Vec2::new(128.0, 128.0))
                     .show(egui_ctx, egui_state.as_ref(), |ui| {
-                        CodeEditor::default()
+                        let output = CodeEditor::default()
                             .id_source("code editor")
                             .with_rows(7)
                             .with_fontsize(14.0)
                             .with_theme(ColorTheme::SONOKAI)
                             .with_syntax(haskell())
                             .with_numlines(true)
-                            .show(ui, state);
+                            .show(ui, code.lock().unwrap().deref_mut());
+                        // TODO: request focus only once
+                        output.response.request_focus();
+                        if output.response.changed() {
+                            // TODO: sometime alt modifier get stuck after clicking, perhaps it could be manually removed to workaround this weird bug?
+                            // egui_ctx.input(|i| println!("HERE: {:?}", i.modifiers));
+                            async_executor.execute_background(())
+                        }
                     });
             },
         )
+    }
+
+    fn task_executor(&mut self) -> TaskExecutor<Self> {
+        // In the default implementation we can simply ignore the value
+        let code = self.params.code.clone();
+        Box::new(move |_| println!("Running in background for {}", code.lock().unwrap()))
     }
 
     fn initialize(
