@@ -1,6 +1,6 @@
 # pluguzu
 
-A PoC uzu-lang running as CLAP plugin (or VST) through the DISTRHO Plugin Framework.
+A PoC uzu-lang running as CLAP plugin (or VST) through the nih-plug framework.
 
 > Checkout the companion post: https://midirus.com/blog/haskell-foreign-library-dpf
 
@@ -52,10 +52,7 @@ ldd ~/.vst/pluguzu-vst.so | grep "not found"
 
 - [PluguzuCore.hs](./src/PluguzuCore.hs) contains the logic to convert tidal pattern into MIDI events.
 - [Pluguzu.hs](./Pluguzu.hs) is the foreign library called by the plugin.
-- [PluguzuDSP.cpp](./PluguzuDSP.cpp) is the main plugin component in charge of submiting the MIDI events.
-- [PluguzuUI.cpp](./PluguzuUI.cpp) is the plugin component in charge of the editor UI.
 - [pluguzu-presets.md](./pluguzu-presets.md) is the preset library.
-- [DistrhoPluginInfo.h](./DistrhoPluginInfo.h) describe the plugin settings for the DPF compilation system.
 - [PluguzuWrapper.c](./PluguzuWrapper.c) is the C wrapper to enable calling Haskell from C.
 
 ## Roadmap
