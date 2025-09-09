@@ -137,16 +137,16 @@ pub enum PluguzuTask {
 impl Pluguzu {
     fn sync_state_buffer(&mut self, cur_bar: i32, ctx: &impl ProcessContext<Self>) {
         let mut state = self.state.lock().unwrap();
-        if let Some(start) = state.bar_start {
-            if cur_bar >= start {
-                println!("Copying buffer data from {}", start);
-                self.buffer.clear();
-                self.buffer.extend_from_slice(&state.buffer);
-                self.buffer_pos = 0;
-                self.buffer_start_bar = start;
-                state.bar_start = None;
-                ctx.execute_background(PluguzuTask::Render(start + BUFFER_LEN))
-            }
+        if let Some(start) = state.bar_start
+            && cur_bar >= start
+        {
+            println!("Copying buffer data from {}", start);
+            self.buffer.clear();
+            self.buffer.extend_from_slice(&state.buffer);
+            self.buffer_pos = 0;
+            self.buffer_start_bar = start;
+            state.bar_start = None;
+            ctx.execute_background(PluguzuTask::Render(start + BUFFER_LEN))
         }
     }
 
