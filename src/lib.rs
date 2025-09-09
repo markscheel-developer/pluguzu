@@ -1,12 +1,17 @@
 use egui_code_editor::{CodeEditor, ColorTheme, Syntax};
 use nih_plug::prelude::*;
-use nih_plug_egui::{create_egui_editor, egui::Vec2, resizable_window::ResizableWindow, EguiState};
+use nih_plug_egui::{
+    create_egui_editor,
+    egui::{FontId, RichText, Vec2},
+    resizable_window::ResizableWindow,
+    EguiState,
+};
 use std::collections::BTreeSet;
 use std::collections::HashMap;
 use std::ops::DerefMut;
 use std::sync::atomic::AtomicI32;
 use std::sync::atomic::Ordering;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, RwLock};
 
 pub mod binding;
 use binding::PluguzuState;
@@ -40,10 +45,17 @@ impl ProcessMidi {
     }
 }
 
+struct PluguzuUI {
+    error: Option<String>,
+    playing: bool,
+    next: i32,
+    remaining: usize,
+}
+
 pub struct Pluguzu {
     params: Arc<PluguzuParams>,
     state: Arc<Mutex<PluguzuState>>,
-    error: Arc<Mutex<Option<String>>>,
+    ui_state: Arc<RwLock<PluguzuUI>>,
 
     note_offs: HashMap<u8, FutureNoteOff>,
 
@@ -83,7 +95,12 @@ impl Default for Pluguzu {
         Self {
             params: Arc::new(PluguzuParams::default()),
             state: Arc::new(Mutex::new(PluguzuState::new(512))),
-            error: Arc::new(Mutex::new(None)),
+            ui_state: Arc::new(RwLock::new(PluguzuUI {
+                playing: false,
+                error: None,
+                next: 0,
+                remaining: 0,
+            })),
             note_offs: HashMap::with_capacity(255),
             current_bar: Arc::new(AtomicI32::new(0)),
             buffer_start_bar: -1,
@@ -212,6 +229,8 @@ impl Plugin for Pluguzu {
         let params = self.params.clone();
         let egui_state = params.editor_state.clone();
         let code = params.code.clone();
+        let ui_state = self.ui_state.clone();
+
         create_egui_editor(
             self.params.editor_state.clone(),
             (),
@@ -220,6 +239,18 @@ impl Plugin for Pluguzu {
                 ResizableWindow::new("res-wind")
                     .min_size(Vec2::new(128.0, 128.0))
                     .show(egui_ctx, egui_state.as_ref(), |ui| {
+                        let ui_state = ui_state.read().unwrap();
+                        let status = if ui_state.playing { ">>=" } else { "|-|" };
+                        let next = ui_state.next;
+                        let remaining = ui_state.remaining;
+                        let error = ui_state.error.as_deref().unwrap_or("OK");
+                        ui.label(
+                            RichText::new(format!(
+                                " {status} {next} | {remaining} events | {error}"
+                            ))
+                            .font(FontId::monospace(14.0)),
+                        );
+
                         let output = CodeEditor::default()
                             .id_source("code editor")
                             .with_rows(7)
@@ -242,7 +273,7 @@ impl Plugin for Pluguzu {
 
     fn task_executor(&mut self) -> TaskExecutor<Self> {
         let code = self.params.code.clone();
-        let error = self.error.clone();
+        let ui_state = self.ui_state.clone();
         let state = self.state.clone();
         let current_bar = self.current_bar.clone();
         Box::new(move |task| {
@@ -251,7 +282,7 @@ impl Plugin for Pluguzu {
                 PluguzuTask::Parse => {
                     let code = code.lock().unwrap();
                     println!("Parsing {}", code);
-                    *error.lock().unwrap() = state.parse(&code);
+                    ui_state.write().unwrap().error = state.parse(&code);
                     let start = current_bar.load(Ordering::Relaxed) + 1;
                     state.render(start, start + BUFFER_LEN)
                 }
@@ -283,11 +314,15 @@ impl Plugin for Pluguzu {
         while let Some(event) = context.next_event() {
             context.send_event(event)
         }
+
         let transport = context.transport();
+        let playing = transport.playing;
         let cur_bar = transport.bar_number().unwrap_or(0);
         self.current_bar.store(cur_bar, Ordering::Relaxed);
 
-        if !transport.playing {
+        if !playing {
+            self.ui_state.write().unwrap().playing = false;
+            println!("Not playing?!");
             // TODO: send pending note-off
             return ProcessStatus::Normal;
         }
@@ -353,6 +388,10 @@ impl Plugin for Pluguzu {
             }
         }
 
+        let mut ui_state = self.ui_state.write().unwrap();
+        ui_state.playing = playing;
+        ui_state.next = self.buffer_start_bar + BUFFER_LEN - cur_bar;
+        ui_state.remaining = self.buffer.len() - self.buffer_pos;
         ProcessStatus::KeepAlive
     }
 }
