@@ -1,8 +1,8 @@
 use egui_code_editor::{CodeEditor, ColorTheme, Syntax};
 use nih_plug::prelude::*;
 use nih_plug_egui::{create_egui_editor, egui::Vec2, resizable_window::ResizableWindow, EguiState};
-use std::collections::BTreeMap;
 use std::collections::BTreeSet;
+use std::collections::HashMap;
 use std::ops::DerefMut;
 use std::sync::atomic::AtomicI32;
 use std::sync::atomic::Ordering;
@@ -11,12 +11,43 @@ use std::sync::{Arc, Mutex};
 pub mod binding;
 use binding::PluguzuState;
 
+// Information to get midi event offset
+pub struct ProcessMidi {
+    start: f64,
+    end: f64,
+    frames_per_fraction: f64,
+}
+
+impl ProcessMidi {
+    fn event_offset(&self, when: f64) -> u32 {
+        ((when - self.start) * self.frames_per_fraction) as u32
+    }
+    fn send_note_off(
+        &self,
+        note: u8,
+        ev: &FutureNoteOff,
+        context: &mut impl ProcessContext<Pluguzu>,
+    ) {
+        let mev = NoteEvent::NoteOff {
+            timing: self.event_offset(ev.when),
+            voice_id: None,
+            channel: ev.channel,
+            note,
+            velocity: 0.,
+        };
+        println!("{}: sending note off {:?}", self.start, mev);
+        context.send_event(mev);
+    }
+}
+
 pub struct Pluguzu {
     params: Arc<PluguzuParams>,
     state: Arc<Mutex<PluguzuState>>,
     error: Arc<Mutex<Option<String>>>,
 
-    note_offs: BTreeMap<u8, FutureNoteOff>,
+    note_offs: HashMap<u8, FutureNoteOff>,
+
+    midi: ProcessMidi,
 
     // Keep track of the current playing bar so that code update are queued to the next bar.
     current_bar: Arc<AtomicI32>,
@@ -39,6 +70,7 @@ pub struct PluguzuParams {
     code: Arc<Mutex<String>>,
 }
 
+#[derive(Debug)]
 struct FutureNoteOff {
     when: f64,
     channel: u8,
@@ -50,12 +82,17 @@ impl Default for Pluguzu {
             params: Arc::new(PluguzuParams::default()),
             state: Arc::new(Mutex::new(PluguzuState::new(512))),
             error: Arc::new(Mutex::new(None)),
-            note_offs: BTreeMap::new(),
+            note_offs: HashMap::with_capacity(255),
             current_bar: Arc::new(AtomicI32::new(0)),
             buffer_start_bar: -1,
             buffer_pos: 0,
             buffer: Vec::with_capacity(512),
             reset_requested: false,
+            midi: ProcessMidi {
+                start: 0.,
+                end: 0.,
+                frames_per_fraction: 0.,
+            },
         }
     }
 }
@@ -84,12 +121,66 @@ impl Pluguzu {
         if let Some(start) = state.bar_start {
             if cur_bar >= start {
                 println!("Copying buffer data from {}", start);
+                self.buffer.clear();
                 self.buffer.extend_from_slice(&state.buffer);
                 self.buffer_pos = 0;
                 self.buffer_start_bar = start;
                 state.bar_start = None;
                 ctx.execute_background(PluguzuTask::Render(start + 4))
             }
+        }
+    }
+
+    fn send_note_offs(&mut self, context: &mut impl ProcessContext<Self>) {
+        let midi = &self.midi;
+        self.note_offs.retain(|note, ev| {
+            if ev.when >= midi.start && ev.when < midi.end {
+                midi.send_note_off(*note, ev, context);
+                false
+            } else {
+                true
+            }
+        });
+    }
+
+    fn send_event(&mut self, ev: &binding::MidiEvent, context: &mut impl ProcessContext<Self>) {
+        let offset = if ev.start > self.midi.start {
+            self.midi.event_offset(ev.start)
+        } else {
+            0
+        };
+        match NoteEvent::<()>::from_midi(offset, &ev.data) {
+            Ok(mev) => {
+                println!("{}: sending event {} {:?}", self.midi.start, ev.start, mev);
+                context.send_event(mev);
+                if let NoteEvent::NoteOn { note, channel, .. } = mev {
+                    if ev.stop < self.midi.end {
+                        // This is a fast event, schedule the note-off right away
+                        self.midi.send_note_off(
+                            note,
+                            &FutureNoteOff {
+                                when: ev.stop,
+                                channel,
+                            },
+                            context,
+                        )
+                    } else {
+                        // Schedule the note-off for later
+                        let prev = self.note_offs.insert(
+                            note,
+                            FutureNoteOff {
+                                when: ev.stop,
+                                channel,
+                            },
+                        );
+                        if let Some(prev) = prev {
+                            // Send any existing note-off
+                            self.midi.send_note_off(note, &prev, context)
+                        }
+                    }
+                }
+            }
+            Err(err) => println!("Couldn't decode {:?} {:?}", ev, err),
         }
     }
 }
@@ -194,6 +285,11 @@ impl Plugin for Pluguzu {
         let cur_bar = transport.bar_number().unwrap_or(0);
         self.current_bar.store(cur_bar, Ordering::Relaxed);
 
+        if !transport.playing {
+            // TODO: send pending note-off
+            return ProcessStatus::Normal;
+        }
+
         // Copy data
         self.sync_state_buffer(cur_bar, context);
 
@@ -211,6 +307,7 @@ impl Plugin for Pluguzu {
         }
         self.reset_requested = false;
 
+        // Compute current frame info
         let pos = transport.pos_beats().unwrap() / 4.0;
 
         let frames = buffer.samples() as f64;
@@ -221,38 +318,34 @@ impl Plugin for Pluguzu {
         let frames_per_fraction = frames / run_fraction;
         let stop_fraction = pos + run_fraction;
 
-        // TODO: send note offs!
+        // Store the midi offset stuff
+        self.midi.start = pos;
+        self.midi.end = stop_fraction;
+        if frames_per_fraction != self.midi.frames_per_fraction {
+            println!("Frames per fraction changed to {}", frames_per_fraction);
+            self.midi.frames_per_fraction = frames_per_fraction;
+        }
 
+        // Send any previously registered note-off.
+        self.send_note_offs(context);
+
+        // Send note-on
         while self.buffer_pos < self.buffer.len() {
             let ev = self.buffer[self.buffer_pos];
             if pos > ev.start {
-                println!("{} Skipped event {}", pos, ev.start);
-            } else if ev.start <= stop_fraction {
-                let offset = (ev.start * frames_per_fraction) as u32;
-                match NoteEvent::<()>::from_midi(offset, &ev.data) {
-                    Ok(mev) => {
-                        println!("{}: sending event {} {:?}", pos, ev.start, mev);
-                        if let NoteEvent::NoteOn { note, channel, .. } = mev {
-                            let prev = self.note_offs.insert(
-                                note,
-                                FutureNoteOff {
-                                    when: ev.stop,
-                                    channel,
-                                },
-                            );
-                            // TODO: Send previous note off
-                        }
-                        context.send_event(mev);
-                    }
-                    Err(err) => println!("Couldn't decode {:?} {:?}", ev, err),
+                if ev.start <= self.midi.end {
+                    self.send_event(&ev, context);
+                } else {
+                    println!("{} Skipped event {}", pos, ev.start);
                 }
-                println!("now {}, ev {}", pos, ev.start);
+            } else if ev.start <= stop_fraction {
+                self.send_event(&ev, context);
             } else {
                 break;
             }
             self.buffer_pos += 1;
         }
-
+        // Todo: resync buffer when the current run overlap with the next chunk
         ProcessStatus::KeepAlive
     }
 }
