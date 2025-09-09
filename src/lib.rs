@@ -59,6 +59,8 @@ pub struct Pluguzu {
     reset_requested: bool,
 }
 
+const BUFFER_LEN: i32 = 4;
+
 #[derive(Params)]
 pub struct PluguzuParams {
     /// The editor state, saved together with the parameter state so the custom scaling can be
@@ -126,7 +128,7 @@ impl Pluguzu {
                 self.buffer_pos = 0;
                 self.buffer_start_bar = start;
                 state.bar_start = None;
-                ctx.execute_background(PluguzuTask::Render(start + 4))
+                ctx.execute_background(PluguzuTask::Render(start + BUFFER_LEN))
             }
         }
     }
@@ -251,11 +253,11 @@ impl Plugin for Pluguzu {
                     println!("Parsing {}", code);
                     *error.lock().unwrap() = state.parse(&code);
                     let start = current_bar.load(Ordering::Relaxed) + 1;
-                    state.render(start, start + 4)
+                    state.render(start, start + BUFFER_LEN)
                 }
                 PluguzuTask::Render(start) => {
                     println!("Rendering {}", start);
-                    state.render(start, start + 4)
+                    state.render(start, start + BUFFER_LEN)
                 }
             }
         })
@@ -294,7 +296,7 @@ impl Plugin for Pluguzu {
         self.sync_state_buffer(cur_bar, context);
 
         // Check that we are ready
-        if cur_bar < self.buffer_start_bar || cur_bar >= self.buffer_start_bar + 4 {
+        if cur_bar < self.buffer_start_bar || cur_bar >= self.buffer_start_bar + BUFFER_LEN {
             if !self.reset_requested {
                 println!("We are out of sync, requesting a reset :/");
                 self.buffer.clear();
@@ -330,6 +332,7 @@ impl Plugin for Pluguzu {
         self.send_note_offs(context);
 
         // Send note-on
+        let next_buffer = self.buffer_start_bar + BUFFER_LEN;
         while self.buffer_pos < self.buffer.len() {
             let ev = self.buffer[self.buffer_pos];
             if pos > ev.start {
@@ -344,8 +347,12 @@ impl Plugin for Pluguzu {
                 break;
             }
             self.buffer_pos += 1;
+            if self.buffer_pos == self.buffer.len() && stop_fraction > next_buffer as f64 {
+                // resync buffer when the current run overlap with the next chunk
+                self.sync_state_buffer(next_buffer, context)
+            }
         }
-        // Todo: resync buffer when the current run overlap with the next chunk
+
         ProcessStatus::KeepAlive
     }
 }
