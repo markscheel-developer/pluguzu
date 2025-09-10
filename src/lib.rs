@@ -74,6 +74,7 @@ pub struct Pluguzu {
 }
 
 const BUFFER_LEN: i32 = 4;
+const VERT_SPACE: f32 = 3.;
 
 #[derive(Params)]
 pub struct PluguzuParams {
@@ -125,7 +126,7 @@ impl Default for Pluguzu {
 impl Default for PluguzuParams {
     fn default() -> Self {
         Self {
-            editor_state: EguiState::from_size(300, 180),
+            editor_state: EguiState::from_size(800, 600),
             code: Arc::new(Mutex::new(
                 "n \"c2*4\""
                     // "fast 2 $ n \"[c2 .. c3]\""
@@ -261,7 +262,7 @@ impl Plugin for Pluguzu {
         let initial_font_size = font_size.load(Ordering::Relaxed);
 
         let dsp_state = self.dsp_state.clone();
-        let ui_view = Mutex::new(UIView::Preset); // Editor);
+        let ui_view = Mutex::new(UIView::Editor);
         let preset_state = Mutex::new(PresetUI {
             cat: 0,
             selected: 0,
@@ -275,41 +276,49 @@ impl Plugin for Pluguzu {
             move |egui_ctx, _| update_font_size(egui_ctx, initial_font_size),
             move |egui_ctx, _setter, _state| {
                 ResizableWindow::new("res-wind")
-                    .min_size(Vec2::new(128.0, 128.0))
+                    .min_size(Vec2::new(80.0, 60.0))
                     .show(egui_ctx, egui_state.as_ref(), |ui| {
                         // Main UI
                         let mut view = ui_view.lock().unwrap();
                         match *view {
-                            UIView::Preset => preset_ui(ui, &mut view, &presets, preset_state.lock().unwrap().deref_mut(), code.lock().unwrap().deref_mut()),
+                            UIView::Preset => preset_ui(
+                                ui,
+                                &mut view,
+                                font_size.load(Ordering::Relaxed),
+                                &presets,
+                                preset_state.lock().unwrap().deref_mut(),
+                                code.lock().unwrap().deref_mut(),
+                            ),
                             UIView::Editor => {
                                 let mut font_size_value = font_size.load(Ordering::Relaxed);
-                                ui.with_layout(egui::Layout::left_to_right(egui::Align::Min), |ui| {
-                                    if ui.button("+").clicked() {
-                                        font_size_value = font_size_value.saturating_add(1);
-                                        font_size.store(font_size_value, Ordering::Relaxed);
-                                        update_font_size(egui_ctx, font_size_value);
-                                    }
-                                    if font_size_value > 4 && ui.button("-").clicked() {
-                                        font_size_value = font_size_value.saturating_sub(1);
-                                        font_size.store(font_size_value, Ordering::Relaxed);
-                                        update_font_size(egui_ctx, font_size_value);
-                                    }
-                                    if ui.button("Load").clicked() {
-                                        *view = UIView::Preset
-                                    }
-                                    let dsp_state = dsp_state.read().unwrap();
-                                    let status = if dsp_state.playing { ">>=" } else { "|-|" };
-                                    let next = dsp_state.next;
-                                    let remaining = dsp_state.remaining;
-                                    let error = dsp_state.error.as_deref().unwrap_or("OK");
-                                    ui.label(
-                                        RichText::new(format!(
+                                ui.with_layout(
+                                    egui::Layout::left_to_right(egui::Align::Min),
+                                    |ui| {
+                                        if ui.button("+").clicked() {
+                                            font_size_value = font_size_value.saturating_add(1);
+                                            font_size.store(font_size_value, Ordering::Relaxed);
+                                            update_font_size(egui_ctx, font_size_value);
+                                        }
+                                        if font_size_value > 4 && ui.button("-").clicked() {
+                                            font_size_value = font_size_value.saturating_sub(1);
+                                            font_size.store(font_size_value, Ordering::Relaxed);
+                                            update_font_size(egui_ctx, font_size_value);
+                                        }
+                                        if ui.button("Load").clicked() {
+                                            *view = UIView::Preset
+                                        }
+                                        let dsp_state = dsp_state.read().unwrap();
+                                        let status = if dsp_state.playing { ">>=" } else { "|-|" };
+                                        let next = dsp_state.next;
+                                        let remaining = dsp_state.remaining;
+                                        let error = dsp_state.error.as_deref().unwrap_or("OK");
+                                        ui.label(RichText::new(format!(
                                             "{status} {next} | {remaining} events | {error}"
-                                        ))
-                                    );
-                                });
+                                        )));
+                                    },
+                                );
 
-                                let line_height = font_size_value as f32 + 3. /* the default y spacing */;
+                                let line_height = font_size_value as f32 + VERT_SPACE;
                                 let avail_lines = (ui.available_height() / line_height).floor();
 
                                 let output = CodeEditor::default()
@@ -327,7 +336,7 @@ impl Plugin for Pluguzu {
                                     // egui_ctx.input(|i| println!("HERE: {:?}", i.modifiers));
                                     async_executor.execute_background(PluguzuTask::Parse(true))
                                 }
-                            },
+                            }
                         };
                     });
             },
@@ -496,6 +505,7 @@ fn load_presets() -> Presets {
 fn preset_ui(
     ui: &mut egui::Ui,
     view: &mut UIView,
+    font_size: u8,
     presets: &Presets,
     preset_state: &mut PresetUI,
     code: &mut String,
@@ -516,9 +526,16 @@ fn preset_ui(
     // Preset selector
     let sel = &mut preset_state.selected;
     if let Some((_, presets)) = presets.get(*cat) {
-        for (pos, preset) in presets.iter().enumerate() {
-            ui.selectable_value(sel, pos, preset.name);
-        }
+        let line_height = font_size as f32 + VERT_SPACE;
+        let avail_height = ui.available_height() - line_height * 2.0 + 10.;
+        egui::ScrollArea::vertical()
+            .auto_shrink(false)
+            .max_height(avail_height)
+            .show(ui, |ui| {
+                for (pos, preset) in presets.iter().enumerate() {
+                    ui.selectable_value(sel, pos, preset.name);
+                }
+            });
         ui.horizontal(|ui| {
             if let Some(preset) = presets.get(*sel)
                 && ui.button("Load").clicked()
