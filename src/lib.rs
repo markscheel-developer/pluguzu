@@ -1,16 +1,16 @@
 use egui_code_editor::{CodeEditor, ColorTheme, Syntax};
 use nih_plug::prelude::*;
 use nih_plug_egui::{
-    create_egui_editor,
-    egui::{FontId, RichText, Vec2},
+    create_egui_editor, egui,
+    egui::{FontId, RichText, TextStyle, Vec2},
     resizable_window::ResizableWindow,
     EguiState,
 };
 use std::collections::BTreeSet;
 use std::collections::HashMap;
 use std::ops::DerefMut;
-use std::sync::atomic::AtomicI32;
 use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicI32, AtomicU8};
 use std::sync::{Arc, Mutex, RwLock};
 
 pub mod binding;
@@ -45,7 +45,8 @@ impl ProcessMidi {
     }
 }
 
-struct PluguzuUI {
+// Info from the engine for the UI
+struct PluguzuDSP {
     error: Option<String>,
     playing: bool,
     next: i32,
@@ -55,7 +56,8 @@ struct PluguzuUI {
 pub struct Pluguzu {
     params: Arc<PluguzuParams>,
     state: Arc<Mutex<PluguzuState>>,
-    ui_state: Arc<RwLock<PluguzuUI>>,
+
+    dsp_state: Arc<RwLock<PluguzuDSP>>,
 
     note_offs: HashMap<u8, FutureNoteOff>,
 
@@ -82,6 +84,9 @@ pub struct PluguzuParams {
 
     #[persist = "code"]
     code: Arc<Mutex<String>>,
+
+    #[persist = "font-size"]
+    font_size: Arc<AtomicU8>,
 }
 
 #[derive(Debug)]
@@ -95,7 +100,8 @@ impl Default for Pluguzu {
         Self {
             params: Arc::new(PluguzuParams::default()),
             state: Arc::new(Mutex::new(PluguzuState::new(512))),
-            ui_state: Arc::new(RwLock::new(PluguzuUI {
+
+            dsp_state: Arc::new(RwLock::new(PluguzuDSP {
                 playing: false,
                 error: None,
                 next: 0,
@@ -125,6 +131,7 @@ impl Default for PluguzuParams {
                     // "fast 2 $ n \"[c2 .. c3]\""
                     .into(),
             )),
+            font_size: Arc::new(AtomicU8::new(14)),
         }
     }
 }
@@ -204,6 +211,17 @@ impl Pluguzu {
     }
 }
 
+fn update_font_size(ctx: &egui::Context, font_size: u8) {
+    ctx.all_styles_mut(|style| {
+        // println!("All style: {:?}", style.text_styles);
+        let font = FontId::monospace(font_size as f32);
+        style.text_styles.insert(TextStyle::Button, font.clone());
+        style.text_styles.insert(TextStyle::Body, font);
+        // Make the UI more tight
+        style.spacing.item_spacing.x = 4.;
+    });
+}
+
 impl Plugin for Pluguzu {
     const NAME: &'static str = "Pluguzu (nih)";
     const VENDOR: &'static str = "Midirus";
@@ -229,32 +247,50 @@ impl Plugin for Pluguzu {
         let params = self.params.clone();
         let egui_state = params.editor_state.clone();
         let code = params.code.clone();
-        let ui_state = self.ui_state.clone();
+        let font_size = params.font_size.clone();
+        let initial_font_size = font_size.load(Ordering::Relaxed);
+
+        let dsp_state = self.dsp_state.clone();
 
         create_egui_editor(
             self.params.editor_state.clone(),
             (),
-            |_, _| {},
+            move |egui_ctx, _| update_font_size(egui_ctx, initial_font_size),
             move |egui_ctx, _setter, _state| {
                 ResizableWindow::new("res-wind")
                     .min_size(Vec2::new(128.0, 128.0))
                     .show(egui_ctx, egui_state.as_ref(), |ui| {
-                        let ui_state = ui_state.read().unwrap();
-                        let status = if ui_state.playing { ">>=" } else { "|-|" };
-                        let next = ui_state.next;
-                        let remaining = ui_state.remaining;
-                        let error = ui_state.error.as_deref().unwrap_or("OK");
-                        ui.label(
-                            RichText::new(format!(
-                                " {status} {next} | {remaining} events | {error}"
-                            ))
-                            .font(FontId::monospace(14.0)),
-                        );
+                        let mut font_size_value = font_size.load(Ordering::Relaxed);
+                        ui.with_layout(egui::Layout::left_to_right(egui::Align::Min), |ui| {
+                            if ui.button("+").clicked() {
+                                font_size_value = font_size_value.saturating_add(1);
+                                font_size.store(font_size_value, Ordering::Relaxed);
+                                update_font_size(egui_ctx, font_size_value);
+                            }
+                            if font_size_value > 4 && ui.button("-").clicked() {
+                                font_size_value = font_size_value.saturating_sub(1);
+                                font_size.store(font_size_value, Ordering::Relaxed);
+                                update_font_size(egui_ctx, font_size_value);
+                            }
+                            let dsp_state = dsp_state.read().unwrap();
+                            let status = if dsp_state.playing { ">>=" } else { "|-|" };
+                            let next = dsp_state.next;
+                            let remaining = dsp_state.remaining;
+                            let error = dsp_state.error.as_deref().unwrap_or("OK");
+                            ui.label(
+                                RichText::new(format!(
+                                    "{status} {next} | {remaining} events | {error}"
+                                )), // .font(FontId::monospace(font_size_value as f32)),
+                            );
+                        });
+
+                        let line_height = font_size_value as f32 + 3. /* the default y spacing */;
+                        let avail_lines = (ui.available_height() / line_height).floor();
 
                         let output = CodeEditor::default()
                             .id_source("code editor")
-                            .with_rows(7)
-                            .with_fontsize(14.0)
+                            .with_rows(avail_lines as usize)
+                            .with_fontsize(font_size_value as f32)
                             .with_theme(ColorTheme::SONOKAI)
                             .with_syntax(haskell())
                             .with_numlines(true)
@@ -273,7 +309,7 @@ impl Plugin for Pluguzu {
 
     fn task_executor(&mut self) -> TaskExecutor<Self> {
         let code = self.params.code.clone();
-        let ui_state = self.ui_state.clone();
+        let dsp_state = self.dsp_state.clone();
         let state = self.state.clone();
         let current_bar = self.current_bar.clone();
         Box::new(move |task| {
@@ -282,7 +318,7 @@ impl Plugin for Pluguzu {
                 PluguzuTask::Parse => {
                     let code = code.lock().unwrap();
                     println!("Parsing {}", code);
-                    ui_state.write().unwrap().error = state.parse(&code);
+                    dsp_state.write().unwrap().error = state.parse(&code);
                     let start = current_bar.load(Ordering::Relaxed) + 1;
                     state.render(start, start + BUFFER_LEN)
                 }
@@ -321,7 +357,7 @@ impl Plugin for Pluguzu {
         self.current_bar.store(cur_bar, Ordering::Relaxed);
 
         if !playing {
-            self.ui_state.write().unwrap().playing = false;
+            self.dsp_state.write().unwrap().playing = false;
             println!("Not playing?!");
             // TODO: send pending note-off
             return ProcessStatus::Normal;
@@ -388,10 +424,10 @@ impl Plugin for Pluguzu {
             }
         }
 
-        let mut ui_state = self.ui_state.write().unwrap();
-        ui_state.playing = playing;
-        ui_state.next = self.buffer_start_bar + BUFFER_LEN - cur_bar;
-        ui_state.remaining = self.buffer.len() - self.buffer_pos;
+        let mut dsp_state = self.dsp_state.write().unwrap();
+        dsp_state.playing = playing;
+        dsp_state.next = self.buffer_start_bar + BUFFER_LEN - cur_bar;
+        dsp_state.remaining = self.buffer.len() - self.buffer_pos;
         ProcessStatus::KeepAlive
     }
 }
