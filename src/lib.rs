@@ -40,7 +40,7 @@ impl ProcessMidi {
             note,
             velocity: 0.,
         };
-        println!("{}: sending note off {:?}", self.start, mev);
+        println!("{:.4}: sending note off      {:?}", self.start, mev);
         context.send_event(mev);
     }
 }
@@ -137,7 +137,7 @@ impl Default for PluguzuParams {
 }
 
 pub enum PluguzuTask {
-    Parse,
+    Parse(bool),
     Render(i32),
 }
 
@@ -169,6 +169,13 @@ impl Pluguzu {
         });
     }
 
+    fn send_all_note_offs(&mut self, context: &mut impl ProcessContext<Self>) {
+        self.note_offs.retain(|note, ev| {
+            self.midi.send_note_off(*note, ev, context);
+            false
+        });
+    }
+
     fn send_event(&mut self, ev: &binding::MidiEvent, context: &mut impl ProcessContext<Self>) {
         let offset = if ev.start > self.midi.start {
             self.midi.event_offset(ev.start)
@@ -177,7 +184,10 @@ impl Pluguzu {
         };
         match NoteEvent::<()>::from_midi(offset, &ev.data) {
             Ok(mev) => {
-                println!("{}: sending event {} {:?}", self.midi.start, ev.start, mev);
+                println!(
+                    "{:.4}: sending event {:.4} {:?}",
+                    self.midi.start, ev.start, mev
+                );
                 context.send_event(mev);
                 if let NoteEvent::NoteOn { note, channel, .. } = mev {
                     if ev.stop < self.midi.end {
@@ -300,7 +310,7 @@ impl Plugin for Pluguzu {
                         if output.response.changed() {
                             // TODO: sometime alt modifier get stuck after clicking, perhaps it could be manually removed to workaround this weird bug?
                             // egui_ctx.input(|i| println!("HERE: {:?}", i.modifiers));
-                            async_executor.execute_background(PluguzuTask::Parse)
+                            async_executor.execute_background(PluguzuTask::Parse(true))
                         }
                     });
             },
@@ -314,16 +324,19 @@ impl Plugin for Pluguzu {
         let current_bar = self.current_bar.clone();
         Box::new(move |task| {
             let mut state = state.lock().unwrap();
+            let current_bar = current_bar.load(Ordering::Relaxed);
             match task {
-                PluguzuTask::Parse => {
+                PluguzuTask::Parse(render) => {
                     let code = code.lock().unwrap();
                     println!("Parsing {}", code);
                     dsp_state.write().unwrap().error = state.parse(&code);
-                    let start = current_bar.load(Ordering::Relaxed) + 1;
-                    state.render(start, start + BUFFER_LEN)
+                    let start = current_bar + 1;
+                    if render {
+                        state.render(start, start + BUFFER_LEN)
+                    }
                 }
                 PluguzuTask::Render(start) => {
-                    println!("Rendering {}", start);
+                    nih_log!("{current_bar}: Rendering {}", start);
                     state.render(start, start + BUFFER_LEN)
                 }
             }
@@ -336,7 +349,7 @@ impl Plugin for Pluguzu {
         _buffer_config: &BufferConfig,
         context: &mut impl InitContext<Self>,
     ) -> bool {
-        context.execute(PluguzuTask::Parse);
+        context.execute(PluguzuTask::Parse(false));
         true
     }
 
@@ -358,8 +371,7 @@ impl Plugin for Pluguzu {
 
         if !playing {
             self.dsp_state.write().unwrap().playing = false;
-            println!("Not playing?!");
-            // TODO: send pending note-off
+            self.send_all_note_offs(context);
             return ProcessStatus::Normal;
         }
 
@@ -408,18 +420,21 @@ impl Plugin for Pluguzu {
             let ev = self.buffer[self.buffer_pos];
             if pos > ev.start {
                 if ev.start <= self.midi.end {
+                    // The event is due for this buffer
                     self.send_event(&ev, context);
                 } else {
-                    println!("{} Skipped event {}", pos, ev.start);
+                    // That's odd, it looks like we missed an event?!
+                    println!("{:.4} Skipped event {:.4}", pos, ev.start);
                 }
-            } else if ev.start <= stop_fraction {
+            } else if ev.stop <= self.midi.end {
+                println!("{:.4} Missed event start, but it still make sense to send it now... {:.4} - {:.4} < {:.4}", pos, ev.start, ev.stop, self.midi.end);
                 self.send_event(&ev, context);
             } else {
                 break;
             }
             self.buffer_pos += 1;
             if self.buffer_pos == self.buffer.len() && stop_fraction > next_buffer as f64 {
-                // resync buffer when the current run overlap with the next chunk
+                // try to resync buffer, e.g.: when the current run overlap with the next chunk
                 self.sync_state_buffer(next_buffer, context)
             }
         }
