@@ -5,6 +5,10 @@ all: haskell-lib build-rust
 install:
 	@echo "TODO"
 
+render-presets:
+	@echo "renderPresetData" | cabal repl
+	@cargo fmt
+
 build-rust:
 	@cargo xtask bundle pluguzu
 

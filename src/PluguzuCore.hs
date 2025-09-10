@@ -201,22 +201,19 @@ readPresets fp = parsePresets "" "" . lines <$> readFile fp
 renderPresetData :: IO ()
 renderPresetData = do
     presets <- readPresets "pluguzu-presets.md"
-    writeFile "pluguzu-presets.h" $ unlines $ renderHeader presets
+    writeFile "src/presets.rs" $ unlines $ renderHeader presets
   where
     renderHeader presets =
         [ "// Pluguzu presets"
-        , "#include <string>"
-        , "#include <vector>"
         , ""
-        , "struct uzu_program {"
-        , "  const char *name;"
-        , "  const char *code;"
-        , "  const std::vector<std::string> tags;"
-        , "};"
+        , "pub struct UzuProgram {"
+        , "  pub name: &'static str,"
+        , "  pub code: &'static str,"
+        , "  pub tags: Vec<&'static str>,"
+        , "}"
         , ""
-        , "const uzu_program uzu_programs[] = {"
-        , unlines (map mkProgram presets) ++ "};"
-        , ""
-        , "const int uzu_presets_count = sizeof(uzu_programs) / sizeof(uzu_programs[0]);"
+        , "pub fn presets() -> Vec<UzuProgram> {"
+        , "  vec![" ++ unlines (map mkProgram presets) ++ "]"
+        , "}"
         ]
-    mkProgram preset = "  {" ++ show preset.name ++ ", " ++ show preset.code ++ ", {" ++ show preset.category ++ "}},"
+    mkProgram preset = "  UzuProgram {name: " ++ show preset.name ++ ", code: " ++ show preset.code ++ ", tags: vec![" ++ show preset.category ++ "]},"

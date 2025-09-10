@@ -7,6 +7,7 @@ edition = "2024"
 nih_plug = { git = "https://github.com/robbert-vdh/nih-plug.git", rev = "ed09eca4301f67f17d43474cd3d21ea10b639046", features = ["assert_process_allocs", "standalone"] }
 nih_plug_egui = { git = "https://github.com/robbert-vdh/nih-plug.git", rev = "ed09eca4301f67f17d43474cd3d21ea10b639046" }
 egui_code_editor = "0.2.17"
+indexmap = "2.11.1"
 
 [workspace]
 members = ["xtask"]

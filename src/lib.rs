@@ -1,10 +1,9 @@
 use egui_code_editor::{CodeEditor, ColorTheme, Syntax};
 use nih_plug::prelude::*;
 use nih_plug_egui::{
-    create_egui_editor, egui,
+    EguiState, create_egui_editor, egui,
     egui::{FontId, RichText, TextStyle, Vec2},
     resizable_window::ResizableWindow,
-    EguiState,
 };
 use std::collections::BTreeSet;
 use std::collections::HashMap;
@@ -14,6 +13,7 @@ use std::sync::atomic::{AtomicI32, AtomicU8};
 use std::sync::{Arc, Mutex, RwLock};
 
 pub mod binding;
+mod presets;
 use binding::PluguzuState;
 
 // Information to get midi event offset
@@ -261,6 +261,13 @@ impl Plugin for Pluguzu {
         let initial_font_size = font_size.load(Ordering::Relaxed);
 
         let dsp_state = self.dsp_state.clone();
+        let ui_view = Mutex::new(UIView::Preset); // Editor);
+        let preset_state = Mutex::new(PresetUI {
+            cat: 0,
+            selected: 0,
+        });
+
+        let presets = Arc::new(load_presets());
 
         create_egui_editor(
             self.params.editor_state.clone(),
@@ -270,48 +277,58 @@ impl Plugin for Pluguzu {
                 ResizableWindow::new("res-wind")
                     .min_size(Vec2::new(128.0, 128.0))
                     .show(egui_ctx, egui_state.as_ref(), |ui| {
-                        let mut font_size_value = font_size.load(Ordering::Relaxed);
-                        ui.with_layout(egui::Layout::left_to_right(egui::Align::Min), |ui| {
-                            if ui.button("+").clicked() {
-                                font_size_value = font_size_value.saturating_add(1);
-                                font_size.store(font_size_value, Ordering::Relaxed);
-                                update_font_size(egui_ctx, font_size_value);
-                            }
-                            if font_size_value > 4 && ui.button("-").clicked() {
-                                font_size_value = font_size_value.saturating_sub(1);
-                                font_size.store(font_size_value, Ordering::Relaxed);
-                                update_font_size(egui_ctx, font_size_value);
-                            }
-                            let dsp_state = dsp_state.read().unwrap();
-                            let status = if dsp_state.playing { ">>=" } else { "|-|" };
-                            let next = dsp_state.next;
-                            let remaining = dsp_state.remaining;
-                            let error = dsp_state.error.as_deref().unwrap_or("OK");
-                            ui.label(
-                                RichText::new(format!(
-                                    "{status} {next} | {remaining} events | {error}"
-                                )), // .font(FontId::monospace(font_size_value as f32)),
-                            );
-                        });
+                        // Main UI
+                        let mut view = ui_view.lock().unwrap();
+                        match *view {
+                            UIView::Preset => preset_ui(ui, &mut view, &presets, preset_state.lock().unwrap().deref_mut(), code.lock().unwrap().deref_mut()),
+                            UIView::Editor => {
+                                let mut font_size_value = font_size.load(Ordering::Relaxed);
+                                ui.with_layout(egui::Layout::left_to_right(egui::Align::Min), |ui| {
+                                    if ui.button("+").clicked() {
+                                        font_size_value = font_size_value.saturating_add(1);
+                                        font_size.store(font_size_value, Ordering::Relaxed);
+                                        update_font_size(egui_ctx, font_size_value);
+                                    }
+                                    if font_size_value > 4 && ui.button("-").clicked() {
+                                        font_size_value = font_size_value.saturating_sub(1);
+                                        font_size.store(font_size_value, Ordering::Relaxed);
+                                        update_font_size(egui_ctx, font_size_value);
+                                    }
+                                    if ui.button("Load").clicked() {
+                                        *view = UIView::Preset
+                                    }
+                                    let dsp_state = dsp_state.read().unwrap();
+                                    let status = if dsp_state.playing { ">>=" } else { "|-|" };
+                                    let next = dsp_state.next;
+                                    let remaining = dsp_state.remaining;
+                                    let error = dsp_state.error.as_deref().unwrap_or("OK");
+                                    ui.label(
+                                        RichText::new(format!(
+                                            "{status} {next} | {remaining} events | {error}"
+                                        ))
+                                    );
+                                });
 
-                        let line_height = font_size_value as f32 + 3. /* the default y spacing */;
-                        let avail_lines = (ui.available_height() / line_height).floor();
+                                let line_height = font_size_value as f32 + 3. /* the default y spacing */;
+                                let avail_lines = (ui.available_height() / line_height).floor();
 
-                        let output = CodeEditor::default()
-                            .id_source("code editor")
-                            .with_rows(avail_lines as usize)
-                            .with_fontsize(font_size_value as f32)
-                            .with_theme(ColorTheme::SONOKAI)
-                            .with_syntax(haskell())
-                            .with_numlines(true)
-                            .show(ui, code.lock().unwrap().deref_mut());
-                        // TODO: request focus only once
-                        output.response.request_focus();
-                        if output.response.changed() {
-                            // TODO: sometime alt modifier get stuck after clicking, perhaps it could be manually removed to workaround this weird bug?
-                            // egui_ctx.input(|i| println!("HERE: {:?}", i.modifiers));
-                            async_executor.execute_background(PluguzuTask::Parse(true))
-                        }
+                                let output = CodeEditor::default()
+                                    .id_source("code editor")
+                                    .with_rows(avail_lines as usize)
+                                    .with_fontsize(font_size_value as f32)
+                                    .with_theme(ColorTheme::SONOKAI)
+                                    .with_syntax(haskell())
+                                    .with_numlines(true)
+                                    .show(ui, code.lock().unwrap().deref_mut());
+                                // TODO: request focus only once
+                                output.response.request_focus();
+                                if output.response.changed() {
+                                    // TODO: sometime alt modifier get stuck after clicking, perhaps it could be manually removed to workaround this weird bug?
+                                    // egui_ctx.input(|i| println!("HERE: {:?}", i.modifiers));
+                                    async_executor.execute_background(PluguzuTask::Parse(true))
+                                }
+                            },
+                        };
                     });
             },
         )
@@ -427,7 +444,10 @@ impl Plugin for Pluguzu {
                     println!("{:.4} Skipped event {:.4}", pos, ev.start);
                 }
             } else if ev.stop <= self.midi.end {
-                println!("{:.4} Missed event start, but it still make sense to send it now... {:.4} - {:.4} < {:.4}", pos, ev.start, ev.stop, self.midi.end);
+                println!(
+                    "{:.4} Missed event start, but it still make sense to send it now... {:.4} - {:.4} < {:.4}",
+                    pos, ev.start, ev.stop, self.midi.end
+                );
                 self.send_event(&ev, context);
             } else {
                 break;
@@ -444,6 +464,74 @@ impl Plugin for Pluguzu {
         dsp_state.next = self.buffer_start_bar + BUFFER_LEN - cur_bar;
         dsp_state.remaining = self.buffer.len() - self.buffer_pos;
         ProcessStatus::KeepAlive
+    }
+}
+
+enum UIView {
+    Editor,
+    Preset,
+}
+
+struct PresetUI {
+    cat: usize,
+    selected: usize,
+}
+
+type Presets = Vec<(String, Vec<Arc<presets::UzuProgram>>)>;
+
+fn load_presets() -> Presets {
+    let presets = presets::presets();
+    let mut map = indexmap::IndexMap::with_capacity(presets.len());
+    for preset in presets {
+        let preset = Arc::new(preset);
+        for tag in &preset.tags {
+            map.entry(tag.to_string())
+                .or_insert_with(Vec::new)
+                .push(preset.clone())
+        }
+    }
+    map.into_iter().collect()
+}
+
+fn preset_ui(
+    ui: &mut egui::Ui,
+    view: &mut UIView,
+    presets: &Presets,
+    preset_state: &mut PresetUI,
+    code: &mut String,
+) {
+    // Tag selector
+    let prev_cat = preset_state.cat;
+    let cat = &mut preset_state.cat;
+    ui.horizontal(|ui| {
+        for (pos, (tag, _)) in presets.iter().enumerate() {
+            ui.selectable_value(cat, pos, tag);
+        }
+    });
+    if prev_cat != *cat {
+        preset_state.selected = 0;
+    }
+
+    ui.separator();
+    // Preset selector
+    let sel = &mut preset_state.selected;
+    if let Some((_, presets)) = presets.get(*cat) {
+        for (pos, preset) in presets.iter().enumerate() {
+            ui.selectable_value(sel, pos, preset.name);
+        }
+        ui.horizontal(|ui| {
+            if let Some(preset) = presets.get(*sel)
+                && ui.button("Load").clicked()
+            {
+                *code = preset.code.to_string();
+                *view = UIView::Editor
+            };
+            if ui.button("Cancel").clicked() {
+                *view = UIView::Editor
+            };
+        });
+    } else if ui.button("Oops").clicked() {
+        *view = UIView::Editor
     }
 }
 
