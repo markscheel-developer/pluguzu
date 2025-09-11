@@ -4,7 +4,11 @@ module PluguzuCore (
     patternToEvents,
     mkArc,
     MidiEvent,
+    NoteLoc,
     SoundMap,
+    Event (..),
+    eventsToLoc,
+    addDeltaContext,
 
     -- * re-export
     Pattern.ControlPattern,
@@ -29,7 +33,7 @@ import Data.List (sortBy)
 import Data.Map.Strict qualified as Map
 import Data.Maybe (fromMaybe, mapMaybe)
 import Data.Word (Word8)
-import Debug.Trace (traceShow)
+import Debug.Trace (traceShow, traceShowM)
 import Foreign.Storable qualified as Storable
 import Foreign.Storable.Generic (GStorable)
 import GHC.Generics (Generic)
@@ -67,15 +71,65 @@ data MidiEvent = MidiEvent
 
 instance GStorable MidiEvent
 
-patternToEvents :: SoundMap -> Pattern.ControlPattern -> Time.Arc -> [MidiEvent]
+data EventLoc = EventLoc
+    { startPos :: Int
+    , endPos :: Int
+    }
+
+data NoteLoc = NoteLoc
+    { eventNR :: Int
+    , start :: Int
+    , end :: Int
+    }
+    deriving (Show, Generic)
+
+instance GStorable NoteLoc
+
+data Event = Event
+    { midi :: MidiEvent
+    , locs :: [EventLoc]
+    }
+
+eventsToLoc :: [Event] -> [NoteLoc]
+eventsToLoc = concatMap go . zip [0 ..]
+  where
+    go :: (Int, Event) -> [NoteLoc]
+    go (pos, ev) = map mkLoc ev.locs
+      where
+        mkLoc el = NoteLoc pos el.startPos el.endPos
+
+-- Copied from Sound.Tidal.Pattern.deltaMini, but using a single global offset
+addDeltaContext :: String -> String
+addDeltaContext = outside 0
+  where
+    outside :: Int -> String -> String
+    outside _ [] = []
+    outside pos ('"' : xs) =
+        "(deltaContext "
+            ++ show pos
+            ++ " "
+            ++ show 0
+            ++ " \""
+            ++ inside (pos + 1) xs
+    outside pos (x : xs) = x : outside (pos + 1) xs
+    inside :: Int -> String -> String
+    inside _ [] = []
+    inside pos ('"' : xs) = '"' : ')' : outside (pos + 1) xs
+    inside pos (x : xs) = x : inside (pos + 1) xs
+
+patternToEvents :: SoundMap -> Pattern.ControlPattern -> Time.Arc -> [Event]
 patternToEvents sm pat arc = sortBy compareEvent $ mapMaybe (eventToMidi sm) $ Pattern.queryArc pat arc
 
-compareEvent :: MidiEvent -> MidiEvent -> Ordering
-compareEvent e1 e2 = compare e1.barFraction e2.barFraction
+compareEvent :: Event -> Event -> Ordering
+compareEvent e1 e2 = compare e1.midi.barFraction e2.midi.barFraction
 
-eventToMidi :: SoundMap -> Pattern.Event Pattern.ValueMap -> Maybe MidiEvent
-eventToMidi sm ev = (ccToMidi <$> eventToCC ev) <|> (noteToMidi <$> eventToNote sm ev)
+eventToMidi :: SoundMap -> Pattern.Event Pattern.ValueMap -> Maybe Event
+eventToMidi sm ev = do
+    mev <- (ccToMidi <$> eventToCC ev) <|> (noteToMidi <$> eventToNote sm ev)
+    pure $ Event mev $ if mev.stopFraction > 0 then (map mkLoc ev.context.contextPosition) else []
   where
+    mkLoc :: ((Int, Int), (Int, Int)) -> EventLoc
+    mkLoc ((a, _), (b, _)) = EventLoc a b
     chan = (+ 1) $ round $ max 0 $ min 15 $ fromMaybe 0 $ Pattern.getF =<< Map.lookup "midichan" ev.value
     ccToMidi (ccn, ccv) = MidiEvent (rat2float (Pattern.wholeStart ev)) 0 (0xb0 .|. chan) ccn ccv
     noteToMidi (arc, pitch, velocity) =

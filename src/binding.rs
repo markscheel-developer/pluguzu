@@ -1,7 +1,7 @@
 // Copyright © 2025 Tristan de Cacqueray
 // SPDX-License-Identifier: GPL-3.0
 
-use std::ffi::{c_char, c_double, c_ulong};
+use std::ffi::{c_char, c_double, c_long, c_ulong};
 
 #[link(name = "pluguzu")]
 unsafe extern "C" {
@@ -14,6 +14,8 @@ unsafe extern "C" {
         start: c_ulong,
         end: c_ulong,
         buf: *mut MidiEvent,
+        locCount: &mut c_ulong,
+        loc: *mut LocEvent,
     ) -> c_ulong;
 }
 
@@ -21,6 +23,7 @@ pub struct PluguzuState {
     size: usize,
     state: *mut CPluguzuState,
     pub buffer: Vec<MidiEvent>,
+    pub locs: Vec<LocEvent>,
     pub bar_start: Option<i32>,
 }
 
@@ -30,6 +33,14 @@ pub struct MidiEvent {
     pub start: c_double,
     pub stop: c_double,
     pub data: [u8; 3],
+}
+
+#[derive(Debug, Clone, Copy)]
+#[repr(C)]
+pub struct LocEvent {
+    pub pos: c_long,
+    pub start: c_long,
+    pub stop: c_long,
 }
 
 impl PluguzuState {
@@ -42,6 +53,7 @@ impl PluguzuState {
             size,
             state,
             buffer: Vec::with_capacity(size),
+            locs: Vec::with_capacity(size * 2),
             bar_start: None,
         }
     }
@@ -65,17 +77,21 @@ impl PluguzuState {
     }
     pub fn render(&mut self, start: i32, end: i32) {
         unsafe {
+            let mut loc_count: u64 = 0;
             let mut count = pluguzuRender(
                 self.state,
                 start as u64,
                 end as u64,
                 self.buffer.as_mut_ptr(),
+                &mut loc_count,
+                self.locs.as_mut_ptr(),
             ) as usize;
             if count > self.size {
                 println!("Too many events rendered: {}", count);
                 count = self.size
             }
             self.buffer.set_len(count);
+            self.locs.set_len(loc_count as usize);
         };
         self.bar_start = Some(start);
     }

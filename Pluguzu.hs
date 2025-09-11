@@ -4,6 +4,7 @@
 module Pluguzu (pluguzuNew, pluguzuParse, pluguzuError) where
 
 import Control.Exception (SomeException, displayException, handle)
+import Control.Monad (unless)
 import Data.IORef
 import Data.Map.Strict qualified as Map
 import Data.Maybe (fromMaybe)
@@ -23,7 +24,7 @@ type CPluguzuState = Foreign.StablePtr PluguzuState
 foreign export ccall pluguzuNew :: Word -> IO CPluguzuState
 foreign export ccall pluguzuParse :: CPluguzuState -> Foreign.C.CString -> IO ()
 foreign export ccall pluguzuError :: CPluguzuState -> IO Foreign.C.CString
-foreign export ccall pluguzuRender :: CPluguzuState -> Word -> Word -> Ptr PluguzuCore.MidiEvent -> IO CSize
+foreign export ccall pluguzuRender :: CPluguzuState -> Word -> Word -> Ptr PluguzuCore.MidiEvent -> Ptr Int -> Ptr PluguzuCore.NoteLoc -> IO CSize
 foreign export ccall pluguzuSoundMap :: CPluguzuState -> CString -> Word -> IO ()
 foreign export ccall pluguzuNewConfigDir :: IO CString
 foreign export ccall pluguzuFreeConfigDir :: CString -> IO ()
@@ -69,7 +70,8 @@ pluguzuParse pState cStr = do
     let catchException = \(e :: SomeException) -> do
             cerr <- Foreign.C.newCString ("Error: " <> displayException e)
             writeError state.error (Just cerr)
-    handle catchException $ case PluguzuCore.parseTidal str of
+    putStrLn (PluguzuCore.addDeltaContext str)
+    handle catchException $ case PluguzuCore.parseTidal (PluguzuCore.addDeltaContext str) of
         Left err -> do
             cerr <- Foreign.C.newCString err
             writeError state.error (Just cerr)
@@ -91,8 +93,8 @@ pluguzuSoundMap pState sound note = do
     str <- Foreign.C.peekCString sound
     modifyIORef' state.soundMap (Map.insert str (fromIntegral note))
 
-pluguzuRender :: CPluguzuState -> Word -> Word -> Ptr PluguzuCore.MidiEvent -> IO CSize
-pluguzuRender pState startArc endArc pEvs = handle catchException $ do
+pluguzuRender :: CPluguzuState -> Word -> Word -> Ptr PluguzuCore.MidiEvent -> Ptr Int -> Ptr PluguzuCore.NoteLoc -> IO CSize
+pluguzuRender pState startArc endArc pEvs pLocCount pLocs = handle catchException $ do
     state <- Foreign.deRefStablePtr pState
     pat <- readIORef state.pat
     sm <- readIORef state.soundMap
@@ -100,7 +102,10 @@ pluguzuRender pState startArc endArc pEvs = handle catchException $ do
     let end = fromInteger (toInteger endArc)
     let arc = PluguzuCore.mkArc start end
     let evs = PluguzuCore.patternToEvents sm pat arc
-    pokeArray pEvs (take state.maxEvent evs)
+    pokeArray pEvs $ map (.midi) (take state.maxEvent evs)
+    let locs = PluguzuCore.eventsToLoc evs
+    unless (pLocs == Foreign.nullPtr) $ pokeArray pLocs $ take (state.maxEvent * 2) $ locs
+    Foreign.poke pLocCount $ length locs
     pure (fromInteger (toInteger (length evs)))
   where
     catchException :: SomeException -> IO CSize
