@@ -10,12 +10,16 @@ use std::collections::BTreeSet;
 use std::collections::HashMap;
 use std::ops::DerefMut;
 use std::sync::atomic::Ordering;
-use std::sync::atomic::{AtomicI32, AtomicU8};
+use std::sync::atomic::{AtomicI32, AtomicU32, AtomicU8};
 use std::sync::{Arc, Mutex, RwLock};
+
+use egui::{Color32, Shape, Stroke, StrokeKind};
 
 pub mod binding;
 mod presets;
 use binding::PluguzuState;
+
+mod highlights;
 
 // Information to get midi event offset
 pub struct ProcessMidi {
@@ -63,6 +67,7 @@ pub struct Pluguzu {
     note_offs: HashMap<u8, FutureNoteOff>,
 
     midi: ProcessMidi,
+    current_pos: Arc<RwLock<u64>>,
 
     // Keep track of the current playing bar so that code update are queued to the next bar.
     current_bar: Arc<AtomicI32>,
@@ -70,6 +75,9 @@ pub struct Pluguzu {
     buffer: Vec<binding::MidiEvent>,
     buffer_pos: usize,
     buffer_start_bar: i32,
+
+    evlocs: Arc<RwLock<Vec<highlights::EventLoc>>>,
+    evlocs_pos: Arc<AtomicU32>,
 
     reset_requested: bool,
 }
@@ -114,7 +122,10 @@ impl Default for Pluguzu {
             buffer_start_bar: -1,
             buffer_pos: 0,
             buffer: Vec::with_capacity(512),
+            evlocs: Arc::new(RwLock::new(Vec::with_capacity(1024))),
+            evlocs_pos: Arc::new(AtomicU32::new(0)),
             reset_requested: false,
+            current_pos: Arc::new(RwLock::new(0)),
             midi: ProcessMidi {
                 start: 0.,
                 end: 0.,
@@ -129,11 +140,12 @@ impl Default for PluguzuParams {
         Self {
             editor_state: EguiState::from_size(800, 600),
             code: Arc::new(Mutex::new(
-                "n \"c2*4\""
-                    // "fast 2 $ n \"[c2 .. c3]\""
+                // "n \"c2*4\""
+                "fast \"<1 2>\" $ n \"[c2 c3]\""
+                    // "0123456789abcdefghji\nabcdefghji0123456789"
                     .into(),
             )),
-            font_size: Arc::new(AtomicU8::new(14)),
+            font_size: Arc::new(AtomicU8::new(25)),
         }
     }
 }
@@ -141,6 +153,7 @@ impl Default for PluguzuParams {
 pub enum PluguzuTask {
     Parse(bool),
     Render(i32),
+    UpdateHighlights,
 }
 
 impl Pluguzu {
@@ -155,6 +168,7 @@ impl Pluguzu {
             self.buffer_pos = 0;
             self.buffer_start_bar = start;
             state.bar_start = None;
+            ctx.execute_background(PluguzuTask::UpdateHighlights);
             ctx.execute_background(PluguzuTask::Render(start + BUFFER_LEN))
         }
     }
@@ -263,13 +277,19 @@ impl Plugin for Pluguzu {
         let initial_font_size = font_size.load(Ordering::Relaxed);
 
         let dsp_state = self.dsp_state.clone();
-        let ui_view = Mutex::new(UIView::Preset); // Editor);
+        let ui_view = Mutex::new(UIView::Editor);
         let preset_state = Mutex::new(PresetUI {
             cat: 0,
             selected: 0,
         });
 
         let presets = Arc::new(load_presets());
+
+        let current_pos = self.current_pos.clone();
+        let evlocs = self.evlocs.clone();
+        let evlocs_pos = self.evlocs_pos.clone();
+
+        let highlights = Mutex::new(std::collections::BTreeSet::<highlights::EventLoc>::new());
 
         create_egui_editor(
             self.params.editor_state.clone(),
@@ -330,8 +350,48 @@ impl Plugin for Pluguzu {
                                     .with_syntax(haskell())
                                     .with_numlines(true)
                                     .show(ui, code.lock().unwrap().deref_mut());
-                                // TODO: request focus only once
+
                                 output.response.request_focus();
+
+                                let painter = ui.painter_at(output.response.rect);
+                                let ep = highlights::EditorPixels::new(
+                                    output.response.rect.min,
+                                    font_size_value as f32,
+                                );
+
+                                // Remove old highlights
+                                let mut highlights = highlights.lock().unwrap();
+                                let current_pos = current_pos.read().unwrap();
+                                highlights.retain(|hl| *current_pos - hl.when < 500);
+
+                                // Add new highlights
+                                let evlocs = evlocs.read().unwrap();
+                                {
+                                    let mut pos = evlocs_pos.load(Ordering::Relaxed) as usize;
+                                    while pos < evlocs.len() {
+                                        let evloc = &evlocs[pos];
+                                        if *current_pos < evloc.when {
+                                            break;
+                                        }
+                                        highlights.insert(evloc.clone());
+                                        pos += 1;
+                                    }
+                                    evlocs_pos.store(pos as u32, Ordering::Relaxed);
+                                }
+
+                                let shapes = highlights.iter().map(|el| {
+                                    Shape::rect_stroke(
+                                        ep.highlight_rect(el.row, el.col, el.len),
+                                        5.,
+                                        Stroke {
+                                            width: 1.,
+                                            color: Color32::from_rgb(0xff, 0x6e, 0xc7),
+                                        },
+                                        StrokeKind::Middle,
+                                    )
+                                });
+                                painter.extend(shapes);
+
                                 if output.response.changed() {
                                     // TODO: sometime alt modifier get stuck after clicking, perhaps it could be manually removed to workaround this weird bug?
                                     // egui_ctx.input(|i| println!("HERE: {:?}", i.modifiers));
@@ -349,6 +409,8 @@ impl Plugin for Pluguzu {
         let dsp_state = self.dsp_state.clone();
         let state = self.state.clone();
         let current_bar = self.current_bar.clone();
+        let evlocs_pos = self.evlocs_pos.clone();
+        let evlocs = self.evlocs.clone();
         Box::new(move |task| {
             let mut state = state.lock().unwrap();
             let current_bar = current_bar.load(Ordering::Relaxed);
@@ -359,12 +421,18 @@ impl Plugin for Pluguzu {
                     dsp_state.write().unwrap().error = state.parse(&code);
                     let start = current_bar + 1;
                     if render {
-                        state.render(start, start + BUFFER_LEN)
+                        state.render(start, start + BUFFER_LEN);
                     }
                 }
                 PluguzuTask::Render(start) => {
                     nih_log!("{current_bar}: Rendering {}", start);
-                    state.render(start, start + BUFFER_LEN)
+                    state.render(start, start + BUFFER_LEN);
+                }
+                PluguzuTask::UpdateHighlights => {
+                    nih_log!("{current_bar}: Updating highlights");
+                    let code = code.lock().unwrap();
+                    highlights::update_locs(evlocs.clone(), &code, &state.buffer, &state.locs);
+                    evlocs_pos.store(0, Ordering::Relaxed);
                 }
             }
         })
@@ -421,6 +489,7 @@ impl Plugin for Pluguzu {
 
         // Compute current frame info
         let pos = transport.pos_beats().unwrap() / 4.0;
+        *self.current_pos.write().unwrap() = (pos * 1000.) as u64;
 
         let frames = buffer.samples() as f64;
         let beat_per_sec = 60. / transport.tempo.unwrap_or(120.);
