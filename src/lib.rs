@@ -1,9 +1,10 @@
 use egui_code_editor::{CodeEditor, ColorTheme, Syntax};
 use nih_plug::prelude::*;
 use nih_plug_egui::{
-    EguiState, create_egui_editor, egui,
+    create_egui_editor, egui,
     egui::{FontId, RichText, TextStyle, Vec2},
     resizable_window::ResizableWindow,
+    EguiState,
 };
 use std::collections::BTreeSet;
 use std::collections::HashMap;
@@ -262,7 +263,7 @@ impl Plugin for Pluguzu {
         let initial_font_size = font_size.load(Ordering::Relaxed);
 
         let dsp_state = self.dsp_state.clone();
-        let ui_view = Mutex::new(UIView::Editor);
+        let ui_view = Mutex::new(UIView::Preset); // Editor);
         let preset_state = Mutex::new(PresetUI {
             cat: 0,
             selected: 0,
@@ -532,8 +533,31 @@ fn preset_ui(
             .auto_shrink(false)
             .max_height(avail_height)
             .show(ui, |ui| {
-                for (pos, preset) in presets.iter().enumerate() {
-                    ui.selectable_value(sel, pos, preset.name);
+                egui::Grid::new("my_grid")
+                    .num_columns(2)
+                    .spacing([6.0, 4.0])
+                    .striped(true)
+                    .show(ui, |ui| {
+                        for (pos, preset) in presets.iter().enumerate() {
+                            ui.selectable_value(sel, pos, preset.name);
+                            ui.label(format!("{}", preset.code.len()));
+                            ui.end_row();
+                        }
+                    });
+                if let Some(preset) = presets.get(*sel)
+                    && ui.input(|i| i.key_pressed(egui::Key::Enter))
+                {
+                    *code = preset.code.to_string();
+                    *view = UIView::Editor
+                }
+                if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+                    *view = UIView::Editor
+                }
+                if ui.input(|i| i.key_pressed(egui::Key::ArrowUp)) {
+                    *sel = sel.saturating_sub(1)
+                }
+                if ui.input(|i| i.key_pressed(egui::Key::ArrowDown)) {
+                    *sel = sel.saturating_add(1)
                 }
             });
         ui.horizontal(|ui| {
