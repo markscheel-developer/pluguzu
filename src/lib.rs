@@ -369,7 +369,7 @@ impl Plugin for Pluguzu {
 
                                 // Add new highlights
                                 let evlocs = evlocs.read().unwrap();
-                                {
+                                if dsp_state.read().unwrap().playing {
                                     let mut pos = evlocs_pos.load(Ordering::Relaxed) as usize;
                                     while pos < evlocs.len() {
                                         let evloc = &evlocs[pos];
@@ -472,8 +472,13 @@ impl Plugin for Pluguzu {
         let cur_bar = transport.bar_number().unwrap_or(0);
         self.current_bar.store(cur_bar, Ordering::Relaxed);
 
-        if !playing {
+        if !playing || transport.preroll_active.unwrap_or(false) {
             self.dsp_state.write().unwrap().playing = false;
+
+            // Advance the time for the highlights
+            *self.current_pos.write().unwrap() +=
+                ((self.midi.end - self.midi.start) * 1000.) as u64;
+
             self.send_all_note_offs(context);
             return ProcessStatus::Normal;
         }
