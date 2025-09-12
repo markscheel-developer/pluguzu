@@ -380,12 +380,18 @@ impl Plugin for Pluguzu {
                                 }
 
                                 let shapes = highlights.iter().map(|el| {
+                                    let alpha = (egui::lerp(
+                                        1.0..=0.3,
+                                        ((*current_pos - el.when) as f32) / 500.,
+                                    ) * 255.) as u8;
                                     Shape::rect_stroke(
                                         ep.highlight_rect(el.col, el.row, el.len),
                                         5.,
                                         Stroke {
-                                            width: 1.,
-                                            color: Color32::from_rgb(0xff, 0x6e, 0xc7),
+                                            width: 2.,
+                                            color: Color32::from_rgba_unmultiplied(
+                                                0xff, 0x6e, 0xc7, alpha,
+                                            ),
                                         },
                                         StrokeKind::Middle,
                                     )
