@@ -39,8 +39,9 @@ pub struct MidiEvent {
 #[repr(C)]
 pub struct LocEvent {
     pub pos: c_long,
-    pub start: c_long,
-    pub stop: c_long,
+    pub col: c_long,
+    pub row: c_long,
+    pub len: c_long,
 }
 
 impl PluguzuState {

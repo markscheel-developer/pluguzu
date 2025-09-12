@@ -70,8 +70,8 @@ pluguzuParse pState cStr = do
     let catchException = \(e :: SomeException) -> do
             cerr <- Foreign.C.newCString ("Error: " <> displayException e)
             writeError state.error (Just cerr)
-    putStrLn (PluguzuCore.addDeltaContext str)
-    handle catchException $ case PluguzuCore.parseTidal (PluguzuCore.addDeltaContext str) of
+    -- putStrLn (PluguzuCore.deltaMini str)
+    handle catchException $ case PluguzuCore.parseTidal (PluguzuCore.deltaMini str) of
         Left err -> do
             cerr <- Foreign.C.newCString err
             writeError state.error (Just cerr)

@@ -381,7 +381,7 @@ impl Plugin for Pluguzu {
 
                                 let shapes = highlights.iter().map(|el| {
                                     Shape::rect_stroke(
-                                        ep.highlight_rect(el.row, el.col, el.len),
+                                        ep.highlight_rect(el.col, el.row, el.len),
                                         5.,
                                         Stroke {
                                             width: 1.,
@@ -430,8 +430,7 @@ impl Plugin for Pluguzu {
                 }
                 PluguzuTask::UpdateHighlights => {
                     nih_log!("{current_bar}: Updating highlights");
-                    let code = code.lock().unwrap();
-                    highlights::update_locs(evlocs.clone(), &code, &state.buffer, &state.locs);
+                    highlights::update_locs(evlocs.clone(), &state.buffer, &state.locs);
                     evlocs_pos.store(0, Ordering::Relaxed);
                 }
             }

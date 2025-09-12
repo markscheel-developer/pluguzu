@@ -8,10 +8,10 @@ module PluguzuCore (
     SoundMap,
     Event (..),
     eventsToLoc,
-    addDeltaContext,
 
     -- * re-export
     Pattern.ControlPattern,
+    Pattern.deltaMini,
     Time.Arc (..),
     Parse.parseTidal,
 
@@ -72,14 +72,16 @@ data MidiEvent = MidiEvent
 instance GStorable MidiEvent
 
 data EventLoc = EventLoc
-    { startPos :: Int
+    { colPos :: Int
+    , rowPos :: Int
     , endPos :: Int
     }
 
 data NoteLoc = NoteLoc
     { eventNR :: Int
-    , start :: Int
-    , end :: Int
+    , col :: Int
+    , row :: Int
+    , len :: Int
     }
     deriving (Show, Generic)
 
@@ -96,26 +98,7 @@ eventsToLoc = concatMap go . zip [0 ..]
     go :: (Int, Event) -> [NoteLoc]
     go (pos, ev) = map mkLoc ev.locs
       where
-        mkLoc el = NoteLoc pos el.startPos el.endPos
-
--- Copied from Sound.Tidal.Pattern.deltaMini, but using a single global offset
-addDeltaContext :: String -> String
-addDeltaContext = outside 0
-  where
-    outside :: Int -> String -> String
-    outside _ [] = []
-    outside pos ('"' : xs) =
-        "(deltaContext "
-            ++ show pos
-            ++ " "
-            ++ show 0
-            ++ " \""
-            ++ inside (pos + 1) xs
-    outside pos (x : xs) = x : outside (pos + 1) xs
-    inside :: Int -> String -> String
-    inside _ [] = []
-    inside pos ('"' : xs) = '"' : ')' : outside (pos + 1) xs
-    inside pos (x : xs) = x : inside (pos + 1) xs
+        mkLoc el = NoteLoc pos el.colPos (el.rowPos - 1) (el.endPos - el.colPos)
 
 patternToEvents :: SoundMap -> Pattern.ControlPattern -> Time.Arc -> [Event]
 patternToEvents sm pat arc = sortBy compareEvent $ mapMaybe (eventToMidi sm) $ Pattern.queryArc pat arc
@@ -129,7 +112,7 @@ eventToMidi sm ev = do
     pure $ Event mev $ if mev.stopFraction > 0 then (map mkLoc ev.context.contextPosition) else []
   where
     mkLoc :: ((Int, Int), (Int, Int)) -> EventLoc
-    mkLoc ((a, _), (b, _)) = EventLoc a b
+    mkLoc ((col, row), (end, _)) = EventLoc col row end
     chan = (+ 1) $ round $ max 0 $ min 15 $ fromMaybe 0 $ Pattern.getF =<< Map.lookup "midichan" ev.value
     ccToMidi (ccn, ccv) = MidiEvent (rat2float (Pattern.wholeStart ev)) 0 (0xb0 .|. chan) ccn ccv
     noteToMidi (arc, pitch, velocity) =
