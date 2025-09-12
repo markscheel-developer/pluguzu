@@ -355,8 +355,8 @@ impl Plugin for Pluguzu {
 
                                 let painter = ui.painter_at(output.response.rect);
                                 let ep = highlights::EditorPixels::new(
-                                    output.response.rect.min,
-                                    font_size_value as f32,
+                                    output.galley_pos,
+                                    &output.galley,
                                 );
 
                                 // Remove old highlights

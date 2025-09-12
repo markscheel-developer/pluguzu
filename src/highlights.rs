@@ -1,37 +1,33 @@
 // Copyright © 2025 Tristan de Cacqueray
 // SPDX-License-Identifier: GPL-3.0
 
-use crate::egui::{Pos2, Rect, Vec2};
-use crate::VERT_SPACE;
+use crate::egui::{Galley, Pos2, Rect, Vec2};
 use std::ops::Add;
 
 use std::sync::{Arc, RwLock};
 
-pub struct EditorPixels {
+pub struct EditorPixels<'a> {
     top_left: Pos2,
-    font_size: f32,
-    line_height: f32,
+    galley: &'a Galley,
 }
 
-impl EditorPixels {
-    pub fn new(top_left: Pos2, font_size: f32) -> Self {
-        EditorPixels {
-            top_left,
-            font_size: font_size * 0.6,
-            line_height: font_size + VERT_SPACE,
-        }
+impl<'a> EditorPixels<'a> {
+    pub fn new(top_left: Pos2, galley: &'a Galley) -> Self {
+        EditorPixels { top_left, galley }
     }
-    fn char_pos(&self, col: f32, row: f32) -> Pos2 {
-        self.top_left.add(Vec2::new(
-            3. + col * self.font_size,
-            VERT_SPACE + 1. + row * self.line_height,
-        ))
-    }
+
     pub fn highlight_rect(&self, col: usize, row: usize, len: usize) -> Rect {
-        Rect::from_min_size(
-            self.char_pos(col as f32, row as f32),
-            Vec2::new(len as f32 * self.font_size, self.line_height),
-        )
+        if let Some(placed_row) = self.galley.rows.get(row) {
+            let col_pos = placed_row.x_offset(col);
+            let end_pos = placed_row.x_offset(col + len);
+            Rect::from_min_size(
+                self.top_left
+                    .add(placed_row.pos.to_vec2().add(Vec2::new(col_pos, 0.))),
+                Vec2::new(end_pos - col_pos, placed_row.height()),
+            )
+        } else {
+            Rect::NOTHING
+        }
     }
 }
 
@@ -64,6 +60,7 @@ fn get_pos(code: &str, mut start: usize) -> (usize, usize) {
     (row, col)
 }
 
+/// Convert the raw event from tidal bindings into EventLoc for faster processing.
 pub fn update_locs(
     evlocs: Arc<RwLock<Vec<EventLoc>>>,
     code: &str,
