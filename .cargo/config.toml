@@ -1,5 +1,5 @@
-[target.x86_64-unknown-linux-gnu]
-rustflags = ["-C", "link-arg=-Wl,-rpath,$$ORIGIN", "-L", "bin"]
+[target.'cfg(target_os = "linux")']
+rustflags = ["-C", "link-arg=-Wl,-rpath,$ORIGIN", "-L", "bin"]
 
 [alias]
 xtask = "run --package xtask --release --"

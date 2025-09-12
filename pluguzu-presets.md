@@ -1,7 +1,7 @@
 # The pluguzu presets library
 
 This document contains a library of tidal code for getting started with pluguzu.
-After changing the library, run `make render-presets` to update the `pluguzu-presets.h` header and rebuild the plugin.
+After changing the library, run `make render-presets` to update the `src/presets.rs` module. Then rebuild the plugin with `make`.
 
 ## Demo
 

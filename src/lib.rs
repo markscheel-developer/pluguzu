@@ -1,3 +1,6 @@
+// Copyright © 2025 Tristan de Cacqueray
+// SPDX-License-Identifier: GPL-3.0
+
 use egui_code_editor::{CodeEditor, ColorTheme, Syntax};
 use nih_plug::prelude::*;
 use nih_plug_egui::{
@@ -249,7 +252,7 @@ fn update_font_size(ctx: &egui::Context, font_size: u8) {
 }
 
 impl Plugin for Pluguzu {
-    const NAME: &'static str = "Pluguzu (nih)";
+    const NAME: &'static str = "Pluguzu";
     const VENDOR: &'static str = "Midirus";
     const URL: &'static str = "https://codeberg.org/TristanCacqueray/pluguzu";
     const EMAIL: &'static str = "tristan@midirus.com";
