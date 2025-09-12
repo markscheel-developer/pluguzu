@@ -362,7 +362,7 @@ impl Plugin for Pluguzu {
                                 // Remove old highlights
                                 let mut highlights = highlights.lock().unwrap();
                                 let current_pos = current_pos.read().unwrap();
-                                highlights.retain(|hl| *current_pos - hl.when < 500);
+                                highlights.retain(|hl| current_pos.saturating_sub(hl.when) < 500);
 
                                 // Add new highlights
                                 let evlocs = evlocs.read().unwrap();
@@ -382,7 +382,7 @@ impl Plugin for Pluguzu {
                                 let shapes = highlights.iter().map(|el| {
                                     let alpha = (egui::lerp(
                                         1.0..=0.3,
-                                        ((*current_pos - el.when) as f32) / 500.,
+                                        (current_pos.saturating_sub(el.when) as f32) / 500.,
                                     ) * 255.) as u8;
                                     Shape::rect_stroke(
                                         ep.highlight_rect(el.col, el.row, el.len),
@@ -527,7 +527,7 @@ impl Plugin for Pluguzu {
                     // That's odd, it looks like we missed an event?!
                     println!("{:.4} Skipped event {:.4}", pos, ev.start);
                 }
-            } else if ev.stop <= self.midi.end {
+            } else if ev.stop > 0. && ev.stop <= self.midi.end {
                 println!(
                     "{:.4} Missed event start, but it still make sense to send it now... {:.4} - {:.4} < {:.4}",
                     pos, ev.start, ev.stop, self.midi.end
