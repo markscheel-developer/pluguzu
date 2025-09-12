@@ -510,6 +510,7 @@ impl Plugin for Pluguzu {
         let run_time = frames / (transport.sample_rate as f64);
         let run_fraction = run_time / bar_length;
         let frames_per_fraction = frames / run_fraction;
+        let start_fraction = pos;
         let stop_fraction = pos + run_fraction;
 
         // Store the midi offset stuff
@@ -527,24 +528,26 @@ impl Plugin for Pluguzu {
         let next_buffer = self.buffer_start_bar + BUFFER_LEN;
         while self.buffer_pos < self.buffer.len() {
             let ev = self.buffer[self.buffer_pos];
-            if pos > ev.start {
-                if ev.start <= self.midi.end {
-                    // The event is due for this buffer
-                    self.send_event(&ev, context);
-                } else {
-                    // That's odd, it looks like we missed an event?!
-                    println!("{:.4} Skipped event {:.4}", pos, ev.start);
-                }
-            } else if ev.stop > 0. && ev.stop <= self.midi.end {
+            if ev.start >= stop_fraction {
+                // This event and the following oneare scheduled for later
+                break;
+            } else if start_fraction <= ev.start && ev.start < stop_fraction {
+                // The event is due for this buffer
+                self.send_event(&ev, context);
+            } else if ev.stop > 0. && ev.stop <= stop_fraction {
                 println!(
                     "{:.4} Missed event start, but it still make sense to send it now... {:.4} - {:.4} < {:.4}",
                     pos, ev.start, ev.stop, self.midi.end
                 );
                 self.send_event(&ev, context);
-            } else {
-                break;
+            } else if start_fraction > ev.start {
+                // That's odd, it looks like we missed an event?!
+                println!("{:.4} Skipped event {:.4}", pos, ev.start);
             }
+
+            // Advance the event buffer position
             self.buffer_pos += 1;
+
             if self.buffer_pos == self.buffer.len() && stop_fraction > next_buffer as f64 {
                 // try to resync buffer, e.g.: when the current run overlap with the next chunk
                 self.sync_state_buffer(next_buffer, context)
