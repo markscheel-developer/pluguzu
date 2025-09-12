@@ -35,14 +35,15 @@ impl ProcessMidi {
     fn event_offset(&self, when: f64) -> u32 {
         ((when - self.start) * self.frames_per_fraction) as u32
     }
-    fn send_note_off(
+    fn do_send_note_off(
         &self,
+        timing: u32,
         note: u8,
         ev: &FutureNoteOff,
         context: &mut impl ProcessContext<Pluguzu>,
     ) {
         let mev = NoteEvent::NoteOff {
-            timing: self.event_offset(ev.when),
+            timing,
             voice_id: None,
             channel: ev.channel,
             note,
@@ -50,6 +51,14 @@ impl ProcessMidi {
         };
         println!("{:.4}: sending note off      {:?}", self.start, mev);
         context.send_event(mev);
+    }
+    fn send_note_off(
+        &self,
+        note: u8,
+        ev: &FutureNoteOff,
+        context: &mut impl ProcessContext<Pluguzu>,
+    ) {
+        self.do_send_note_off(self.event_offset(ev.when), note, ev, context)
     }
 }
 
@@ -190,7 +199,7 @@ impl Pluguzu {
 
     fn send_all_note_offs(&mut self, context: &mut impl ProcessContext<Self>) {
         self.note_offs.retain(|note, ev| {
-            self.midi.send_note_off(*note, ev, context);
+            self.midi.do_send_note_off(0, *note, ev, context);
             false
         });
     }
