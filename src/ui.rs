@@ -9,7 +9,7 @@ use nih_plug_egui::{
     resizable_window::ResizableWindow,
 };
 
-use std::ops::DerefMut;
+use std::ops::{Deref, DerefMut};
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
 
@@ -105,14 +105,27 @@ impl Pluguzu {
                                 let line_height = font_size_value as f32 + VERT_SPACE;
                                 let avail_lines = (ui.available_height() / line_height).floor();
 
-                                let output = CodeEditor::default()
+                                let mut code_editor = CodeEditor::default()
                                     .id_source("code editor")
                                     .with_rows(avail_lines as usize)
                                     .with_fontsize(font_size_value as f32)
                                     .with_theme(ColorTheme::SONOKAI)
                                     .with_syntax(tidal())
-                                    .with_numlines(true)
-                                    .show(ui, code.lock().unwrap().deref_mut());
+                                    .with_numlines(true);
+
+                                let mut code_data = code.lock().unwrap();
+                                let force_update = ui.input(|i| {
+                                    i.key_pressed(egui::Key::Enter) && i.modifiers.shift
+                                });
+                                let output = if force_update {
+                                    async_executor
+                                        .execute_background(crate::PluguzuTask::RenderInPlace);
+                                    // Render the code editor with read-only code to avoid inserting the new-line.
+                                    let mut code_data: &str = code_data.deref();
+                                    code_editor.show(ui, &mut code_data)
+                                } else {
+                                    code_editor.show(ui, code_data.deref_mut())
+                                };
 
                                 output.response.request_focus();
 
@@ -161,7 +174,7 @@ impl Pluguzu {
                                 });
                                 painter.extend(shapes);
 
-                                if output.response.changed() {
+                                if !force_update && output.response.changed() {
                                     // TODO: sometime alt modifier get stuck after clicking, perhaps it could be manually removed to workaround this weird bug?
                                     // egui_ctx.input(|i| println!("HERE: {:?}", i.modifiers));
                                     async_executor

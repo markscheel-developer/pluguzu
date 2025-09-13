@@ -136,7 +136,7 @@ impl Pluguzu {
                 self.send_event(&ev, context);
             } else if ev.stop > 0. && ev.stop <= stop_fraction {
                 println!(
-                    "{start_fraction:.4} Missed event start, but it still make sense to send it now... {:.4} - {:.4} < {stop_fraction:.4}",
+                    "{start_fraction:.4} Missed event start, but it still make sense to send it now... {:.4}..{:.4} < {stop_fraction:.4}",
                     ev.start, ev.stop
                 );
                 self.send_event(&ev, context);

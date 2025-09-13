@@ -13,7 +13,7 @@ use nih_plug_egui::{egui, EguiState};
 use std::collections::HashMap;
 use std::ops::DerefMut;
 use std::sync::atomic::Ordering;
-use std::sync::atomic::{AtomicI32, AtomicU32, AtomicU8};
+use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU32, AtomicU8};
 use std::sync::{Arc, Mutex, RwLock};
 
 use crate::binding::PluguzuState;
@@ -81,12 +81,20 @@ pub struct Pluguzu {
     /// Keep track of the current playing bar so that code update are queued to the next bar.
     current_bar: Arc<AtomicI32>,
 
+    /// The current event buffers to be sent.
     buffer: Vec<binding::MidiEvent>,
+    /// The last event buffer position.
     buffer_pos: usize,
+    /// When the event buffers was last synchronized.
     buffer_start_bar: i32,
+    /// When updating in-place with shift-enter, this boolean indicate that past event needs to be skipped.
+    skip_past_events: Arc<AtomicBool>,
 
+    /// The event location for highlights.
     evlocs: Arc<RwLock<Vec<highlights::EventLoc>>>,
+    /// The last event location position.
     evlocs_pos: Arc<AtomicU32>,
+    /// The current transport position.
     current_pos: Arc<RwLock<u64>>,
 }
 
@@ -116,6 +124,7 @@ impl Default for Pluguzu {
             buffer_start_bar: -1024,
             buffer_pos: 0,
             buffer: Vec::with_capacity(512),
+            skip_past_events: Arc::new(AtomicBool::new(false)),
 
             evlocs: Arc::new(RwLock::new(Vec::with_capacity(1024))),
             evlocs_pos: Arc::new(AtomicU32::new(0)),
@@ -127,6 +136,7 @@ impl Default for Pluguzu {
 pub enum PluguzuTask {
     Parse(bool),
     Render(i32),
+    RenderInPlace,
     UpdateHighlights,
 }
 
@@ -199,7 +209,7 @@ impl Plugin for Pluguzu {
         }
 
         // Ensure the events buffer is ready
-        {
+        let next_buffer = {
             let state = self.state.clone();
             let mut state = state.lock().unwrap();
             if cur_bar < self.buffer_start_bar || cur_bar >= self.buffer_start_bar + BUFFER_LEN {
@@ -212,13 +222,19 @@ impl Plugin for Pluguzu {
                 );
                 state.render(cur_bar, cur_bar + BUFFER_LEN);
                 self.sync_state_buffer(state.deref_mut(), cur_bar, context);
-            } else if let Some(start) = state.bar_start
-                && cur_bar >= start
-            {
-                println!("{cur_bar}: Copying buffer data from {}", start);
-                self.sync_state_buffer(state.deref_mut(), start, context);
+                cur_bar + BUFFER_LEN
+            } else if let Some(start) = state.bar_start {
+                if cur_bar >= start {
+                    println!("{cur_bar}: Copying buffer data from {}", start);
+                    self.sync_state_buffer(state.deref_mut(), start, context);
+                    start + BUFFER_LEN
+                } else {
+                    start
+                }
+            } else {
+                self.buffer_start_bar + BUFFER_LEN
             }
-        }
+        };
 
         // Compute current frame info
         let pos = transport.pos_beats().unwrap() / 4.0;
@@ -246,12 +262,26 @@ impl Plugin for Pluguzu {
         // Send any previously registered note-off.
         self.send_note_offs(context);
 
+        if self.skip_past_events.fetch_and(false, Ordering::SeqCst) {
+            if self.buffer_pos == 0 {
+                println!("Skipping event due to forced in-place update...");
+                while self.buffer_pos < self.buffer.len() {
+                    let ev = self.buffer[self.buffer_pos];
+                    if ev.start >= stop_fraction {
+                        break;
+                    }
+                    self.buffer_pos += 1;
+                }
+            } else {
+                println!("Skipping past event was requested, but the current buffer hasn't been re-initialized?!");
+            }
+        }
+
         // Send events.
         self.send_events(start_fraction, stop_fraction, context);
 
         // Send events from the begining of the next-buffer.
-        let next_buffer = self.buffer_start_bar + BUFFER_LEN;
-        if self.buffer_pos == self.buffer.len() && stop_fraction > next_buffer as f64 {
+        if stop_fraction > next_buffer as f64 {
             // try to resync buffer, e.g.: when the current run overlap with the next chunk
             let state = self.state.clone();
             let mut state = state.lock().unwrap();
@@ -272,7 +302,7 @@ impl Plugin for Pluguzu {
         // Update status for the UI
         let mut dsp_state = self.dsp_state.write().unwrap();
         dsp_state.playing = playing;
-        dsp_state.next = self.buffer_start_bar + BUFFER_LEN - cur_bar;
+        dsp_state.next = next_buffer - cur_bar;
         dsp_state.remaining = self.buffer.len() - self.buffer_pos;
         ProcessStatus::KeepAlive
     }
@@ -287,6 +317,7 @@ impl Plugin for Pluguzu {
         let current_bar = self.current_bar.clone();
         let evlocs_pos = self.evlocs_pos.clone();
         let evlocs = self.evlocs.clone();
+        let skip_past_events = self.skip_past_events.clone();
         Box::new(move |task| {
             let mut state = state.lock().unwrap();
             let current_bar = current_bar.load(Ordering::Relaxed);
@@ -303,6 +334,11 @@ impl Plugin for Pluguzu {
                 PluguzuTask::Render(start) => {
                     nih_log!("{current_bar}: Rendering {}", start);
                     state.render(start, start + BUFFER_LEN);
+                }
+                PluguzuTask::RenderInPlace => {
+                    nih_log!("{current_bar}: Force update!");
+                    skip_past_events.store(true, Ordering::SeqCst);
+                    state.render(current_bar, current_bar + BUFFER_LEN);
                 }
                 PluguzuTask::UpdateHighlights => {
                     if editor_state.is_open() {
