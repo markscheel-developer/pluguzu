@@ -8,6 +8,7 @@ module PluguzuCore (
     SoundMap,
     Event (..),
     eventsToLoc,
+    filterDup,
 
     -- * re-export
     Pattern.ControlPattern,
@@ -99,6 +100,16 @@ eventsToLoc = concatMap go . zip [0 ..]
     go (pos, ev) = map mkLoc ev.locs
       where
         mkLoc el = NoteLoc pos el.colPos (el.rowPos - 1) (el.endPos - el.colPos)
+
+filterDup :: [Event] -> [Event]
+filterDup [] = []
+filterDup (x : xs) = x : filterDup (dropDup xs)
+  where
+    dropDup [] = []
+    dropDup rest@(y : ys)
+        | y.midi.barFraction > x.midi.barFraction = rest
+        | y.midi.data0 == x.midi.data0 && y.midi.data1 == x.midi.data1 = dropDup ys
+        | otherwise = y : dropDup ys
 
 patternToEvents :: SoundMap -> Pattern.ControlPattern -> Time.Arc -> [Event]
 patternToEvents sm pat arc = sortBy compareEvent $ mapMaybe (eventToMidi sm) $ Pattern.queryArc pat arc

@@ -101,7 +101,7 @@ pluguzuRender pState startArc endArc pEvs pLocCount pLocs = handle catchExceptio
     let start = fromInteger (toInteger startArc)
     let end = fromInteger (toInteger endArc)
     let arc = PluguzuCore.mkArc start end
-    let evs = PluguzuCore.patternToEvents sm pat arc
+    let evs = PluguzuCore.filterDup $ PluguzuCore.patternToEvents sm pat arc
     pokeArray pEvs $ map (.midi) (take state.maxEvent evs)
     let locs = PluguzuCore.eventsToLoc evs
     unless (pLocs == Foreign.nullPtr) $ pokeArray pLocs $ take (state.maxEvent * 2) $ locs

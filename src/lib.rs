@@ -144,6 +144,12 @@ impl Pluguzu {
         self.buffer_pos = 0;
         self.buffer_start_bar = start;
         state.bar_start = None;
+
+        // println!("DEBUG EVENTS");
+        // for ev in &self.buffer {
+        //     println!("-> {ev:?} {:?}", NoteEvent::<()>::from_midi(0, &ev.data));
+        // }
+
         ctx.execute_background(PluguzuTask::UpdateHighlights);
         ctx.execute_background(PluguzuTask::Render(start + BUFFER_LEN))
     }
