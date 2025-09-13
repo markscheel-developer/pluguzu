@@ -70,7 +70,9 @@ make run-standalone
 - [pluguzu-presets.md](./pluguzu-presets.md) is the preset library.
 - [PluguzuWrapper.c](./PluguzuWrapper.c) is the C wrapper to enable calling Haskell from C.
 
-## Roadmap
+## Changelog
+
+Implemented:
 
 - [x] Setup Haskell RTS and demonstrate function call from the DAW.
 - [x] Parse tidal pattern from the plugin text editor UI.
@@ -78,9 +80,19 @@ make run-standalone
 - [x] Handle transport pause/jump.
 - [x] Display status and parse error.
 - [x] Update text editor language def to support Haskell syntax.
-- [ ] Add UI/config-file to define custom sound to note mapping, e.g. for "bd", "sd", ...
 - [x] Handle MIDI CC
 - [x] Add config-file to define preset pattern to help getting started.
 - [x] Highlight event locations
-- [ ] Visualize the pattern, e.g. a pianoroll in the background.
+- [x] Replace DPF framework with nih-plug
+
+Next:
+
+- [ ] Add UI/config-file to define custom sound to note mapping, e.g. for "bd", "sd", ...
+- [ ] Support user-defined presets, e.g. in ~/.config/pluguzu/presets.md
 - [ ] Package the plugin dependencies (e.g. the libpluguzu.so and libHSrts) so that it works out of the box.
+- [ ] Add pattern visualizations, e.g. a pianoroll in the background.
+- [ ] Add standalone transport, e.g. without sync to an external clock
+
+Future idea:
+
+- [ ] Integrate the dirt sampler
