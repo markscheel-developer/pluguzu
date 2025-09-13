@@ -52,7 +52,7 @@ impl Pluguzu {
         let evlocs = self.evlocs.clone();
         let evlocs_pos = self.evlocs_pos.clone();
 
-        let highlights = Mutex::new(std::collections::BTreeSet::<highlights::EventLoc>::new());
+        let highlights = Mutex::new(std::collections::BTreeSet::<Arc<highlights::EventLoc>>::new());
 
         create_egui_editor(
             self.params.editor_state.clone(),

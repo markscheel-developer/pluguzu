@@ -54,7 +54,7 @@ pub struct EventLoc {
 
 /// Convert the raw event from tidal bindings into EventLoc for faster processing.
 pub fn update_locs(
-    evlocs: Arc<RwLock<Vec<EventLoc>>>,
+    evlocs: Arc<RwLock<Vec<Arc<EventLoc>>>>,
     mevs: &[crate::binding::MidiEvent],
     locs: &[crate::binding::LocEvent],
 ) {
@@ -62,12 +62,12 @@ pub fn update_locs(
     evlocs.clear();
     for loc in locs {
         if let Some(mev) = mevs.get(loc.pos as usize) {
-            evlocs.push(EventLoc {
+            evlocs.push(Arc::new(EventLoc {
                 when: (mev.start * 1000.0) as u64,
                 len: loc.len as usize,
                 row: loc.row as usize,
                 col: loc.col as usize,
-            })
+            }));
         }
     }
 }

@@ -92,7 +92,7 @@ impl PluguzuState {
                 count = self.size
             }
             self.buffer.set_len(count);
-            self.locs.set_len(loc_count as usize);
+            self.locs.set_len((loc_count as usize).min(self.size * 2));
         };
         self.bar_start = Some(start);
     }
