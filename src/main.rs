@@ -2,7 +2,7 @@ use pluguzu::binding::PluguzuState;
 
 fn main() {
     if let Some(pat) = std::env::args().nth(1) {
-        let mut ps = PluguzuState::new(12);
+        let mut ps = PluguzuState::new(512, 512);
         if let Some(err) = ps.parse(&pat) {
             println!("Parse failure: {err}");
         } else {

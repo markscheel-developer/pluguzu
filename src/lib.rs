@@ -108,11 +108,14 @@ pub struct Pluguzu {
     evlocs_pos: Arc<AtomicU32>,
 }
 
+const MAX_EVENTS: usize = 4096;
+const MAX_LOCS: usize = MAX_EVENTS * 4;
+
 impl Default for Pluguzu {
     fn default() -> Self {
         Self {
             params: Arc::new(PluguzuParams::default()),
-            state: Arc::new(Mutex::new(PluguzuState::new(512))),
+            state: Arc::new(Mutex::new(PluguzuState::new(MAX_EVENTS, MAX_LOCS))),
 
             dsp_state: Arc::new(RwLock::new(PluguzuDSP {
                 playing: false,
@@ -134,10 +137,10 @@ impl Default for Pluguzu {
 
             buffer_start_bar: -1024,
             buffer_pos: 0,
-            buffer: Vec::with_capacity(512),
+            buffer: Vec::with_capacity(MAX_EVENTS),
             skip_past_events: Arc::new(AtomicBool::new(false)),
 
-            evlocs: Arc::new(RwLock::new(Vec::with_capacity(1024))),
+            evlocs: Arc::new(RwLock::new(Vec::with_capacity(MAX_LOCS))),
             evlocs_pos: Arc::new(AtomicU32::new(0)),
         }
     }
