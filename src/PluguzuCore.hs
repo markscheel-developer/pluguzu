@@ -141,7 +141,7 @@ eventToCC ev = do
 
 eventToNote :: SoundMap -> Pattern.Event Pattern.ValueMap -> Maybe (Time.Arc, Word8, Word8)
 eventToNote sm ev = do
-    note <- midiNote <$> noteEvent <|> soundEvent
+    note <- soundEvent <|> (midiNote <$> noteEvent)
     pure (Pattern.wholeOrPart ev, note, v)
   where
     noteEvent = Pattern.getN =<< (Map.lookup "n" ev.value <|> Map.lookup "note" ev.value <|> Map.lookup "midinote" ev.value)
