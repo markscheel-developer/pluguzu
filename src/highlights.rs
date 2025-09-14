@@ -44,13 +44,37 @@ impl<'a> EditorPixels<'a> {
     }
 }
 
-#[derive(PartialOrd, Ord, PartialEq, Eq, Clone, Debug)]
 pub struct EventLoc {
-    pub when: u64,
+    pub when: f64,
     pub row: usize,
     pub col: usize,
     pub len: usize,
 }
+
+/// A custom Ord implementation that doesn't take into account the event time
+/// This is to ensure only a single highlight is handled per location.
+/// No matter how many events is coming from a given location.
+impl Ord for EventLoc {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.row
+            .cmp(&other.row)
+            .then(self.col.cmp(&other.col).then(self.len.cmp(&other.len)))
+    }
+}
+
+impl PartialOrd for EventLoc {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl PartialEq for EventLoc {
+    fn eq(&self, other: &Self) -> bool {
+        self.row == other.row && self.col == other.col && self.len == other.len
+    }
+}
+
+impl Eq for EventLoc {}
 
 /// Convert the raw event from tidal bindings into EventLoc for faster processing.
 pub fn update_locs(
@@ -63,7 +87,7 @@ pub fn update_locs(
     for loc in locs {
         if let Some(mev) = mevs.get(loc.pos as usize) {
             evlocs.push(Arc::new(EventLoc {
-                when: (mev.start * 1000.0) as u64,
+                when: mev.start,
                 len: loc.len as usize,
                 row: loc.row as usize,
                 col: loc.col as usize,

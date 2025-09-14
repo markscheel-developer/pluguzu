@@ -29,6 +29,8 @@ struct PluguzuDSP {
     next: i32,
     /// Count down of the remaining bar until the next events buffer start.
     remaining: usize,
+    /// The current start fraction for event highlights
+    pos: f64,
 }
 
 const WELCOME: &str = r#"
@@ -104,8 +106,6 @@ pub struct Pluguzu {
     evlocs: Arc<RwLock<Vec<Arc<highlights::EventLoc>>>>,
     /// The last event location position.
     evlocs_pos: Arc<AtomicU32>,
-    /// The current transport position.
-    current_pos: Arc<RwLock<u64>>,
 }
 
 impl Default for Pluguzu {
@@ -119,6 +119,7 @@ impl Default for Pluguzu {
                 error: None,
                 next: 0,
                 remaining: 0,
+                pos: 0.,
             })),
 
             note_offs: HashMap::with_capacity(255),
@@ -138,7 +139,6 @@ impl Default for Pluguzu {
 
             evlocs: Arc::new(RwLock::new(Vec::with_capacity(1024))),
             evlocs_pos: Arc::new(AtomicU32::new(0)),
-            current_pos: Arc::new(RwLock::new(0)),
         }
     }
 }
@@ -205,13 +205,15 @@ impl Plugin for Pluguzu {
 
         // When not playing...
         if !playing || transport.preroll_active.unwrap_or(false) {
-            self.dsp_state.write().unwrap().playing = false;
+            {
+                let mut state = self.dsp_state.write().unwrap();
+                state.playing = false;
+                // Advance the time for the highlights
+                state.pos += 0.2;
+            }
 
             // Reset event position.
             self.buffer_pos = 0;
-
-            // Advance the time for the highlights
-            *self.current_pos.write().unwrap() += 200;
 
             self.send_all_note_offs(context);
             return ProcessStatus::Normal;
@@ -248,9 +250,6 @@ impl Plugin for Pluguzu {
 
         // Compute current frame info
         let pos = transport.pos_beats().unwrap() / 4.0;
-
-        // Write the current position for events highlight
-        *self.current_pos.write().unwrap() = (pos * 1000.) as u64;
 
         let frames = buffer.samples() as f64;
         let beat_per_sec = 60. / transport.tempo.unwrap_or(120.);
@@ -314,6 +313,7 @@ impl Plugin for Pluguzu {
         dsp_state.playing = playing;
         dsp_state.next = next_buffer - cur_bar;
         dsp_state.remaining = self.buffer.len() - self.buffer_pos;
+        dsp_state.pos = start_fraction;
         ProcessStatus::KeepAlive
     }
 

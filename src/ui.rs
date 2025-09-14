@@ -49,7 +49,6 @@ impl Pluguzu {
 
         let dsp_state = self.dsp_state.clone();
 
-        let current_pos = self.current_pos.clone();
         let evlocs = self.evlocs.clone();
         let evlocs_pos = self.evlocs_pos.clone();
 
@@ -91,6 +90,7 @@ impl Pluguzu {
                             }
                             UIView::Editor => {
                                 let mut font_size_value = font_size.load(Ordering::Relaxed);
+                                let dsp_state = dsp_state.read().unwrap();
                                 ui.with_layout(
                                     egui::Layout::left_to_right(egui::Align::Min),
                                     |ui| {
@@ -107,7 +107,6 @@ impl Pluguzu {
                                         if ui.button("Load").clicked() {
                                             state.view = UIView::Preset
                                         }
-                                        let dsp_state = dsp_state.read().unwrap();
                                         let status = if dsp_state.playing { ">>=" } else { "|-|" };
                                         let next = dsp_state.next;
                                         let remaining = dsp_state.remaining;
@@ -152,20 +151,18 @@ impl Pluguzu {
                                 );
 
                                 // Remove old highlights
-                                let current_pos = current_pos.read().unwrap();
-                                state
-                                    .highlights
-                                    .retain(|hl| current_pos.saturating_sub(hl.when) < 500);
+                                state.highlights.retain(|hl| dsp_state.pos - hl.when < 0.5);
 
                                 // Add new highlights
                                 let evlocs = evlocs.read().unwrap();
-                                if dsp_state.read().unwrap().playing {
+                                if dsp_state.playing {
                                     let mut pos = evlocs_pos.load(Ordering::Relaxed) as usize;
                                     while pos < evlocs.len() {
                                         let evloc = &evlocs[pos];
-                                        if *current_pos < evloc.when {
+                                        if dsp_state.pos < evloc.when {
                                             break;
                                         }
+                                        // This doesn't replace existing highlights to avoid fast blinking
                                         state.highlights.insert(evloc.clone());
                                         pos += 1;
                                     }
@@ -173,10 +170,9 @@ impl Pluguzu {
                                 }
 
                                 let shapes = state.highlights.iter().map(|el| {
-                                    let alpha = (egui::lerp(
-                                        1.0..=0.3,
-                                        (current_pos.saturating_sub(el.when) as f32) / 500.,
-                                    ) * 255.) as u8;
+                                    let alpha =
+                                        (egui::lerp(1.0..=0.3, (dsp_state.pos - el.when) / 0.5)
+                                            * 255.) as u8;
                                     Shape::rect_stroke(
                                         ep.highlight_rect(el.col, el.row, el.len),
                                         5.,
