@@ -31,6 +31,21 @@ struct PluguzuDSP {
     remaining: usize,
 }
 
+const WELCOME: &str = r#"
+  -- Welcome to Pluguzu
+  --
+  -- Press shift+enter to load the code in place
+  --
+  -- Reference: https://tidalcycles.org/docs/reference/cycles
+  -- Source: https://codeberg.org/TristanCacqueray/pluguzu
+  --
+  -- Here is an example pattern to get started:
+
+  fast "<1 [1.5 2?]>" $ n $
+    arp "<up down diverge>" "<a'm9'8 e'7sus4'8>"
+    |- "<12 [12 5]>/2"
+"#;
+
 /// The params that can be saved/loaded
 #[derive(Params)]
 pub struct PluguzuParams {
@@ -51,13 +66,8 @@ impl Default for PluguzuParams {
     fn default() -> Self {
         Self {
             editor_state: EguiState::from_size(800, 600),
-            code: Arc::new(Mutex::new(
-                // "n \"c2*4\""
-                "fast \"<1 2>\" $ n \"[c2 c3]\""
-                    // "0123456789abcdefghji\nabcdefghji0123456789"
-                    .into(),
-            )),
-            font_size: Arc::new(AtomicU8::new(25)),
+            code: Arc::new(Mutex::new(WELCOME.trim_end().into())),
+            font_size: Arc::new(AtomicU8::new(20)),
         }
     }
 }
