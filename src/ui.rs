@@ -9,9 +9,10 @@ use nih_plug_egui::{
     resizable_window::ResizableWindow,
 };
 
+use std::collections::BTreeSet;
 use std::ops::{Deref, DerefMut};
 use std::sync::atomic::Ordering;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use egui::{Color32, Shape, Stroke, StrokeKind};
 
@@ -26,9 +27,16 @@ enum UIView {
     Preset,
 }
 
-struct PresetUI {
+struct PresetState {
     cat: usize,
     selected: usize,
+    presets: Presets,
+}
+
+struct UIState {
+    view: UIView,
+    preset: PresetState,
+    highlights: BTreeSet<Arc<highlights::EventLoc>>,
 }
 
 impl Pluguzu {
@@ -40,37 +48,36 @@ impl Pluguzu {
         let initial_font_size = font_size.load(Ordering::Relaxed);
 
         let dsp_state = self.dsp_state.clone();
-        let ui_view = Mutex::new(UIView::Editor);
-        let preset_state = Mutex::new(PresetUI {
-            cat: 0,
-            selected: 0,
-        });
-
-        let presets = Arc::new(load_presets());
 
         let current_pos = self.current_pos.clone();
         let evlocs = self.evlocs.clone();
         let evlocs_pos = self.evlocs_pos.clone();
 
-        let highlights = Mutex::new(std::collections::BTreeSet::<Arc<highlights::EventLoc>>::new());
+        let state = UIState {
+            view: UIView::Editor,
+            preset: PresetState {
+                cat: 0,
+                selected: 0,
+                presets: load_presets(),
+            },
+            highlights: BTreeSet::new(),
+        };
 
         create_egui_editor(
             self.params.editor_state.clone(),
-            (),
+            state,
             move |egui_ctx, _| update_font_size(egui_ctx, initial_font_size),
-            move |egui_ctx, _setter, _state| {
+            move |egui_ctx, _setter, state| {
                 ResizableWindow::new("res-wind")
                     .min_size(Vec2::new(80.0, 60.0))
                     .show(egui_ctx, egui_state.as_ref(), |ui| {
                         // Main UI
-                        let mut view = ui_view.lock().unwrap();
-                        match *view {
+                        match state.view {
                             UIView::Preset => {
                                 if let Some(changed) = preset_ui(
                                     ui,
+                                    &mut state.preset,
                                     font_size.load(Ordering::Relaxed),
-                                    &presets,
-                                    preset_state.lock().unwrap().deref_mut(),
                                 ) {
                                     if let Some(new_code) = changed {
                                         *code.lock().unwrap() = new_code;
@@ -79,7 +86,7 @@ impl Pluguzu {
                                         async_executor
                                             .execute_background(crate::PluguzuTask::RenderInPlace);
                                     }
-                                    *view = UIView::Editor;
+                                    state.view = UIView::Editor;
                                 };
                             }
                             UIView::Editor => {
@@ -98,7 +105,7 @@ impl Pluguzu {
                                             update_font_size(egui_ctx, font_size_value);
                                         }
                                         if ui.button("Load").clicked() {
-                                            *view = UIView::Preset
+                                            state.view = UIView::Preset
                                         }
                                         let dsp_state = dsp_state.read().unwrap();
                                         let status = if dsp_state.playing { ">>=" } else { "|-|" };
@@ -145,9 +152,10 @@ impl Pluguzu {
                                 );
 
                                 // Remove old highlights
-                                let mut highlights = highlights.lock().unwrap();
                                 let current_pos = current_pos.read().unwrap();
-                                highlights.retain(|hl| current_pos.saturating_sub(hl.when) < 500);
+                                state
+                                    .highlights
+                                    .retain(|hl| current_pos.saturating_sub(hl.when) < 500);
 
                                 // Add new highlights
                                 let evlocs = evlocs.read().unwrap();
@@ -158,13 +166,13 @@ impl Pluguzu {
                                         if *current_pos < evloc.when {
                                             break;
                                         }
-                                        highlights.insert(evloc.clone());
+                                        state.highlights.insert(evloc.clone());
                                         pos += 1;
                                     }
                                     evlocs_pos.store(pos as u32, Ordering::Relaxed);
                                 }
 
-                                let shapes = highlights.iter().map(|el| {
+                                let shapes = state.highlights.iter().map(|el| {
                                     let alpha = (egui::lerp(
                                         1.0..=0.3,
                                         (current_pos.saturating_sub(el.when) as f32) / 500.,
@@ -224,29 +232,24 @@ fn load_presets() -> Presets {
     map.into_iter().collect()
 }
 
-fn preset_ui(
-    ui: &mut egui::Ui,
-    font_size: u8,
-    presets: &Presets,
-    preset_state: &mut PresetUI,
-) -> Option<Option<String>> {
+fn preset_ui(ui: &mut egui::Ui, state: &mut PresetState, font_size: u8) -> Option<Option<String>> {
     // Tag selector
-    let prev_cat = preset_state.cat;
-    let cat = &mut preset_state.cat;
+    let prev_cat = state.cat;
+    let cat = &mut state.cat;
     ui.horizontal(|ui| {
-        for (pos, (tag, _)) in presets.iter().enumerate() {
+        for (pos, (tag, _)) in state.presets.iter().enumerate() {
             ui.selectable_value(cat, pos, tag);
         }
     });
     if prev_cat != *cat {
-        preset_state.selected = 0;
+        state.selected = 0;
     }
 
     ui.separator();
     // Preset selector
-    let sel = &mut preset_state.selected;
+    let sel = &mut state.selected;
     let mut result = None;
-    if let Some((_, presets)) = presets.get(*cat) {
+    if let Some((_, presets)) = state.presets.get(*cat) {
         let line_height = font_size as f32 + VERT_SPACE;
         let avail_height = ui.available_height() - line_height * 2.0 + 10.;
         egui::ScrollArea::vertical()
