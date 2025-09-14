@@ -84,10 +84,10 @@ Implemented:
 - [x] Add config-file to define preset pattern to help getting started.
 - [x] Highlight event locations
 - [x] Replace DPF framework with nih-plug
+- [x] Add UI/config-file to define custom sound to note mapping, e.g. for "bd", "sd", ...
 
 Next:
 
-- [ ] Add UI/config-file to define custom sound to note mapping, e.g. for "bd", "sd", ...
 - [ ] Support user-defined presets, e.g. in ~/.config/pluguzu/presets.md
 - [ ] Package the plugin dependencies (e.g. the libpluguzu.so and libHSrts) so that it works out of the box.
 - [ ] Add pattern visualizations, e.g. a pianoroll in the background.

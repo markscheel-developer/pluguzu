@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0
 
 pub mod binding;
+mod config;
 mod highlights;
 mod midi;
 mod presets;
@@ -10,13 +11,14 @@ mod ui;
 
 use nih_plug::prelude::*;
 use nih_plug_egui::{egui, EguiState};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::ops::DerefMut;
 use std::sync::atomic::Ordering;
 use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU32, AtomicU8};
 use std::sync::{Arc, Mutex, RwLock};
 
 use crate::binding::PluguzuState;
+use crate::config::Config;
 use crate::midi::{FutureNoteOff, ProcessMidi};
 
 /// Info from the engine for the UI status bar
@@ -48,6 +50,8 @@ const WELCOME: &str = r#"
     |- "<12 [12 5]>/2"
 "#;
 
+type SoundMap = BTreeMap<String, u8>;
+
 /// The params that can be saved/loaded
 #[derive(Params)]
 pub struct PluguzuParams {
@@ -62,6 +66,10 @@ pub struct PluguzuParams {
     /// The font size.
     #[persist = "font-size"]
     font_size: Arc<AtomicU8>,
+
+    /// The sound map.
+    #[persist = "sound-map"]
+    sound_map: Arc<Mutex<SoundMap>>,
 }
 
 impl Default for PluguzuParams {
@@ -70,6 +78,7 @@ impl Default for PluguzuParams {
             editor_state: EguiState::from_size(800, 600),
             code: Arc::new(Mutex::new(WELCOME.trim_end().into())),
             font_size: Arc::new(AtomicU8::new(20)),
+            sound_map: Arc::new(Mutex::new(BTreeMap::new())),
         }
     }
 }
@@ -80,6 +89,9 @@ pub struct Pluguzu {
 
     /// The Haskell binding state.
     state: Arc<Mutex<PluguzuState>>,
+
+    /// User config
+    config: Arc<Config>,
 
     /// The info shared to the UI.
     dsp_state: Arc<RwLock<PluguzuDSP>>,
@@ -116,6 +128,7 @@ impl Default for Pluguzu {
         Self {
             params: Arc::new(PluguzuParams::default()),
             state: Arc::new(Mutex::new(PluguzuState::new(MAX_EVENTS, MAX_LOCS))),
+            config: Arc::new(Config::new()),
 
             dsp_state: Arc::new(RwLock::new(PluguzuDSP {
                 playing: false,
@@ -151,6 +164,7 @@ pub enum PluguzuTask {
     Render(i32),
     RenderInPlace,
     UpdateHighlights,
+    ApplySoundMap(bool, SoundMap),
 }
 
 const BUFFER_LEN: i32 = 4;
@@ -186,6 +200,16 @@ impl Plugin for Pluguzu {
         context: &mut impl InitContext<Self>,
     ) -> bool {
         context.execute(PluguzuTask::Parse(false));
+
+        // Load sound map
+        let mut sound_map = self.params.sound_map.lock().unwrap();
+        self.config.load_sound_map(sound_map.deref_mut());
+
+        // Submit the sound map values to the Haskell side
+        let mut state = self.state.lock().unwrap();
+        for (k, v) in sound_map.iter() {
+            state.add_sound_map(k, *v);
+        }
         true
     }
 
@@ -325,6 +349,8 @@ impl Plugin for Pluguzu {
     fn task_executor(&mut self) -> TaskExecutor<Self> {
         let code = self.params.code.clone();
         let editor_state = self.params.editor_state.clone();
+        let sound_map = self.params.sound_map.clone();
+        let config = self.config.clone();
         let dsp_state = self.dsp_state.clone();
         let state = self.state.clone();
         let current_bar = self.current_bar.clone();
@@ -366,6 +392,25 @@ impl Plugin for Pluguzu {
                         evlocs_pos.store(0, Ordering::Relaxed);
                     } else {
                         nih_log!("{current_bar}: The UI is not open, skipping highlights...");
+                    }
+                }
+                PluguzuTask::ApplySoundMap(save, sm) => {
+                    let mut sound_map = sound_map.lock().unwrap();
+
+                    nih_log!("Applying sound map!");
+                    sound_map.retain(|k, _| sm.contains_key(k));
+                    for (k, v) in sm.into_iter() {
+                        if let Some(pv) = sound_map.get(&k)
+                            && *pv == v
+                        {
+                        } else {
+                            state.add_sound_map(&k, v);
+                            sound_map.insert(k.clone(), v);
+                        }
+                    }
+
+                    if save {
+                        config.save_sound_map(&sound_map);
                     }
                 }
             }
