@@ -65,14 +65,23 @@ impl Pluguzu {
                         // Main UI
                         let mut view = ui_view.lock().unwrap();
                         match *view {
-                            UIView::Preset => preset_ui(
-                                ui,
-                                &mut view,
-                                font_size.load(Ordering::Relaxed),
-                                &presets,
-                                preset_state.lock().unwrap().deref_mut(),
-                                code.lock().unwrap().deref_mut(),
-                            ),
+                            UIView::Preset => {
+                                if let Some(changed) = preset_ui(
+                                    ui,
+                                    font_size.load(Ordering::Relaxed),
+                                    &presets,
+                                    preset_state.lock().unwrap().deref_mut(),
+                                ) {
+                                    if let Some(new_code) = changed {
+                                        *code.lock().unwrap() = new_code;
+                                        async_executor
+                                            .execute_background(crate::PluguzuTask::Parse(false));
+                                        async_executor
+                                            .execute_background(crate::PluguzuTask::RenderInPlace);
+                                    }
+                                    *view = UIView::Editor;
+                                };
+                            }
                             UIView::Editor => {
                                 let mut font_size_value = font_size.load(Ordering::Relaxed);
                                 ui.with_layout(
@@ -217,12 +226,10 @@ fn load_presets() -> Presets {
 
 fn preset_ui(
     ui: &mut egui::Ui,
-    view: &mut UIView,
     font_size: u8,
     presets: &Presets,
     preset_state: &mut PresetUI,
-    code: &mut String,
-) {
+) -> Option<Option<String>> {
     // Tag selector
     let prev_cat = preset_state.cat;
     let cat = &mut preset_state.cat;
@@ -238,6 +245,7 @@ fn preset_ui(
     ui.separator();
     // Preset selector
     let sel = &mut preset_state.selected;
+    let mut result = None;
     if let Some((_, presets)) = presets.get(*cat) {
         let line_height = font_size as f32 + VERT_SPACE;
         let avail_height = ui.available_height() - line_height * 2.0 + 10.;
@@ -259,11 +267,10 @@ fn preset_ui(
                 if let Some(preset) = presets.get(*sel)
                     && ui.input(|i| i.key_pressed(egui::Key::Enter))
                 {
-                    *code = preset.code.to_string();
-                    *view = UIView::Editor
+                    result = Some(Some(preset.code.to_string()));
                 }
                 if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
-                    *view = UIView::Editor
+                    result = Some(None);
                 }
                 if ui.input(|i| i.key_pressed(egui::Key::ArrowUp)) {
                     *sel = sel.saturating_sub(1)
@@ -276,14 +283,14 @@ fn preset_ui(
             if let Some(preset) = presets.get(*sel)
                 && ui.button("Load").clicked()
             {
-                *code = preset.code.to_string();
-                *view = UIView::Editor
+                result = Some(Some(preset.code.to_string()))
             };
             if ui.button("Cancel").clicked() {
-                *view = UIView::Editor
+                result = Some(None)
             };
         });
     } else if ui.button("Oops").clicked() {
-        *view = UIView::Editor
+        result = Some(None)
     }
+    result
 }
