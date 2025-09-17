@@ -9,7 +9,7 @@ use nih_plug_egui::{
     resizable_window::ResizableWindow,
 };
 
-use std::collections::BTreeSet;
+use std::collections::BTreeMap;
 use std::ops::{Deref, DerefMut};
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
@@ -45,7 +45,7 @@ struct UIState {
     view: UIView,
     preset: PresetState,
     sound_map: SoundMapState,
-    highlights: BTreeSet<Arc<highlights::EventLoc>>,
+    highlights: BTreeMap<Arc<crate::highlights::EventLoc>, f64>,
 }
 
 impl Pluguzu {
@@ -77,7 +77,7 @@ impl Pluguzu {
                 // When the UI starts, the user setting might not have been loaded yet, so we yet for the init function below
                 backup: std::collections::BTreeMap::new(),
             },
-            highlights: BTreeSet::new(),
+            highlights: BTreeMap::new(),
         };
 
         create_egui_editor(
@@ -193,28 +193,32 @@ impl Pluguzu {
                                 );
 
                                 // Remove old highlights
-                                state.highlights.retain(|hl| dsp_state.pos - hl.when < 0.5);
+                                state
+                                    .highlights
+                                    .retain(|_, when| dsp_state.pos - *when < 0.5);
 
                                 // Add new highlights
                                 let evlocs = evlocs.read().unwrap();
                                 if dsp_state.playing {
                                     let mut pos = evlocs_pos.load(Ordering::Relaxed) as usize;
                                     while pos < evlocs.len() {
-                                        let evloc = &evlocs[pos];
-                                        if dsp_state.pos < evloc.when {
+                                        let (when, loc) = &evlocs[pos];
+                                        if dsp_state.pos < *when {
                                             break;
                                         }
-                                        // This doesn't replace existing highlights to avoid fast blinking
-                                        state.highlights.insert(evloc.clone());
+
+                                        // This doesn't replace existing highlights to avoid fast blinkin
+                                        state.highlights.entry(loc.clone()).or_insert(*when);
                                         pos += 1;
                                     }
                                     evlocs_pos.store(pos as u32, Ordering::Relaxed);
                                 }
 
-                                let shapes = state.highlights.iter().map(|el| {
-                                    let alpha =
-                                        (egui::lerp(1.0..=0.3, (dsp_state.pos - el.when) / 0.5)
-                                            * 255.) as u8;
+                                let shapes = state.highlights.iter().map(|(el, when)| {
+                                    let alpha = (egui::lerp(
+                                        1.0..=0.3,
+                                        (dsp_state.pos - when) / 0.5,
+                                    ) * 255.) as u8;
                                     Shape::rect_stroke(
                                         ep.highlight_rect(el.col, el.row, el.len),
                                         5.,

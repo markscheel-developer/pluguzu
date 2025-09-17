@@ -115,7 +115,7 @@ pub struct Pluguzu {
     skip_past_events: Arc<AtomicBool>,
 
     /// The event location for highlights.
-    evlocs: Arc<RwLock<Vec<Arc<highlights::EventLoc>>>>,
+    evlocs: highlights::EvLocs,
     /// The last event location position.
     evlocs_pos: Arc<AtomicU32>,
 }
@@ -163,7 +163,6 @@ pub enum PluguzuTask {
     Parse(bool),
     Render(i32),
     RenderInPlace,
-    UpdateHighlights,
     ApplySoundMap(bool, SoundMap),
 }
 
@@ -187,7 +186,6 @@ impl Pluguzu {
         //     println!("-> {ev:?} {:?}", NoteEvent::<()>::from_midi(0, &ev.data));
         // }
 
-        ctx.execute_background(PluguzuTask::UpdateHighlights);
         ctx.execute_background(PluguzuTask::Render(start + BUFFER_LEN))
     }
 }
@@ -375,6 +373,19 @@ impl Plugin for Pluguzu {
                     }
                 }
                 PluguzuTask::Render(start) => {
+                    // Update the highlights before rendering the next buffer.
+                    // This should happen right after a new buffer has been
+                    // loaded into the process callback, see 'sync_state_buffer'
+                    if first_highlight_request.fetch_and(false, Ordering::Relaxed)
+                        || editor_state.is_open()
+                    {
+                        // nih_log!("{current_bar}: Updating highlights");
+                        highlights::update_locs(evlocs.clone(), &state.buffer, &state.locs);
+                        evlocs_pos.store(0, Ordering::Relaxed);
+                    } else {
+                        nih_log!("{current_bar}: The UI is not open, skipping highlights...");
+                    }
+
                     nih_log!("{current_bar}: Rendering {}", start);
                     state.render(start, start + BUFFER_LEN);
                 }
@@ -382,17 +393,6 @@ impl Plugin for Pluguzu {
                     nih_log!("{current_bar}: Force update!");
                     skip_past_events.store(true, Ordering::SeqCst);
                     state.render(current_bar, current_bar + BUFFER_LEN);
-                }
-                PluguzuTask::UpdateHighlights => {
-                    if first_highlight_request.fetch_and(false, Ordering::Relaxed)
-                        || editor_state.is_open()
-                    {
-                        nih_log!("{current_bar}: Updating highlights");
-                        highlights::update_locs(evlocs.clone(), &state.buffer, &state.locs);
-                        evlocs_pos.store(0, Ordering::Relaxed);
-                    } else {
-                        nih_log!("{current_bar}: The UI is not open, skipping highlights...");
-                    }
                 }
                 PluguzuTask::ApplySoundMap(save, sm) => {
                     let mut sound_map = sound_map.lock().unwrap();
