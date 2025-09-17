@@ -5,7 +5,10 @@
 #include <stdio.h>
 #include "HsFFI.h"
 
+static int count = 0;
+
 HsBool pluguzu_init(void){
+  if (count++ > 0) return HS_BOOL_FALSE;
   int argc = 2;
   char *argv[] = { "+RTS", "-A32m", NULL };
   char **pargv = argv;
@@ -20,6 +23,7 @@ HsBool pluguzu_init(void){
 }
 
 void pluguzu_exit(void){
+  if (--count > 0) return;
   hs_exit();
   printf("HS EXIT!\n");
 }
