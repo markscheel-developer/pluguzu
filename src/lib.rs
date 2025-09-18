@@ -3,6 +3,7 @@
 
 pub mod binding;
 mod config;
+mod dirt;
 mod highlights;
 mod midi;
 mod presets;
@@ -92,6 +93,10 @@ pub struct Pluguzu {
     /// The pending note-offs.
     note_offs: HashMap<u8, FutureNoteOff>,
 
+    /// Samples
+    dirt: dirt::Dirt,
+    samples: Arc<Mutex<HashMap<&'static str, dirt::Sample>>>,
+
     /// The info needed to send midi events.
     midi: ProcessMidi,
 
@@ -130,6 +135,9 @@ impl Default for Pluguzu {
                 remaining: 0,
                 pos: 0.,
             })),
+
+            dirt: dirt::Dirt::new(8),
+            samples: Arc::new(Mutex::new(HashMap::new())),
 
             note_offs: HashMap::with_capacity(255),
 
@@ -186,10 +194,16 @@ impl Plugin for Pluguzu {
     fn initialize(
         &mut self,
         _audio_io_layout: &AudioIOLayout,
-        _buffer_config: &BufferConfig,
+        buffer_config: &BufferConfig,
         context: &mut impl InitContext<Self>,
     ) -> bool {
         context.execute(PluguzuTask::Parse(false));
+        self.dirt.set_sample_rate(buffer_config.sample_rate as i32);
+        let sample = self.dirt.load_sample(std::path::Path::new(
+            "/srv/codeberg.org/uzu/dirt/samples/sitar/002_d_maj_sitar_chordc.wav",
+        ));
+        dirt::Sound::new().unwrap().play(&sample);
+        self.samples.lock().unwrap().insert("bd", sample);
         true
     }
 
@@ -207,9 +221,14 @@ impl Plugin for Pluguzu {
         // Lookup transport and read the current bar.
         let transport = context.transport();
         let playing = transport.playing;
-        let pos = transport.pos_beats().unwrap() / 4.0;
+        let now = transport.pos_beats().unwrap();
+        let pos = now / 4.0;
         let cur_bar = pos.floor() as i32;
         self.current_bar.store(cur_bar, Ordering::Relaxed);
+
+        // Play dirt
+        let frames = buffer.samples();
+        self.dirt.playback(now, frames, buffer.as_slice());
 
         // When not playing...
         if !playing || transport.preroll_active.unwrap_or(false) {
@@ -259,7 +278,7 @@ impl Plugin for Pluguzu {
         // Compute current frame info
         let pos = transport.pos_beats().unwrap() / 4.0;
 
-        let frames = buffer.samples() as f64;
+        let frames = frames as f64;
         let beat_per_sec = 60. / transport.tempo.unwrap_or(120.);
         let bar_length = beat_per_sec * (transport.time_sig_numerator.unwrap_or(4) as f64);
         let run_time = frames / (transport.sample_rate as f64);
@@ -390,7 +409,19 @@ impl Plugin for Pluguzu {
 
     type SysExMessage = ();
 
-    const AUDIO_IO_LAYOUTS: &'static [AudioIOLayout] = &[];
+    const AUDIO_IO_LAYOUTS: &'static [AudioIOLayout] = &[
+        AudioIOLayout {
+            // This is also the default and can be omitted here
+            main_input_channels: None,
+            main_output_channels: NonZeroU32::new(2),
+            ..AudioIOLayout::const_default()
+        },
+        AudioIOLayout {
+            main_input_channels: None,
+            main_output_channels: NonZeroU32::new(1),
+            ..AudioIOLayout::const_default()
+        },
+    ];
     const MIDI_INPUT: MidiConfig = MidiConfig::MidiCCs;
     const MIDI_OUTPUT: MidiConfig = MidiConfig::MidiCCs;
 
