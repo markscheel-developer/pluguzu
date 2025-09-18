@@ -1,6 +1,7 @@
 // Copyright © 2025 Tristan de Cacqueray
 // SPDX-License-Identifier: GPL-3.0
 
+use std::collections::BTreeMap;
 use std::ffi::{c_char, c_double, c_long, c_ulong};
 
 #[link(name = "pluguzu")]
@@ -17,6 +18,7 @@ unsafe extern "C" {
         locCount: &mut c_ulong,
         loc: *mut LocEvent,
     ) -> c_ulong;
+    fn pluguzuSoundName(state: *mut CPluguzuState, value: i32) -> *const c_char;
 }
 
 pub struct PluguzuState {
@@ -26,6 +28,7 @@ pub struct PluguzuState {
     pub buffer: Vec<MidiEvent>,
     pub locs: Vec<LocEvent>,
     pub bar_start: Option<i32>,
+    pub sounds: BTreeMap<i32, &'static str>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -33,6 +36,7 @@ pub struct PluguzuState {
 pub struct MidiEvent {
     pub start: c_double,
     pub stop: c_double,
+    pub sound: i32,
     pub data: [u8; 3],
 }
 
@@ -58,6 +62,7 @@ impl PluguzuState {
             buffer: Vec::with_capacity(max_event),
             locs: Vec::with_capacity(max_loc),
             bar_start: None,
+            sounds: BTreeMap::new(),
         }
     }
     pub fn parse(&mut self, code: &str) -> Option<String> {
@@ -99,6 +104,21 @@ impl PluguzuState {
                 loc_count = self.max_loc
             }
             self.buffer.set_len(count);
+            // Collect sound names
+            for ev in &self.buffer {
+                if ev.sound != 0 {
+                    nih_plug::util::permit_alloc(|| {
+                        self.sounds.entry(ev.sound).or_insert_with(|| {
+                            let c_str = pluguzuSoundName(self.state, ev.sound);
+                            if c_str.is_null() {
+                                "NA"
+                            } else {
+                                std::ffi::CStr::from_ptr(c_str).to_str().unwrap()
+                            }
+                        });
+                    })
+                }
+            }
             self.locs.set_len(loc_count);
         };
         self.bar_start = Some(start);

@@ -3,7 +3,7 @@
 module PluguzuCore (
     patternToEvents,
     mkArc,
-    MidiEvent,
+    MidiEvent (..),
     NoteLoc,
     Event (..),
     eventsToLoc,
@@ -29,6 +29,7 @@ import Control.Applicative ((<|>))
 import Control.Monad (forM_, void)
 import Data.Bits ((.|.))
 import Data.Coerce (coerce)
+import Data.Int (Int32)
 import Data.List (sortBy)
 import Data.Map.Strict qualified as Map
 import Data.Maybe (fromMaybe, mapMaybe)
@@ -61,6 +62,7 @@ Note that this needs to be kept in sync with the 'midiEvent' defined in Pluguzu.
 data MidiEvent = MidiEvent
     { barFraction :: Double
     , stopFraction :: Double
+    , snd :: Int32
     , data0 :: Word8
     , data1 :: Word8
     , data2 :: Word8
@@ -74,6 +76,7 @@ data EventLoc = EventLoc
     , rowPos :: Int
     , endPos :: Int
     }
+    deriving (Show)
 
 data NoteLoc = NoteLoc
     { eventNR :: Int
@@ -87,8 +90,10 @@ instance GStorable NoteLoc
 
 data Event = Event
     { midi :: MidiEvent
+    , sound :: Maybe String
     , locs :: [EventLoc]
     }
+    deriving (Show)
 
 eventsToLoc :: [Event] -> [NoteLoc]
 eventsToLoc = concatMap go . zip [0 ..]
@@ -105,7 +110,7 @@ filterDup (x : xs) = x : filterDup (dropDup xs)
     dropDup [] = []
     dropDup rest@(y : ys)
         | y.midi.barFraction > x.midi.barFraction = rest
-        | y.midi.data0 == x.midi.data0 && y.midi.data1 == x.midi.data1 = dropDup ys
+        | y.midi.data0 == x.midi.data0 && y.midi.data1 == x.midi.data1 && y.sound == x.sound = dropDup ys
         | otherwise = y : dropDup ys
 
 patternToEvents :: Pattern.ControlPattern -> Time.Arc -> [Event]
@@ -116,17 +121,23 @@ compareEvent e1 e2 = compare e1.midi.barFraction e2.midi.barFraction
 
 eventToMidi :: Pattern.Event Pattern.ValueMap -> Maybe Event
 eventToMidi ev = do
-    mev <- (ccToMidi <$> eventToCC ev) <|> (noteToMidi <$> eventToNote ev)
-    pure $ Event mev $ if mev.stopFraction > 0 then (map mkLoc ev.context.contextPosition) else []
+    (sound, mev) <- soundEvent <|> midiEvent
+    pure $ Event mev sound (map mkLoc ev.context.contextPosition)
   where
     mkLoc :: ((Int, Int), (Int, Int)) -> EventLoc
     mkLoc ((col, row), (end, _)) = EventLoc col row end
     chan = (+ 1) $ round $ max 0 $ min 15 $ fromMaybe 0 $ Pattern.getF =<< Map.lookup "midichan" ev.value
-    ccToMidi (ccn, ccv) = MidiEvent (rat2float (Pattern.wholeStart ev)) 0 (0xb0 .|. chan) ccn ccv
+    ccToMidi (ccn, ccv) = MidiEvent (rat2float (Pattern.wholeStart ev)) 0 0 (0xb0 .|. chan) ccn ccv
+    midiEvent = do
+        mev <- (ccToMidi <$> eventToCC ev) <|> (noteToMidi <$> eventToNote ev)
+        pure (Nothing, mev)
+    soundEvent = do
+        s <- Pattern.getS =<< Map.lookup "s" ev.value
+        pure (Just s, noteToMidi (Pattern.wholeOrPart ev, 0, 0))
     noteToMidi (arc, pitch, velocity) =
         let start = rat2float (Pattern.start arc)
             stop_ = rat2float (Pattern.stop arc)
-         in MidiEvent start stop_ (0x90 .|. chan) pitch velocity
+         in MidiEvent start stop_ 0 (0x90 .|. chan) pitch velocity
 
 eventToCC :: Pattern.Event Pattern.ValueMap -> Maybe (Word8, Word8)
 eventToCC ev = do

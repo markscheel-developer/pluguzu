@@ -10,10 +10,11 @@ fn main() {
             println!("{:?}", ps.locs);
             let frames_per_fraction = 1000.;
             let mut loc_nr = 0;
+            println!("SOUNDS {:?}", ps.sounds);
             for (nr, ev) in ps.buffer.into_iter().enumerate() {
                 let offset = (ev.start * frames_per_fraction) as u32;
                 match nih_plug::midi::NoteEvent::<()>::from_midi(offset, &ev.data) {
-                    Ok(mev) => println!("=> {:3} {:?}", ev.stop, mev),
+                    Ok(mev) => println!("=> {:3} {:?} {:?}", ev.stop, mev, ev),
                     Err(err) => println!("E> {:?} {:?}", ev, err),
                 }
                 while loc_nr < ps.locs.len() {
