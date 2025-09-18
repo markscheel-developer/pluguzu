@@ -5,7 +5,6 @@ module PluguzuCore (
     mkArc,
     MidiEvent,
     NoteLoc,
-    SoundMap,
     Event (..),
     eventsToLoc,
     filterDup,
@@ -46,8 +45,6 @@ import Sound.Tidal.Time qualified as Time
 -- import Sound.Tidal.Clock qualified as Clock
 -- import Sound.Tidal.Link qualified as Link
 -- import Sound.Tidal.Stream.Process qualified as Process
-
-type SoundMap = Map.Map String Word8
 
 rat2float :: Rational -> Double
 rat2float = fromRational
@@ -111,15 +108,15 @@ filterDup (x : xs) = x : filterDup (dropDup xs)
         | y.midi.data0 == x.midi.data0 && y.midi.data1 == x.midi.data1 = dropDup ys
         | otherwise = y : dropDup ys
 
-patternToEvents :: SoundMap -> Pattern.ControlPattern -> Time.Arc -> [Event]
-patternToEvents sm pat arc = sortBy compareEvent $ mapMaybe (eventToMidi sm) $ Pattern.queryArc pat arc
+patternToEvents :: Pattern.ControlPattern -> Time.Arc -> [Event]
+patternToEvents pat arc = sortBy compareEvent $ mapMaybe eventToMidi $ Pattern.queryArc pat arc
 
 compareEvent :: Event -> Event -> Ordering
 compareEvent e1 e2 = compare e1.midi.barFraction e2.midi.barFraction
 
-eventToMidi :: SoundMap -> Pattern.Event Pattern.ValueMap -> Maybe Event
-eventToMidi sm ev = do
-    mev <- (ccToMidi <$> eventToCC ev) <|> (noteToMidi <$> eventToNote sm ev)
+eventToMidi :: Pattern.Event Pattern.ValueMap -> Maybe Event
+eventToMidi ev = do
+    mev <- (ccToMidi <$> eventToCC ev) <|> (noteToMidi <$> eventToNote ev)
     pure $ Event mev $ if mev.stopFraction > 0 then (map mkLoc ev.context.contextPosition) else []
   where
     mkLoc :: ((Int, Int), (Int, Int)) -> EventLoc
@@ -139,15 +136,12 @@ eventToCC ev = do
   where
     clamp = max 0 . min 127 . round
 
-eventToNote :: SoundMap -> Pattern.Event Pattern.ValueMap -> Maybe (Time.Arc, Word8, Word8)
-eventToNote sm ev = do
-    note <- soundEvent <|> (midiNote <$> noteEvent)
+eventToNote :: Pattern.Event Pattern.ValueMap -> Maybe (Time.Arc, Word8, Word8)
+eventToNote ev = do
+    note <- midiNote <$> noteEvent
     pure (Pattern.wholeOrPart ev, note, v)
   where
     noteEvent = Pattern.getN =<< (Map.lookup "n" ev.value <|> Map.lookup "note" ev.value <|> Map.lookup "midinote" ev.value)
-    soundEvent = do
-        s <- Pattern.getS =<< Map.lookup "s" ev.value
-        pure $ fromMaybe 72 $ Map.lookup s sm
 
     v = fromIntegral $ max 0 $ min 127 $ round $ fromMaybe 100 mVelocity
     mVelocity :: Maybe Double
@@ -178,54 +172,6 @@ showValue v = case v of
     Pattern.VPattern p -> "pattern"
     Pattern.VList xs -> show $ map showValue xs
     Pattern.VState s -> "state"
-
-{-
--- Previous attempt using tidal-link
-standalone_ :: IO ()
-standalone_ = do
-    link <- Link.create 120
-    Link.enable link
-    state <- Link.createAndCaptureAppSessionState link
-    -- bpm <- Clock.getTempo state
-
-    (mem, _st) <- Clock.initClock cconf (\_ _ _ _ _ -> pure ())
-    let cref = Clock.clockRef mem
-
-    now <- Link.clock link
-    -- Link.forceBeatAtTime state 0 now 1
-    eval now cconf cref (0, 2) state pat
-  where
-    pat = either error id $ Parse.parseTidal "s \"<[bd sd] [sd sd]>\""
-    cconf = Clock.defaultConfig -- {Clock.cFrameTimespan = 0}
-
-toMidi :: Process.ProcessedEvent -> Maybe (Word, Process.ProcessedEvent)
-toMidi pe = case isSound of
-    Just pitch -> Just (pitch, pe)
-  where
-    isSound = do
-        s <- Pattern.getS =<< Map.lookup "s" pe.peEvent.value
-        -- TODO: figure out how to map a sound to pitch
-        case s of
-            "bd" -> Just 42
-            "sd" -> Just 43
-            _ -> Nothing
-
-eval :: Link.Micros -> Clock.ClockConfig -> Clock.ClockRef -> (Clock.Time, Clock.Time) -> Link.SessionState -> Pattern.ControlPattern -> IO ()
-eval now cconf cref (st, end) state pat = do
-    pes <- Process.processCps cconf cref (state, state) es
-    forM_ (mapMaybe toMidi pes) $ \(pitch, pe) -> do
-        print (pitch, pe.peEvent.value, pe.peCps, "cycle", Clock.cyclesToBeat cconf (realToFrac pe.peCycle), round $ pe.peCycle * 10)
-  where
-    es =
-        sortOn (Pattern.start . Pattern.part) $
-            Pattern.query
-                pat
-                ( Pattern.State
-                    { Pattern.arc = Pattern.Arc st end
-                    , Pattern.controls = mempty
-                    }
-                )
--}
 
 data Preset = Preset
     { category :: String

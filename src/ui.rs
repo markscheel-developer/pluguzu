@@ -18,14 +18,13 @@ use egui::{Color32, Shape, Stroke, StrokeKind};
 
 use crate::syntax::tidal;
 use crate::{highlights, presets};
-use crate::{Pluguzu, PluguzuTask, SoundMap};
+use crate::{Pluguzu, PluguzuTask};
 
 const VERT_SPACE: f32 = 3.;
 
 enum UIView {
     Editor,
     Preset,
-    SoundMap,
 }
 
 struct PresetState {
@@ -34,17 +33,9 @@ struct PresetState {
     presets: Presets,
 }
 
-struct SoundMapState {
-    dirty: bool,
-    unsaved: bool,
-    backup: SoundMap,
-    input: String,
-}
-
 struct UIState {
     view: UIView,
     preset: PresetState,
-    sound_map: SoundMapState,
     highlights: BTreeMap<Arc<crate::highlights::EventLoc>, f64>,
 }
 
@@ -52,10 +43,8 @@ impl Pluguzu {
     pub fn do_editor(&mut self, async_executor: AsyncExecutor<Self>) -> Option<Box<dyn Editor>> {
         let params = self.params.clone();
         let egui_state = params.editor_state.clone();
-        let sound_map = params.sound_map.clone();
         let code = params.code.clone();
         let font_size = params.font_size.clone();
-        let initial_sound_map = sound_map.clone();
         let initial_font_size = font_size.load(Ordering::Relaxed);
 
         let dsp_state = self.dsp_state.clone();
@@ -70,23 +59,14 @@ impl Pluguzu {
                 selected: 0,
                 presets: load_presets(),
             },
-            sound_map: SoundMapState {
-                dirty: false,
-                unsaved: false,
-                input: "".to_string(),
-                // When the UI starts, the user setting might not have been loaded yet, so we yet for the init function below
-                backup: std::collections::BTreeMap::new(),
-            },
             highlights: BTreeMap::new(),
         };
 
         create_egui_editor(
             self.params.editor_state.clone(),
             state,
-            move |egui_ctx, state| {
+            move |egui_ctx, _state| {
                 update_font_size(egui_ctx, initial_font_size);
-                // At that point the user setting should have been loaded... hopefully, otherwise the sound-map configuration UI will be empty
-                state.sound_map.backup = initial_sound_map.lock().unwrap().clone()
             },
             move |egui_ctx, _setter, state| {
                 ResizableWindow::new("res-wind")
@@ -107,27 +87,6 @@ impl Pluguzu {
                                     state.view = UIView::Editor;
                                 };
                             }
-                            UIView::SoundMap => match sound_map_ui(ui, &mut state.sound_map, fs) {
-                                SoundMapUIResult::Continue => {}
-                                SoundMapUIResult::Close => {
-                                    state.view = UIView::Editor;
-                                    state.sound_map.input.clear();
-                                    if state.sound_map.dirty {
-                                        println!("Reverting...");
-                                        state.sound_map.backup = sound_map.lock().unwrap().clone();
-                                        state.sound_map.dirty = false;
-                                        state.sound_map.unsaved = false;
-                                    }
-                                }
-                                SoundMapUIResult::Action(task) => {
-                                    async_executor.execute_background(task);
-                                    state.view = UIView::Editor;
-                                    state.sound_map.input.clear();
-                                }
-                                SoundMapUIResult::Delete(key) => {
-                                    state.sound_map.backup.remove(&key);
-                                }
-                            },
                             UIView::Editor => {
                                 let mut font_size_value = fs;
                                 let dsp_state = dsp_state.read().unwrap();
@@ -146,9 +105,6 @@ impl Pluguzu {
                                         }
                                         if ui.button("Load").clicked() {
                                             state.view = UIView::Preset
-                                        }
-                                        if ui.button("Conf").clicked() {
-                                            state.view = UIView::SoundMap
                                         }
                                         let status = if dsp_state.playing { ">>=" } else { "|-|" };
                                         let next = dsp_state.next;
@@ -336,88 +292,5 @@ fn preset_ui(ui: &mut egui::Ui, state: &mut PresetState, font_size: u8) -> Optio
     } else if ui.button("Oops").clicked() {
         result = Some(None)
     }
-    result
-}
-
-enum SoundMapUIResult {
-    Continue,
-    Close,
-    Delete(String),
-    Action(PluguzuTask),
-}
-
-fn sound_map_ui(ui: &mut egui::Ui, state: &mut SoundMapState, font_size: u8) -> SoundMapUIResult {
-    let mut result = SoundMapUIResult::Continue;
-
-    let line_height = font_size as f32 + VERT_SPACE;
-    let avail_height = ui.available_height() - line_height * 3.0 + 10.;
-    egui::ScrollArea::vertical()
-        .auto_shrink(false)
-        .max_height(avail_height)
-        .show(ui, |ui| {
-            egui::Grid::new("my_grid")
-                .num_columns(4)
-                .spacing([24.0, 4.0])
-                .striped(true)
-                .show(ui, |ui| {
-                    for (k, v) in state.backup.iter_mut() {
-                        ui.label(k.as_str());
-                        ui.horizontal(|ui| {
-                            if ui.button("+").clicked() {
-                                *v = v.saturating_add(1);
-                                state.dirty = true;
-                            };
-                            if ui.button("-").clicked() {
-                                *v = v.saturating_sub(1);
-                                state.dirty = true;
-                            }
-                            if ui.add(egui::DragValue::new(v)).changed() {
-                                state.dirty = true;
-                            }
-                        });
-                        if ui.button("Delete").clicked() {
-                            state.dirty = true;
-                            result = SoundMapUIResult::Delete(k.clone());
-                        }
-                        ui.end_row();
-                    }
-                });
-        });
-    if state.dirty {
-        state.unsaved = true;
-    }
-    ui.horizontal(|ui| {
-        ui.label("Insert new sound: ");
-        ui.text_edit_singleline(&mut state.input).request_focus();
-        state
-            .input
-            .retain(|c| c.is_ascii_lowercase() || c == '-' || c == '_');
-        if !state.input.is_empty() && ui.button("Add").clicked()
-            || ui.input(|i| i.key_pressed(egui::Key::Enter))
-        {
-            if !state.backup.contains_key(&state.input) {
-                state.backup.insert(state.input.clone(), 60);
-                state.dirty = true;
-            }
-            state.input.clear();
-        }
-    });
-    ui.horizontal(|ui| {
-        if (state.unsaved || state.dirty) && ui.button("Save").clicked() {
-            state.unsaved = false;
-            state.dirty = false;
-            result =
-                SoundMapUIResult::Action(PluguzuTask::ApplySoundMap(true, state.backup.clone()))
-        }
-        if state.dirty && ui.button("Apply").clicked() {
-            state.dirty = false;
-            result =
-                SoundMapUIResult::Action(PluguzuTask::ApplySoundMap(false, state.backup.clone()))
-        }
-        let msg = if state.dirty { "Revert" } else { "Close" };
-        if ui.button(msg).clicked() {
-            result = SoundMapUIResult::Close
-        }
-    });
     result
 }

@@ -84,7 +84,6 @@ Implemented:
 - [x] Add config-file to define preset pattern to help getting started.
 - [x] Highlight event locations
 - [x] Replace DPF framework with nih-plug
-- [x] Add UI/config-file to define custom sound to note mapping, e.g. for "bd", "sd", ...
 
 Next:
 

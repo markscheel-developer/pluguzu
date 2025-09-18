@@ -6,7 +6,6 @@ module Pluguzu (pluguzuNew, pluguzuParse, pluguzuError) where
 import Control.Exception (SomeException, displayException, handle)
 import Control.Monad (unless)
 import Data.IORef
-import Data.Map.Strict qualified as Map
 import Data.Maybe (fromMaybe)
 import Foreign (Ptr)
 import Foreign qualified
@@ -24,7 +23,6 @@ foreign export ccall pluguzuNew :: Word -> Word -> IO CPluguzuState
 foreign export ccall pluguzuParse :: CPluguzuState -> Foreign.C.CString -> IO ()
 foreign export ccall pluguzuError :: CPluguzuState -> IO Foreign.C.CString
 foreign export ccall pluguzuRender :: CPluguzuState -> Word -> Word -> Ptr PluguzuCore.MidiEvent -> Ptr Int -> Ptr PluguzuCore.NoteLoc -> IO CSize
-foreign export ccall pluguzuSoundMap :: CPluguzuState -> CString -> Word -> IO ()
 
 data PluguzuState = PluguzuState
     { maxEvent :: Int
@@ -34,14 +32,12 @@ data PluguzuState = PluguzuState
     , error :: IORef (Maybe CString)
     -- ^ The last parse error.
     , pat :: IORef PluguzuCore.ControlPattern
-    -- ^ The current pattern
-    , soundMap :: IORef PluguzuCore.SoundMap
     }
 
 -- | Create a new state.
 pluguzuNew :: Word -> Word -> IO CPluguzuState
 pluguzuNew maxEvent maxLoc = do
-    state <- PluguzuState (fromIntegral maxEvent) (fromIntegral maxLoc) <$> newIORef Nothing <*> newIORef mempty <*> newIORef mempty
+    state <- PluguzuState (fromIntegral maxEvent) (fromIntegral maxLoc) <$> newIORef Nothing <*> newIORef mempty
     Foreign.newStablePtr state
 
 writeError :: IORef (Maybe CString) -> Maybe CString -> IO ()
@@ -76,22 +72,14 @@ pluguzuError pState = do
     mError <- readIORef state.error
     pure $ fromMaybe Foreign.nullPtr mError
 
--- | Add a new sound mapping to midi note
-pluguzuSoundMap :: CPluguzuState -> CString -> Word -> IO ()
-pluguzuSoundMap pState sound note = do
-    state <- Foreign.deRefStablePtr pState
-    str <- Foreign.C.peekCString sound
-    modifyIORef' state.soundMap (Map.insert str (fromIntegral note))
-
 pluguzuRender :: CPluguzuState -> Word -> Word -> Ptr PluguzuCore.MidiEvent -> Ptr Int -> Ptr PluguzuCore.NoteLoc -> IO CSize
 pluguzuRender pState startArc endArc pEvs pLocCount pLocs = handle catchException $ do
     state <- Foreign.deRefStablePtr pState
     pat <- readIORef state.pat
-    sm <- readIORef state.soundMap
     let start = fromInteger (toInteger startArc)
     let end = fromInteger (toInteger endArc)
     let arc = PluguzuCore.mkArc start end
-    let evs = PluguzuCore.filterDup $ PluguzuCore.patternToEvents sm pat arc
+    let evs = PluguzuCore.filterDup $ PluguzuCore.patternToEvents pat arc
     pokeArray pEvs $ map (.midi) (take state.maxEvent evs)
     let locs = PluguzuCore.eventsToLoc evs
     unless (pLocs == Foreign.nullPtr) $ pokeArray pLocs (take state.maxLoc locs)

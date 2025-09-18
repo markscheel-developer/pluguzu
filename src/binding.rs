@@ -17,7 +17,6 @@ unsafe extern "C" {
         locCount: &mut c_ulong,
         loc: *mut LocEvent,
     ) -> c_ulong;
-    fn pluguzuSoundMap(state: *mut CPluguzuState, key: *const c_char, value: c_ulong);
 }
 
 pub struct PluguzuState {
@@ -103,15 +102,6 @@ impl PluguzuState {
             self.locs.set_len(loc_count);
         };
         self.bar_start = Some(start);
-    }
-    pub fn add_sound_map(&mut self, key: &str, value: u8) {
-        unsafe {
-            pluguzuSoundMap(
-                self.state,
-                std::ffi::CString::new(key).unwrap().as_ptr() as *const c_char,
-                value as u64,
-            );
-        }
     }
 }
 

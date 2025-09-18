@@ -11,7 +11,7 @@ mod ui;
 
 use nih_plug::prelude::*;
 use nih_plug_egui::{egui, EguiState};
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
 use std::ops::DerefMut;
 use std::sync::atomic::Ordering;
 use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU32, AtomicU8};
@@ -50,8 +50,6 @@ const WELCOME: &str = r#"
     |- "<12 [12 5]>/2"
 "#;
 
-type SoundMap = BTreeMap<String, u8>;
-
 /// The params that can be saved/loaded
 #[derive(Params)]
 pub struct PluguzuParams {
@@ -66,10 +64,6 @@ pub struct PluguzuParams {
     /// The font size.
     #[persist = "font-size"]
     font_size: Arc<AtomicU8>,
-
-    /// The sound map.
-    #[persist = "sound-map"]
-    sound_map: Arc<Mutex<SoundMap>>,
 }
 
 impl Default for PluguzuParams {
@@ -78,7 +72,6 @@ impl Default for PluguzuParams {
             editor_state: EguiState::from_size(800, 600),
             code: Arc::new(Mutex::new(WELCOME.trim_end().into())),
             font_size: Arc::new(AtomicU8::new(20)),
-            sound_map: Arc::new(Mutex::new(BTreeMap::new())),
         }
     }
 }
@@ -163,7 +156,6 @@ pub enum PluguzuTask {
     Parse(bool),
     Render(i32),
     RenderInPlace,
-    ApplySoundMap(bool, SoundMap),
 }
 
 const BUFFER_LEN: i32 = 4;
@@ -198,16 +190,6 @@ impl Plugin for Pluguzu {
         context: &mut impl InitContext<Self>,
     ) -> bool {
         context.execute(PluguzuTask::Parse(false));
-
-        // Load sound map
-        let mut sound_map = self.params.sound_map.lock().unwrap();
-        self.config.load_sound_map(sound_map.deref_mut());
-
-        // Submit the sound map values to the Haskell side
-        let mut state = self.state.lock().unwrap();
-        for (k, v) in sound_map.iter() {
-            state.add_sound_map(k, *v);
-        }
         true
     }
 
@@ -347,8 +329,7 @@ impl Plugin for Pluguzu {
     fn task_executor(&mut self) -> TaskExecutor<Self> {
         let code = self.params.code.clone();
         let editor_state = self.params.editor_state.clone();
-        let sound_map = self.params.sound_map.clone();
-        let config = self.config.clone();
+        let _config = self.config.clone();
         let dsp_state = self.dsp_state.clone();
         let state = self.state.clone();
         let current_bar = self.current_bar.clone();
@@ -393,25 +374,6 @@ impl Plugin for Pluguzu {
                     nih_log!("{current_bar}: Force update!");
                     skip_past_events.store(true, Ordering::SeqCst);
                     state.render(current_bar, current_bar + BUFFER_LEN);
-                }
-                PluguzuTask::ApplySoundMap(save, sm) => {
-                    let mut sound_map = sound_map.lock().unwrap();
-
-                    nih_log!("Applying sound map!");
-                    sound_map.retain(|k, _| sm.contains_key(k));
-                    for (k, v) in sm.into_iter() {
-                        if let Some(pv) = sound_map.get(&k)
-                            && *pv == v
-                        {
-                        } else {
-                            state.add_sound_map(&k, v);
-                            sound_map.insert(k.clone(), v);
-                        }
-                    }
-
-                    if save {
-                        config.save_sound_map(&sound_map);
-                    }
                 }
             }
         })
