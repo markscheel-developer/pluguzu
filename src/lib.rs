@@ -345,7 +345,7 @@ impl Plugin for Pluguzu {
         }
 
         // Send events.
-        self.send_events(start_fraction, stop_fraction, context);
+        self.send_tidal_events(start_fraction, stop_fraction, context);
 
         // Send events from the begining of the next-buffer.
         if stop_fraction > next_buffer as f64 {
@@ -357,7 +357,7 @@ impl Plugin for Pluguzu {
             {
                 println!("{pos:.4} process buffer overlaps with next event buffer {stop_fraction} > {next_buffer}");
                 self.sync_state_buffer(state.deref_mut(), next_buffer, context);
-                self.send_events(start_fraction, stop_fraction, context);
+                self.send_tidal_events(start_fraction, stop_fraction, context);
             } else {
                 println!(
                     "{pos:.4} ERROR: the next event buffer is not ready?! {next_buffer} {:?}",

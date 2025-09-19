@@ -1,6 +1,7 @@
 // Copyright © 2025 Tristan de Cacqueray
 // SPDX-License-Identifier: GPL-3.0
 
+use crate::samples::SampleID;
 use crate::{binding::MidiEvent, Pluguzu};
 use nih_plug::{midi::NoteEvent, prelude::ProcessContext};
 
@@ -76,7 +77,7 @@ impl Pluguzu {
         });
     }
 
-    pub fn send_event(&mut self, ev: &MidiEvent, context: &mut impl ProcessContext<Self>) {
+    pub fn send_midi_event(&mut self, ev: &MidiEvent, context: &mut impl ProcessContext<Self>) {
         let offset = if ev.start > self.midi.start {
             self.midi.event_offset(ev.start)
         } else {
@@ -119,8 +120,33 @@ impl Pluguzu {
             Err(err) => println!("Couldn't decode {:?} {:?}", ev, err),
         }
     }
+    pub fn send_sound_event(&mut self, ev: &MidiEvent) {
+        let sample_id = SampleID {
+            name: ev.sound,
+            idx: 0,
+        };
+        let samples_library = self.samples_library.read().expect("Samples read lock");
+        match samples_library.samples.get(&sample_id) {
+            Some(samples) => {
+                let mut sound = crate::dirt::Sound::new().expect("Valid new_sound");
+                // TODO: handle time offset
+                let now = 0.;
+                sound.play(now, samples)
+            }
+            None => {
+                println!("Sample not ready! {:?}", ev);
+            }
+        };
+    }
 
-    pub fn send_events(
+    pub fn send_tidal_event(&mut self, ev: &MidiEvent, context: &mut impl ProcessContext<Self>) {
+        if ev.sound > 0 {
+            self.send_sound_event(ev)
+        } else {
+            self.send_midi_event(ev, context)
+        }
+    }
+    pub fn send_tidal_events(
         &mut self,
         start_fraction: f64,
         stop_fraction: f64,
@@ -133,13 +159,13 @@ impl Pluguzu {
                 break;
             } else if start_fraction <= ev.start && ev.start < stop_fraction {
                 // The event is due for this buffer
-                self.send_event(&ev, context);
+                self.send_tidal_event(&ev, context);
             } else if ev.stop > 0. && ev.stop <= stop_fraction {
                 println!(
                     "{start_fraction:.4} Missed event start, but it still make sense to send it now... {:.4}..{:.4} < {stop_fraction:.4}",
                     ev.start, ev.stop
                 );
-                self.send_event(&ev, context);
+                self.send_tidal_event(&ev, context);
             } else if start_fraction > ev.start {
                 // That's odd, it looks like we missed an event?!
                 println!("{start_fraction:.4} Skipped event {:.4}", ev.start);
