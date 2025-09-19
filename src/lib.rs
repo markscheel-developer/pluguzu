@@ -115,6 +115,11 @@ pub struct Pluguzu {
     /// When updating in-place with shift-enter, this boolean indicate that past event needs to be skipped.
     skip_past_events: Arc<AtomicBool>,
 
+    /// The event params
+    evparams: Vec<binding::ParamEvent>,
+    /// The last event location position.
+    evparams_pos: usize,
+
     /// The event location for highlights.
     evlocs: highlights::EvLocs,
     /// The last event location position.
@@ -123,12 +128,15 @@ pub struct Pluguzu {
 
 const MAX_EVENTS: usize = 4096;
 const MAX_LOCS: usize = MAX_EVENTS * 4;
+const MAX_PARAMS: usize = MAX_EVENTS * 8;
 
 impl Default for Pluguzu {
     fn default() -> Self {
         Self {
             params: Arc::new(PluguzuParams::default()),
-            state: Arc::new(Mutex::new(PluguzuState::new(MAX_EVENTS, MAX_LOCS))),
+            state: Arc::new(Mutex::new(PluguzuState::new(
+                MAX_EVENTS, MAX_LOCS, MAX_PARAMS,
+            ))),
             config: Arc::new(Config::new()),
 
             dsp_state: Arc::new(RwLock::new(PluguzuDSP {
@@ -158,6 +166,9 @@ impl Default for Pluguzu {
             buffer: Vec::with_capacity(MAX_EVENTS),
             skip_past_events: Arc::new(AtomicBool::new(false)),
 
+            evparams: Vec::with_capacity(MAX_PARAMS),
+            evparams_pos: 0,
+
             evlocs: Arc::new(RwLock::new(Vec::with_capacity(MAX_LOCS))),
             evlocs_pos: Arc::new(AtomicU32::new(0)),
         }
@@ -185,6 +196,10 @@ impl Pluguzu {
         self.buffer_pos = 0;
         self.buffer_start_bar = start;
         state.bar_start = None;
+
+        self.evparams.clear();
+        self.evparams.extend_from_slice(&state.params);
+        self.evparams_pos = 0;
 
         // Pre Load samples
         {

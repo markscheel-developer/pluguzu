@@ -120,7 +120,7 @@ impl Pluguzu {
             Err(err) => println!("Couldn't decode {:?} {:?}", ev, err),
         }
     }
-    pub fn send_sound_event(&mut self, ev: &MidiEvent) {
+    fn send_sound_event(&mut self, ev: &MidiEvent) {
         let sample_id = SampleID {
             name: ev.sound,
             idx: 0,
@@ -131,6 +131,17 @@ impl Pluguzu {
                 let mut sound = crate::dirt::Sound::new().expect("Valid new_sound");
                 // TODO: handle time offset
                 let now = 0.;
+                while self.evparams_pos < self.evparams.len() {
+                    let evparams = self.evparams[self.evparams_pos];
+                    let cur_pos = evparams.pos as usize;
+                    if cur_pos > self.buffer_pos {
+                        break;
+                    } else if cur_pos == self.buffer_pos {
+                        println!("Hum? {:?}", evparams);
+                        sound.apply_param(evparams.param_id, evparams.param_value)
+                    }
+                    self.evparams_pos += 1;
+                }
                 sound.play(now, samples)
             }
             None => {
@@ -139,7 +150,7 @@ impl Pluguzu {
         };
     }
 
-    pub fn send_tidal_event(&mut self, ev: &MidiEvent, context: &mut impl ProcessContext<Self>) {
+    fn send_tidal_event(&mut self, ev: &MidiEvent, context: &mut impl ProcessContext<Self>) {
         if ev.sound > 0 {
             self.send_sound_event(ev)
         } else {

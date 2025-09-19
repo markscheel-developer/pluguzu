@@ -23,17 +23,19 @@ import PluguzuCore qualified
 
 type CPluguzuState = Foreign.StablePtr PluguzuState
 
-foreign export ccall pluguzuNew :: Word -> Word -> IO CPluguzuState
+foreign export ccall pluguzuNew :: Word -> Word -> Word -> IO CPluguzuState
 foreign export ccall pluguzuParse :: CPluguzuState -> Foreign.C.CString -> IO ()
 foreign export ccall pluguzuError :: CPluguzuState -> IO Foreign.C.CString
 foreign export ccall pluguzuSoundName :: CPluguzuState -> Int -> IO Foreign.C.CString
-foreign export ccall pluguzuRender :: CPluguzuState -> Word -> Word -> Ptr PluguzuCore.MidiEvent -> Ptr Int -> Ptr PluguzuCore.NoteLoc -> IO CSize
+foreign export ccall pluguzuRender :: CPluguzuState -> Word -> Word -> Ptr PluguzuCore.MidiEvent -> Ptr Int -> Ptr PluguzuCore.NoteLoc -> Ptr Int -> Ptr PluguzuCore.ParamEvent -> IO CSize
 
 data PluguzuState = PluguzuState
     { maxEvent :: Int
     -- ^ The maximum number of a event per query
     , maxLoc :: Int
     -- ^ The maximum number of locations
+    , maxParam :: Int
+    -- ^ The maximum number of params
     , error :: IORef (Maybe CString)
     -- ^ The last parse error.
     , pat :: IORef PluguzuCore.ControlPattern
@@ -43,9 +45,9 @@ data PluguzuState = PluguzuState
     }
 
 -- | Create a new state.
-pluguzuNew :: Word -> Word -> IO CPluguzuState
-pluguzuNew maxEvent maxLoc = do
-    state <- PluguzuState (fromIntegral maxEvent) (fromIntegral maxLoc) <$> newIORef Nothing <*> newIORef mempty <*> newIORef mempty <*> newIORef mempty
+pluguzuNew :: Word -> Word -> Word -> IO CPluguzuState
+pluguzuNew maxEvent maxLoc maxParam = do
+    state <- PluguzuState (fromIntegral maxEvent) (fromIntegral maxLoc) (fromIntegral maxParam) <$> newIORef Nothing <*> newIORef mempty <*> newIORef mempty <*> newIORef mempty
     Foreign.newStablePtr state
 
 writeError :: IORef (Maybe CString) -> Maybe CString -> IO ()
@@ -86,8 +88,8 @@ pluguzuSoundName pState idx = do
     sn <- readIORef state.sampleNames
     pure $ fromMaybe Foreign.nullPtr $ IM.lookup idx sn
 
-pluguzuRender :: CPluguzuState -> Word -> Word -> Ptr PluguzuCore.MidiEvent -> Ptr Int -> Ptr PluguzuCore.NoteLoc -> IO CSize
-pluguzuRender pState startArc endArc pEvs pLocCount pLocs = handle catchException $ do
+pluguzuRender :: CPluguzuState -> Word -> Word -> Ptr PluguzuCore.MidiEvent -> Ptr Int -> Ptr PluguzuCore.NoteLoc -> Ptr Int -> Ptr PluguzuCore.ParamEvent -> IO CSize
+pluguzuRender pState startArc endArc pEvs pLocCount pLocs pParamCount pParams = handle catchException $ do
     state <- Foreign.deRefStablePtr pState
     pat <- readIORef state.pat
     let start = fromInteger (toInteger startArc)
@@ -95,13 +97,18 @@ pluguzuRender pState startArc endArc pEvs pLocCount pLocs = handle catchExceptio
     let arc = PluguzuCore.mkArc start end
     let evsBase = PluguzuCore.filterDup $ PluguzuCore.patternToEvents pat arc
     evs <-
-        if False
+        if pParams == Foreign.nullPtr
             then pure evsBase
             else updateNames state evsBase
     pokeArray pEvs $ map (.midi) (take state.maxEvent evs)
-    let locs = PluguzuCore.eventsToLoc evs
-    unless (pLocs == Foreign.nullPtr) $ pokeArray pLocs (take state.maxLoc locs)
-    Foreign.poke pLocCount $ length locs
+    unless (pLocs == Foreign.nullPtr) $ do
+        let locs = PluguzuCore.eventsToLoc evs
+        pokeArray pLocs (take state.maxLoc locs)
+        Foreign.poke pLocCount $ length locs
+    unless (pParams == Foreign.nullPtr) $ do
+        let params = PluguzuCore.eventsToParam evs
+        pokeArray pParams (take state.maxParam params)
+        Foreign.poke pParamCount $ length params
     pure (fromInteger (toInteger (length evs)))
   where
     catchException :: SomeException -> IO CSize

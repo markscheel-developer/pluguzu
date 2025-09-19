@@ -1,12 +1,18 @@
+{-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE OverloadedRecordDot #-}
+
+-- Try on the REPL with
+-- (flip patternToEvents (mkArc 0 1)) <$> parseTidal "silence"
 
 module PluguzuCore (
     patternToEvents,
     mkArc,
     MidiEvent (..),
     NoteLoc,
+    ParamEvent,
     Event (..),
     eventsToLoc,
+    eventsToParam,
     filterDup,
 
     -- * re-export
@@ -37,6 +43,7 @@ import Data.Word (Word8)
 import Debug.Trace (traceShow, traceShowM)
 import Foreign.Storable qualified as Storable
 import Foreign.Storable.Generic (GStorable)
+import GHC.Float (double2Float)
 import GHC.Generics (Generic)
 
 import Sound.Tidal.Parse qualified as Parse
@@ -72,9 +79,9 @@ data MidiEvent = MidiEvent
 instance GStorable MidiEvent
 
 data EventLoc = EventLoc
-    { colPos :: Int
-    , rowPos :: Int
-    , endPos :: Int
+    { col :: Int
+    , row :: Int
+    , end :: Int
     }
     deriving (Show)
 
@@ -88,10 +95,17 @@ data NoteLoc = NoteLoc
 
 instance GStorable NoteLoc
 
+data EventParam = EventParam
+    { paramID :: Word8
+    , paramValue :: Float
+    }
+    deriving (Show)
+
 data Event = Event
     { midi :: MidiEvent
     , sound :: Maybe String
     , locs :: [EventLoc]
+    , params :: [EventParam]
     }
     deriving (Show)
 
@@ -101,7 +115,23 @@ eventsToLoc = concatMap go . zip [0 ..]
     go :: (Int, Event) -> [NoteLoc]
     go (pos, ev) = map mkLoc ev.locs
       where
-        mkLoc el = NoteLoc pos el.colPos (el.rowPos - 1) (el.endPos - el.colPos)
+        mkLoc el = NoteLoc pos el.col (el.row - 1) (el.end - el.col)
+
+data ParamEvent = ParamEvent
+    { eventNR :: Int
+    , paramID :: Word8
+    , paramValue :: Float
+    }
+    deriving (Show, Generic)
+
+instance GStorable ParamEvent
+
+eventsToParam :: [Event] -> [ParamEvent]
+eventsToParam = concatMap go . zip [0 ..]
+  where
+    go (pos, ev) = map mkLoc ev.params
+      where
+        mkLoc p = ParamEvent pos p.paramID p.paramValue
 
 filterDup :: [Event] -> [Event]
 filterDup [] = []
@@ -121,8 +151,8 @@ compareEvent e1 e2 = compare e1.midi.barFraction e2.midi.barFraction
 
 eventToMidi :: Pattern.Event Pattern.ValueMap -> Maybe Event
 eventToMidi ev = do
-    (sound, mev) <- soundEvent <|> midiEvent
-    pure $ Event mev sound (map mkLoc ev.context.contextPosition)
+    (sound, params, mev) <- soundEvent <|> midiEvent
+    pure $ Event mev sound (map mkLoc ev.context.contextPosition) params
   where
     mkLoc :: ((Int, Int), (Int, Int)) -> EventLoc
     mkLoc ((col, row), (end, _)) = EventLoc col row end
@@ -130,14 +160,33 @@ eventToMidi ev = do
     ccToMidi (ccn, ccv) = MidiEvent (rat2float (Pattern.wholeStart ev)) 0 0 (0xb0 .|. chan) ccn ccv
     midiEvent = do
         mev <- (ccToMidi <$> eventToCC ev) <|> (noteToMidi <$> eventToNote ev)
-        pure (Nothing, mev)
+        pure (Nothing, [], mev)
     soundEvent = do
         s <- Pattern.getS =<< Map.lookup "s" ev.value
-        pure (Just s, noteToMidi (Pattern.wholeOrPart ev, 0, 0))
+        let n = Pattern.getN =<< Map.lookup "n" ev.value
+        let note = maybe 0 (round . Pattern.unNote) n
+        let params = mapMaybe (getEventParam ev.value) staticParams
+        pure (Just s, params, noteToMidi (Pattern.wholeOrPart ev, note, 0))
     noteToMidi (arc, pitch, velocity) =
         let start = rat2float (Pattern.start arc)
             stop_ = rat2float (Pattern.stop arc)
          in MidiEvent start stop_ 0 (0x90 .|. chan) pitch velocity
+
+staticParams :: [(Word8, String)]
+staticParams =
+    zip
+        [0 ..]
+        [ "begin"
+        , "end"
+        , "speed"
+        ]
+
+getEventParam :: Pattern.ValueMap -> (Word8, String) -> Maybe EventParam
+getEventParam m (paramID, name) = do
+    value <- getFloat =<< Map.lookup name m
+    pure $ EventParam paramID value
+  where
+    getFloat v = double2Float <$> Pattern.getF v
 
 eventToCC :: Pattern.Event Pattern.ValueMap -> Maybe (Word8, Word8)
 eventToCC ev = do

@@ -152,6 +152,17 @@ impl Sound {
             audio_play_with_sample(self.0, &samples.c);
         };
     }
+
+    pub fn apply_param(&mut self, id: u8, v: f32) {
+        // Match the order with PluguzuCore.staticParams
+        println!("Applying param {id} => {v}");
+        match id {
+            0 => self.0.start = v,
+            1 => self.0.end = v,
+            2 => self.0.speed = v,
+            _ => panic!("Unknown param id: {id}, value {v}"),
+        }
+    }
 }
 
 // Keep in sync with dirt/audio.h t_node definition

@@ -2,7 +2,7 @@ use pluguzu::binding::PluguzuState;
 
 fn main() {
     if let Some(pat) = std::env::args().nth(1) {
-        let mut ps = PluguzuState::new(512, 512);
+        let mut ps = PluguzuState::new(512, 512, 512);
         if let Some(err) = ps.parse(&pat) {
             println!("Parse failure: {err}");
         } else {
@@ -10,6 +10,7 @@ fn main() {
             println!("{:?}", ps.locs);
             let frames_per_fraction = 1000.;
             let mut loc_nr = 0;
+            let mut param_nr = 0;
             println!("SOUNDS {:?}", ps.sounds);
             for (nr, ev) in ps.buffer.into_iter().enumerate() {
                 let offset = (ev.start * frames_per_fraction) as u32;
@@ -25,6 +26,15 @@ fn main() {
                         break;
                     }
                     loc_nr += 1;
+                }
+                while param_nr < ps.params.len() {
+                    let param = ps.params[param_nr];
+                    if param.pos == nr as i64 {
+                        println!("PARAMS: {:?}", param);
+                    } else {
+                        break;
+                    }
+                    param_nr += 1;
                 }
             }
         }
