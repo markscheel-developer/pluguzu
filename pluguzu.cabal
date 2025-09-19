@@ -22,14 +22,14 @@ foreign-library pluguzu
     other-modules:    Pluguzu
     -- other-modules:
     -- other-extensions:
-    build-depends:    base, containers, pluguzu
+    build-depends:    base, pluguzu, bytestring
     hs-source-dirs:   .
     c-sources:        PluguzuWrapper.c
     ghc-options:      -threaded
     default-language: GHC2021
 
 library
-    build-depends:    base, containers, derive-storable, tidal-core >= 1.10.1, tidal-parse
+    build-depends:    base, containers, aeson, bytestring, tidal-core >= 1.10.1, tidal-parse, tidal-parse-ffi
                   -- , tidal, tidal-link
     exposed-modules:  PluguzuCore
     hs-source-dirs:   src

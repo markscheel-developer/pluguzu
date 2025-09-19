@@ -3,8 +3,9 @@
 
 use crate::egui::{Galley, Pos2, Rect, Vec2};
 use std::ops::Add;
-
 use std::sync::{Arc, RwLock};
+
+use crate::events::{Event, LocEvent};
 
 pub struct EditorPixels<'a> {
     top_left: Pos2,
@@ -44,33 +45,15 @@ impl<'a> EditorPixels<'a> {
     }
 }
 
-#[derive(Ord, PartialOrd, Eq, PartialEq)]
-pub struct EventLoc {
-    pub row: usize,
-    pub col: usize,
-    pub len: usize,
-}
-
-pub type EvLocs = Arc<RwLock<Vec<(f64, Arc<EventLoc>)>>>;
+pub type EvLocs = Arc<RwLock<Vec<(f64, Arc<LocEvent>)>>>;
 
 /// Convert the raw event from tidal bindings into EventLoc for faster processing.
-pub fn update_locs(
-    evlocs: EvLocs,
-    mevs: &[crate::binding::MidiEvent],
-    locs: &[crate::binding::LocEvent],
-) {
+pub fn update_locs(evlocs: EvLocs, events: &[Event]) {
     let mut evlocs = evlocs.write().unwrap();
     evlocs.clear();
-    for loc in locs {
-        if let Some(mev) = mevs.get(loc.pos as usize) {
-            evlocs.push((
-                mev.start,
-                Arc::new(EventLoc {
-                    len: loc.len as usize,
-                    row: loc.row as usize,
-                    col: loc.col as usize,
-                }),
-            ));
+    for event in events {
+        for loc in &event.locs {
+            evlocs.push((event.midi.start, Arc::new(*loc)));
         }
     }
 }

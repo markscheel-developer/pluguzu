@@ -16,6 +16,7 @@ use std::sync::Arc;
 
 use egui::{Color32, Shape, Stroke, StrokeKind};
 
+use crate::events::LocEvent;
 use crate::syntax::tidal;
 use crate::{highlights, presets};
 use crate::{Pluguzu, PluguzuTask};
@@ -36,7 +37,7 @@ struct PresetState {
 struct UIState {
     view: UIView,
     preset: PresetState,
-    highlights: BTreeMap<Arc<crate::highlights::EventLoc>, f64>,
+    highlights: BTreeMap<Arc<LocEvent>, f64>,
 }
 
 impl Pluguzu {

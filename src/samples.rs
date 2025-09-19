@@ -6,16 +6,20 @@ use std::collections::HashMap;
 use std::io::Result;
 use std::path::PathBuf;
 
+use smol_str::SmolStr;
+
+pub type SampleName = SmolStr;
+
 #[derive(Ord, Eq, PartialOrd, PartialEq, Hash, Debug)]
 pub struct SampleID {
-    pub name: i32,
+    pub name: SampleName,
     pub idx: u8,
 }
 
 pub struct SampleLibrary {
     pub sample_rate: u32,
-    pub samples: HashMap<crate::samples::SampleID, dirt::Sample>,
-    pub samples_count: HashMap<i32, Vec<PathBuf>>,
+    pub samples: HashMap<SampleID, dirt::Sample>,
+    pub samples_count: HashMap<SampleName, Vec<PathBuf>>,
 }
 
 impl Default for SampleLibrary {
@@ -42,7 +46,7 @@ impl SampleLibrary {
                     samples.push(elem.path())
                 }
             }
-            let name = sample_id.name;
+            let name = sample_id.name.clone();
             if let Err(e) = load_path(&mut self.samples, self.sample_rate, &samples, sample_id) {
                 self.samples_count.insert(name, samples);
                 return Err(e);

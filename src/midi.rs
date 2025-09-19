@@ -1,8 +1,11 @@
 // Copyright © 2025 Tristan de Cacqueray
 // SPDX-License-Identifier: GPL-3.0
 
-use crate::samples::SampleID;
-use crate::{binding::MidiEvent, Pluguzu};
+use crate::samples::{SampleID, SampleName};
+use crate::{
+    events::{Event, MidiEvent},
+    Pluguzu,
+};
 use nih_plug::{midi::NoteEvent, prelude::ProcessContext};
 
 #[derive(Debug)]
@@ -83,7 +86,7 @@ impl Pluguzu {
         } else {
             0
         };
-        match NoteEvent::<()>::from_midi(offset, &ev.data) {
+        match NoteEvent::<()>::from_midi(offset, &ev.data()) {
             Ok(mev) => {
                 println!(
                     "{:.4}: sending event {:.4} {:?}",
@@ -120,27 +123,20 @@ impl Pluguzu {
             Err(err) => println!("Couldn't decode {:?} {:?}", ev, err),
         }
     }
-    fn send_sound_event(&mut self, ev: &MidiEvent) {
-        let sample_id = SampleID {
-            name: ev.sound,
-            idx: 0,
-        };
+    fn send_sound_event(&mut self, name: SampleName, ev: &Event) {
+        let sample_id = SampleID { name, idx: 0 };
         let samples_library = self.samples_library.read().expect("Samples read lock");
         match samples_library.samples.get(&sample_id) {
             Some(samples) => {
                 let mut sound = crate::dirt::Sound::new().expect("Valid new_sound");
                 // TODO: handle time offset
                 let now = 0.;
-                while self.evparams_pos < self.evparams.len() {
-                    let evparams = self.evparams[self.evparams_pos];
-                    let cur_pos = evparams.pos as usize;
-                    if cur_pos > self.buffer_pos {
-                        break;
-                    } else if cur_pos == self.buffer_pos {
-                        println!("Hum? {:?}", evparams);
-                        sound.apply_param(evparams.param_id, evparams.param_value)
+                if let Some(value) = ev.value.as_ref() {
+                    for (k, v) in value.iter() {
+                        if let Some(val) = v.as_f64() {
+                            sound.apply_param(&k, val as f32)
+                        }
                     }
-                    self.evparams_pos += 1;
                 }
                 sound.play(now, samples)
             }
@@ -150,40 +146,41 @@ impl Pluguzu {
         };
     }
 
-    fn send_tidal_event(&mut self, ev: &MidiEvent, context: &mut impl ProcessContext<Self>) {
-        if ev.sound > 0 {
-            self.send_sound_event(ev)
+    fn send_tidal_event(&mut self, ev: &Event, context: &mut impl ProcessContext<Self>) {
+        if let Some(sound) = &ev.sound {
+            self.send_sound_event(sound.clone(), ev)
         } else {
-            self.send_midi_event(ev, context)
+            self.send_midi_event(&ev.midi, context)
         }
     }
     pub fn send_tidal_events(
         &mut self,
         start_fraction: f64,
         stop_fraction: f64,
+        events: &[Event],
         context: &mut impl ProcessContext<Self>,
     ) {
-        while self.buffer_pos < self.buffer.len() {
-            let ev = self.buffer[self.buffer_pos];
-            if ev.start >= stop_fraction {
+        while self.events_pos < events.len() {
+            let ev = &events[self.events_pos];
+            if ev.midi.start >= stop_fraction {
                 // This event and the following one are scheduled for later
                 break;
-            } else if start_fraction <= ev.start && ev.start < stop_fraction {
+            } else if start_fraction <= ev.midi.start && ev.midi.start < stop_fraction {
                 // The event is due for this buffer
-                self.send_tidal_event(&ev, context);
-            } else if ev.stop > 0. && ev.stop <= stop_fraction {
+                self.send_tidal_event(ev, context);
+            } else if ev.midi.stop > 0. && ev.midi.stop <= stop_fraction {
                 println!(
                     "{start_fraction:.4} Missed event start, but it still make sense to send it now... {:.4}..{:.4} < {stop_fraction:.4}",
-                    ev.start, ev.stop
+                    ev.midi.start, ev.midi.stop
                 );
-                self.send_tidal_event(&ev, context);
-            } else if start_fraction > ev.start {
+                self.send_tidal_event(ev, context);
+            } else if start_fraction > ev.midi.start {
                 // That's odd, it looks like we missed an event?!
-                println!("{start_fraction:.4} Skipped event {:.4}", ev.start);
+                println!("{start_fraction:.4} Skipped event {:.4}", ev.midi.start);
             }
 
             // Advance the event buffer position
-            self.buffer_pos += 1;
+            self.events_pos += 1;
         }
     }
 }

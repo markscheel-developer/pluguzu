@@ -153,14 +153,12 @@ impl Sound {
         };
     }
 
-    pub fn apply_param(&mut self, id: u8, v: f32) {
-        // Match the order with PluguzuCore.staticParams
-        println!("Applying param {id} => {v}");
-        match id {
-            0 => self.0.start = v,
-            1 => self.0.end = v,
-            2 => self.0.speed = v,
-            _ => panic!("Unknown param id: {id}, value {v}"),
+    pub fn apply_param(&mut self, name: &str, v: f32) {
+        match name {
+            "begin" => self.0.start = v,
+            "end" => self.0.end = v,
+            "speed" => self.0.speed = v,
+            _ => {}
         }
     }
 }

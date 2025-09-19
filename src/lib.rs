@@ -4,6 +4,7 @@
 pub mod binding;
 mod config;
 mod dirt;
+mod events;
 mod highlights;
 mod midi;
 mod presets;
@@ -21,6 +22,7 @@ use std::sync::{Arc, Mutex, RwLock};
 
 use crate::binding::PluguzuState;
 use crate::config::Config;
+use crate::events::Event;
 use crate::midi::{FutureNoteOff, ProcessMidi};
 use crate::samples::SampleID;
 
@@ -39,18 +41,17 @@ struct PluguzuDSP {
 }
 
 const WELCOME: &str = r#"
-  -- Welcome to Pluguzu
-  --
-  -- Press shift+enter to load the code in place
-  --
-  -- Reference: https://tidalcycles.org/docs/reference/cycles
-  -- Source: https://codeberg.org/TristanCacqueray/pluguzu
-  --
-  -- Here is an example pattern to get started:
-
-  fast "<1 [1.5 2?]>" $ n $
-    arp "<up down diverge>" "<a'm9'8 e'7sus4'8>"
-    |- "<12 [12 5]>/2"
+-- Welcome to Pluguzu
+--
+-- Press shift+enter to load the code in place
+--
+-- Reference: https://tidalcycles.org/docs/reference/cycles
+-- Source: https://codeberg.org/TristanCacqueray/pluguzu
+--
+-- Here is an example pattern to get started:
+fast "<1 [1.5 2?]>" $ n $
+  arp "<up down diverge>" "<a'm9'8 e'7sus4'8>"
+  |- "<12 [12 5]>/2"
 "#;
 
 /// The params that can be saved/loaded
@@ -107,18 +108,13 @@ pub struct Pluguzu {
     current_bar: Arc<AtomicI32>,
 
     /// The current event buffers to be sent.
-    buffer: Vec<binding::MidiEvent>,
+    events: Option<Arc<Vec<Event>>>,
     /// The last event buffer position.
-    buffer_pos: usize,
+    events_pos: usize,
     /// When the event buffers was last synchronized.
-    buffer_start_bar: i32,
+    events_start_bar: i32,
     /// When updating in-place with shift-enter, this boolean indicate that past event needs to be skipped.
     skip_past_events: Arc<AtomicBool>,
-
-    /// The event params
-    evparams: Vec<binding::ParamEvent>,
-    /// The last event location position.
-    evparams_pos: usize,
 
     /// The event location for highlights.
     evlocs: highlights::EvLocs,
@@ -126,18 +122,13 @@ pub struct Pluguzu {
     evlocs_pos: Arc<AtomicU32>,
 }
 
-const MAX_EVENTS: usize = 4096;
-const MAX_LOCS: usize = MAX_EVENTS * 4;
-const MAX_PARAMS: usize = MAX_EVENTS * 8;
-
 impl Default for Pluguzu {
     fn default() -> Self {
         Self {
             params: Arc::new(PluguzuParams::default()),
-            state: Arc::new(Mutex::new(PluguzuState::new(
-                MAX_EVENTS, MAX_LOCS, MAX_PARAMS,
-            ))),
+            state: Arc::new(Mutex::new(PluguzuState::default())),
             config: Arc::new(Config::new()),
+            events: None,
 
             dsp_state: Arc::new(RwLock::new(PluguzuDSP {
                 playing: false,
@@ -148,7 +139,7 @@ impl Default for Pluguzu {
             })),
 
             dirt: dirt::Dirt::new(8),
-            samples_missing: HashSet::with_capacity(MAX_EVENTS),
+            samples_missing: HashSet::with_capacity(42),
             samples_library: Arc::new(RwLock::new(crate::samples::SampleLibrary::default())),
 
             note_offs: HashMap::with_capacity(255),
@@ -161,15 +152,12 @@ impl Default for Pluguzu {
 
             current_bar: Arc::new(AtomicI32::new(0)),
 
-            buffer_start_bar: -1024,
-            buffer_pos: 0,
-            buffer: Vec::with_capacity(MAX_EVENTS),
+            events_start_bar: -1024,
+            events_pos: 0,
+
             skip_past_events: Arc::new(AtomicBool::new(false)),
 
-            evparams: Vec::with_capacity(MAX_PARAMS),
-            evparams_pos: 0,
-
-            evlocs: Arc::new(RwLock::new(Vec::with_capacity(MAX_LOCS))),
+            evlocs: Arc::new(RwLock::new(Vec::new())),
             evlocs_pos: Arc::new(AtomicU32::new(0)),
         }
     }
@@ -191,41 +179,35 @@ impl Pluguzu {
         start: i32,
         ctx: &impl ProcessContext<Self>,
     ) {
-        self.buffer.clear();
-        self.buffer.extend_from_slice(&state.buffer);
-        self.buffer_pos = 0;
-        self.buffer_start_bar = start;
+        state.stale = self.events.take();
+        let events = state.events.clone();
+        self.events_pos = 0;
+        self.events_start_bar = start;
         state.bar_start = None;
-
-        self.evparams.clear();
-        self.evparams.extend_from_slice(&state.params);
-        self.evparams_pos = 0;
 
         // Pre Load samples
         {
             self.samples_missing.clear();
             let lib = self.samples_library.read().unwrap();
             // Collect unknown samples
-            for ev in &self.buffer {
-                //     println!("-> {ev:?} {:?}", NoteEvent::<()>::from_midi(0, &ev.data));
-                if ev.sound == 0 {
-                    continue;
-                }
-                match lib.samples_count.get(&ev.sound) {
-                    None => {
-                        self.samples_missing.insert(SampleID {
-                            name: ev.sound,
-                            idx: 0,
-                        });
-                    }
-                    Some(_count) => {
-                        let sample = SampleID {
-                            name: ev.sound,
-                            idx: 0,
-                        };
-                        if !lib.samples.contains_key(&sample) {
-                            self.samples_missing.insert(sample);
-                        };
+            for ev in events.iter() {
+                if let Some(sound) = &ev.sound {
+                    match lib.samples_count.get(sound) {
+                        None => {
+                            self.samples_missing.insert(SampleID {
+                                name: sound.clone(),
+                                idx: 0,
+                            });
+                        }
+                        Some(_count) => {
+                            let sample = SampleID {
+                                name: sound.clone(),
+                                idx: 0,
+                            };
+                            if !lib.samples.contains_key(&sample) {
+                                self.samples_missing.insert(sample);
+                            };
+                        }
                     }
                 }
             }
@@ -234,6 +216,7 @@ impl Pluguzu {
                 ctx.execute_background(PluguzuTask::LoadSample(missing));
             }
         }
+        self.events = Some(events);
         ctx.execute_background(PluguzuTask::Render(start + BUFFER_LEN))
     }
 }
@@ -286,7 +269,7 @@ impl Plugin for Pluguzu {
             }
 
             // Reset event position.
-            self.buffer_pos = 0;
+            self.events_pos = 0;
 
             self.send_all_note_offs(context);
             return ProcessStatus::Normal;
@@ -297,15 +280,15 @@ impl Plugin for Pluguzu {
         let next_buffer = {
             let state = self.state.clone();
             let mut state = state.lock().unwrap();
-            if cur_bar < self.buffer_start_bar || cur_bar >= self.buffer_start_bar + BUFFER_LEN {
+            if cur_bar < self.events_start_bar || cur_bar >= self.events_start_bar + BUFFER_LEN {
                 nih_plug::util::permit_alloc(|| {
                     println!(
                     "{pos:.4}: {cur_bar} is out of sync {}..{}, rendering the event synchronously... ",
-                    self.buffer_start_bar,
-                    self.buffer_start_bar + BUFFER_LEN
-                );
+                    self.events_start_bar,
+                    self.events_start_bar + BUFFER_LEN
+                    );
+                    state.render(cur_bar, cur_bar + BUFFER_LEN);
                 });
-                state.render(cur_bar, cur_bar + BUFFER_LEN);
                 self.sync_state_buffer(state.deref_mut(), cur_bar, context);
                 cur_bar + BUFFER_LEN
             } else if let Some(start) = state.bar_start {
@@ -317,9 +300,11 @@ impl Plugin for Pluguzu {
                     start
                 }
             } else {
-                self.buffer_start_bar + BUFFER_LEN
+                self.events_start_bar + BUFFER_LEN
             }
         };
+
+        let mut events = self.events.as_ref().unwrap().clone();
 
         // Compute current frame info
         let pos = transport.pos_beats().unwrap() / 4.0;
@@ -345,14 +330,14 @@ impl Plugin for Pluguzu {
         self.send_note_offs(context);
 
         if self.skip_past_events.fetch_and(false, Ordering::SeqCst) {
-            if self.buffer_pos == 0 {
+            if self.events_pos == 0 {
                 println!("Skipping event due to forced in-place update...");
-                while self.buffer_pos < self.buffer.len() {
-                    let ev = self.buffer[self.buffer_pos];
-                    if ev.start >= stop_fraction {
+                while self.events_pos < events.len() {
+                    let ev = &events[self.events_pos];
+                    if ev.midi.start >= stop_fraction {
                         break;
                     }
-                    self.buffer_pos += 1;
+                    self.events_pos += 1;
                 }
             } else {
                 println!("Skipping past event was requested, but the current buffer hasn't been re-initialized?!");
@@ -360,7 +345,7 @@ impl Plugin for Pluguzu {
         }
 
         // Send events.
-        self.send_tidal_events(start_fraction, stop_fraction, context);
+        self.send_tidal_events(start_fraction, stop_fraction, &events, context);
 
         // Send events from the begining of the next-buffer.
         if stop_fraction > next_buffer as f64 {
@@ -372,7 +357,8 @@ impl Plugin for Pluguzu {
             {
                 println!("{pos:.4} process buffer overlaps with next event buffer {stop_fraction} > {next_buffer}");
                 self.sync_state_buffer(state.deref_mut(), next_buffer, context);
-                self.send_tidal_events(start_fraction, stop_fraction, context);
+                events = self.events.as_ref().unwrap().clone();
+                self.send_tidal_events(start_fraction, stop_fraction, &events, context);
             } else {
                 println!(
                     "{pos:.4} ERROR: the next event buffer is not ready?! {next_buffer} {:?}",
@@ -385,7 +371,7 @@ impl Plugin for Pluguzu {
         let mut dsp_state = self.dsp_state.write().unwrap();
         dsp_state.playing = playing;
         dsp_state.next = next_buffer - cur_bar;
-        dsp_state.remaining = self.buffer.len() - self.buffer_pos;
+        dsp_state.remaining = events.len() - self.events_pos;
         dsp_state.pos = start_fraction;
         ProcessStatus::KeepAlive
     }
@@ -429,7 +415,7 @@ impl Plugin for Pluguzu {
                         || editor_state.is_open()
                     {
                         // nih_log!("{current_bar}: Updating highlights");
-                        highlights::update_locs(evlocs.clone(), &state.buffer, &state.locs);
+                        highlights::update_locs(evlocs.clone(), &state.events);
                         evlocs_pos.store(0, Ordering::Relaxed);
                     } else {
                         nih_log!("{current_bar}: The UI is not open, skipping highlights...");
@@ -445,17 +431,10 @@ impl Plugin for Pluguzu {
                     state.render(current_bar, current_bar + BUFFER_LEN);
                 }
                 PluguzuTask::LoadSample(smpl) => {
-                    let mname = {
-                        let state = state.lock().unwrap();
-                        state.sounds.get(&smpl.name).map(|s| s.to_string())
-                    };
-                    if let Some(name) = mname {
-                        let mut lib = samples_library.write().unwrap();
-                        if let Err(e) = lib.load(config.samples_dir(), &name, smpl) {
-                            nih_warn!("Couldn't load sample {}: {}", name, e);
-                        }
-                    } else {
-                        nih_warn!("Couldn't find sample id {}", smpl.name)
+                    let mut lib = samples_library.write().unwrap();
+                    let name = smpl.name.clone();
+                    if let Err(e) = lib.load(config.samples_dir(), &name, smpl) {
+                        nih_warn!("Couldn't load sample {}: {}", name, e);
                     }
                 }
             }

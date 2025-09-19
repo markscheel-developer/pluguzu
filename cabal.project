@@ -4,5 +4,5 @@ source-repository-package
     location: https://codeberg.org/TristanCacqueray/tidal/
     -- Fetch https://codeberg.org/uzu/tidal/pulls/1225
     tag: 0b3d35d9fa749ae95fe6de55c299bf995fe3786b
-    subdir: tidal-parse
+    subdir: tidal-parse tidal-parse-ffi
 packages: .

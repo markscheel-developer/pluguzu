@@ -7,13 +7,9 @@
 module PluguzuCore (
     patternToEvents,
     mkArc,
-    MidiEvent (..),
-    NoteLoc,
-    ParamEvent,
     Event (..),
-    eventsToLoc,
-    eventsToParam,
     filterDup,
+    encodeEvents,
 
     -- * re-export
     Pattern.ControlPattern,
@@ -33,7 +29,10 @@ where
 
 import Control.Applicative ((<|>))
 import Control.Monad (forM_, void)
+import Data.Aeson (ToJSON (..), encode)
 import Data.Bits ((.|.))
+import Data.ByteString qualified as BS
+import Data.ByteString.Lazy qualified as LBS
 import Data.Coerce (coerce)
 import Data.Int (Int32)
 import Data.List (sortBy)
@@ -41,10 +40,9 @@ import Data.Map.Strict qualified as Map
 import Data.Maybe (fromMaybe, mapMaybe)
 import Data.Word (Word8)
 import Debug.Trace (traceShow, traceShowM)
-import Foreign.Storable qualified as Storable
-import Foreign.Storable.Generic (GStorable)
 import GHC.Float (double2Float)
 import GHC.Generics (Generic)
+import Sound.Tidal.Parse.FFI (JSONValue (..))
 
 import Sound.Tidal.Parse qualified as Parse
 import Sound.Tidal.Pattern qualified as Pattern
@@ -67,8 +65,8 @@ mkArc start stop = Time.Arc start stop
 Note that this needs to be kept in sync with the 'midiEvent' defined in Pluguzu.hpp
 -}
 data MidiEvent = MidiEvent
-    { barFraction :: Double
-    , stopFraction :: Double
+    { start :: Double
+    , stop :: Double
     , snd :: Int32
     , data0 :: Word8
     , data1 :: Word8
@@ -76,62 +74,31 @@ data MidiEvent = MidiEvent
     }
     deriving (Show, Generic)
 
-instance GStorable MidiEvent
+instance ToJSON MidiEvent where
+    toJSON ev = toJSON [toJSON ev.start, toJSON ev.stop, toJSON ev.snd, toJSON ev.data0, toJSON ev.data1, toJSON ev.data2]
 
 data EventLoc = EventLoc
     { col :: Int
     , row :: Int
     , end :: Int
     }
-    deriving (Show)
-
-data NoteLoc = NoteLoc
-    { eventNR :: Int
-    , col :: Int
-    , row :: Int
-    , len :: Int
-    }
     deriving (Show, Generic)
 
-instance GStorable NoteLoc
-
-data EventParam = EventParam
-    { paramID :: Word8
-    , paramValue :: Float
-    }
-    deriving (Show)
+instance ToJSON EventLoc where
+    toJSON ev = toJSON [ev.col, ev.row, ev.end]
 
 data Event = Event
     { midi :: MidiEvent
     , sound :: Maybe String
     , locs :: [EventLoc]
-    , params :: [EventParam]
+    , value :: Maybe (Map.Map String JSONValue)
     }
-    deriving (Show)
+    deriving (Generic)
 
-eventsToLoc :: [Event] -> [NoteLoc]
-eventsToLoc = concatMap go . zip [0 ..]
-  where
-    go :: (Int, Event) -> [NoteLoc]
-    go (pos, ev) = map mkLoc ev.locs
-      where
-        mkLoc el = NoteLoc pos el.col (el.row - 1) (el.end - el.col)
+instance ToJSON Event
 
-data ParamEvent = ParamEvent
-    { eventNR :: Int
-    , paramID :: Word8
-    , paramValue :: Float
-    }
-    deriving (Show, Generic)
-
-instance GStorable ParamEvent
-
-eventsToParam :: [Event] -> [ParamEvent]
-eventsToParam = concatMap go . zip [0 ..]
-  where
-    go (pos, ev) = map mkLoc ev.params
-      where
-        mkLoc p = ParamEvent pos p.paramID p.paramValue
+encodeEvents :: [Event] -> BS.ByteString
+encodeEvents = LBS.toStrict . encode
 
 filterDup :: [Event] -> [Event]
 filterDup [] = []
@@ -139,7 +106,7 @@ filterDup (x : xs) = x : filterDup (dropDup xs)
   where
     dropDup [] = []
     dropDup rest@(y : ys)
-        | y.midi.barFraction > x.midi.barFraction = rest
+        | y.midi.start > x.midi.start = rest
         | y.midi.data0 == x.midi.data0 && y.midi.data1 == x.midi.data1 && y.sound == x.sound = dropDup ys
         | otherwise = y : dropDup ys
 
@@ -147,46 +114,28 @@ patternToEvents :: Pattern.ControlPattern -> Time.Arc -> [Event]
 patternToEvents pat arc = sortBy compareEvent $ mapMaybe eventToMidi $ Pattern.queryArc pat arc
 
 compareEvent :: Event -> Event -> Ordering
-compareEvent e1 e2 = compare e1.midi.barFraction e2.midi.barFraction
+compareEvent e1 e2 = compare e1.midi.start e2.midi.start
 
 eventToMidi :: Pattern.Event Pattern.ValueMap -> Maybe Event
 eventToMidi ev = do
-    (sound, params, mev) <- soundEvent <|> midiEvent
-    pure $ Event mev sound (map mkLoc ev.context.contextPosition) params
+    (sound, value, mev) <- soundEvent <|> midiEvent
+    pure $ Event mev sound (map mkLoc ev.context.contextPosition) value
   where
     mkLoc :: ((Int, Int), (Int, Int)) -> EventLoc
-    mkLoc ((col, row), (end, _)) = EventLoc col row end
+    mkLoc ((col, row), (end, _)) = EventLoc col (row - 1) (end - col)
     chan = (+ 1) $ round $ max 0 $ min 15 $ fromMaybe 0 $ Pattern.getF =<< Map.lookup "midichan" ev.value
     ccToMidi (ccn, ccv) = MidiEvent (rat2float (Pattern.wholeStart ev)) 0 0 (0xb0 .|. chan) ccn ccv
     midiEvent = do
         mev <- (ccToMidi <$> eventToCC ev) <|> (noteToMidi <$> eventToNote ev)
-        pure (Nothing, [], mev)
+        pure (Nothing, Nothing, mev)
     soundEvent = do
         s <- Pattern.getS =<< Map.lookup "s" ev.value
-        let n = Pattern.getN =<< Map.lookup "n" ev.value
-        let note = maybe 0 (round . Pattern.unNote) n
-        let params = mapMaybe (getEventParam ev.value) staticParams
-        pure (Just s, params, noteToMidi (Pattern.wholeOrPart ev, note, 0))
+        let params = fmap JSONValue $ Map.filterWithKey (\k _ -> k /= "s") ev.value
+        pure (Just s, Just params, noteToMidi (Pattern.wholeOrPart ev, 0, 0))
     noteToMidi (arc, pitch, velocity) =
         let start = rat2float (Pattern.start arc)
             stop_ = rat2float (Pattern.stop arc)
          in MidiEvent start stop_ 0 (0x90 .|. chan) pitch velocity
-
-staticParams :: [(Word8, String)]
-staticParams =
-    zip
-        [0 ..]
-        [ "begin"
-        , "end"
-        , "speed"
-        ]
-
-getEventParam :: Pattern.ValueMap -> (Word8, String) -> Maybe EventParam
-getEventParam m (paramID, name) = do
-    value <- getFloat =<< Map.lookup name m
-    pure $ EventParam paramID value
-  where
-    getFloat v = double2Float <$> Pattern.getF v
 
 eventToCC :: Pattern.Event Pattern.ValueMap -> Maybe (Word8, Word8)
 eventToCC ev = do
