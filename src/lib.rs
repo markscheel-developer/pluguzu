@@ -207,7 +207,8 @@ impl Plugin for Pluguzu {
         // Lookup transport and read the current bar.
         let transport = context.transport();
         let playing = transport.playing;
-        let cur_bar = transport.bar_number().unwrap_or(0);
+        let pos = transport.pos_beats().unwrap() / 4.0;
+        let cur_bar = pos.floor() as i32;
         self.current_bar.store(cur_bar, Ordering::Relaxed);
 
         // When not playing...
@@ -232,13 +233,13 @@ impl Plugin for Pluguzu {
             let state = self.state.clone();
             let mut state = state.lock().unwrap();
             if cur_bar < self.buffer_start_bar || cur_bar >= self.buffer_start_bar + BUFFER_LEN {
-                // Compute current frame info
-                let pos = transport.pos_beats().unwrap() / 4.0;
-                println!(
-                    "{pos:.4}: We are out of sync {}..{}, rendering the event synchronously... ",
+                nih_plug::util::permit_alloc(|| {
+                    println!(
+                    "{pos:.4}: {cur_bar} is out of sync {}..{}, rendering the event synchronously... ",
                     self.buffer_start_bar,
                     self.buffer_start_bar + BUFFER_LEN
                 );
+                });
                 state.render(cur_bar, cur_bar + BUFFER_LEN);
                 self.sync_state_buffer(state.deref_mut(), cur_bar, context);
                 cur_bar + BUFFER_LEN
