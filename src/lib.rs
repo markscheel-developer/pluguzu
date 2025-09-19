@@ -7,12 +7,13 @@ mod dirt;
 mod highlights;
 mod midi;
 mod presets;
+mod samples;
 mod syntax;
 mod ui;
 
 use nih_plug::prelude::*;
 use nih_plug_egui::{egui, EguiState};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::ops::DerefMut;
 use std::sync::atomic::Ordering;
 use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU32, AtomicU8};
@@ -21,6 +22,7 @@ use std::sync::{Arc, Mutex, RwLock};
 use crate::binding::PluguzuState;
 use crate::config::Config;
 use crate::midi::{FutureNoteOff, ProcessMidi};
+use crate::samples::SampleID;
 
 /// Info from the engine for the UI status bar
 struct PluguzuDSP {
@@ -95,7 +97,8 @@ pub struct Pluguzu {
 
     /// Samples
     dirt: dirt::Dirt,
-    samples: Arc<Mutex<HashMap<&'static str, dirt::Sample>>>,
+    samples_library: Arc<RwLock<crate::samples::SampleLibrary>>,
+    samples_missing: HashSet<crate::samples::SampleID>,
 
     /// The info needed to send midi events.
     midi: ProcessMidi,
@@ -137,7 +140,8 @@ impl Default for Pluguzu {
             })),
 
             dirt: dirt::Dirt::new(8),
-            samples: Arc::new(Mutex::new(HashMap::new())),
+            samples_missing: HashSet::with_capacity(MAX_EVENTS),
+            samples_library: Arc::new(RwLock::new(crate::samples::SampleLibrary::default())),
 
             note_offs: HashMap::with_capacity(255),
 
@@ -164,6 +168,7 @@ pub enum PluguzuTask {
     Parse(bool),
     Render(i32),
     RenderInPlace,
+    LoadSample(SampleID),
 }
 
 const BUFFER_LEN: i32 = 4;
@@ -181,11 +186,39 @@ impl Pluguzu {
         self.buffer_start_bar = start;
         state.bar_start = None;
 
-        // println!("DEBUG EVENTS");
-        // for ev in &self.buffer {
-        //     println!("-> {ev:?} {:?}", NoteEvent::<()>::from_midi(0, &ev.data));
-        // }
-
+        // Pre Load samples
+        {
+            self.samples_missing.clear();
+            let lib = self.samples_library.read().unwrap();
+            // Collect unknown samples
+            for ev in &self.buffer {
+                //     println!("-> {ev:?} {:?}", NoteEvent::<()>::from_midi(0, &ev.data));
+                if ev.sound == 0 {
+                    continue;
+                }
+                match lib.samples_count.get(&ev.sound) {
+                    None => {
+                        self.samples_missing.insert(SampleID {
+                            name: ev.sound,
+                            idx: 0,
+                        });
+                    }
+                    Some(_count) => {
+                        let sample = SampleID {
+                            name: ev.sound,
+                            idx: 0,
+                        };
+                        if !lib.samples.contains_key(&sample) {
+                            self.samples_missing.insert(sample);
+                        };
+                    }
+                }
+            }
+            // Dispatch background task to load missing samples
+            for missing in self.samples_missing.drain() {
+                ctx.execute_background(PluguzuTask::LoadSample(missing));
+            }
+        }
         ctx.execute_background(PluguzuTask::Render(start + BUFFER_LEN))
     }
 }
@@ -198,12 +231,10 @@ impl Plugin for Pluguzu {
         context: &mut impl InitContext<Self>,
     ) -> bool {
         context.execute(PluguzuTask::Parse(false));
-        self.dirt.set_sample_rate(buffer_config.sample_rate as i32);
-        let sample = self.dirt.load_sample(std::path::Path::new(
-            "/srv/codeberg.org/uzu/dirt/samples/sitar/002_d_maj_sitar_chordc.wav",
-        ));
-        dirt::Sound::new().unwrap().play(&sample);
-        self.samples.lock().unwrap().insert("bd", sample);
+        let sr = buffer_config.sample_rate as u32;
+        self.dirt.set_sample_rate(sr);
+        self.samples_library.write().unwrap().sample_rate = sr;
+
         true
     }
 
@@ -349,24 +380,25 @@ impl Plugin for Pluguzu {
     fn task_executor(&mut self) -> TaskExecutor<Self> {
         let code = self.params.code.clone();
         let editor_state = self.params.editor_state.clone();
-        let _config = self.config.clone();
+        let config = self.config.clone();
         let dsp_state = self.dsp_state.clone();
         let state = self.state.clone();
         let current_bar = self.current_bar.clone();
         let evlocs_pos = self.evlocs_pos.clone();
         let evlocs = self.evlocs.clone();
         let skip_past_events = self.skip_past_events.clone();
+        let samples_library = self.samples_library.clone();
 
         // Only the first highlight requests is always honored because we don't know if UI is opening or not.
         let first_highlight_request = AtomicBool::new(true);
 
         Box::new(move |task| {
-            let mut state = state.lock().unwrap();
             let current_bar = current_bar.load(Ordering::Relaxed);
             match task {
                 PluguzuTask::Parse(render) => {
+                    let mut state = state.lock().unwrap();
                     let code = code.lock().unwrap();
-                    println!("Parsing {}", code);
+                    // println!("Parsing {}", code);
                     dsp_state.write().unwrap().error = state.parse(&code);
                     let start = current_bar + 1;
                     if render {
@@ -374,6 +406,7 @@ impl Plugin for Pluguzu {
                     }
                 }
                 PluguzuTask::Render(start) => {
+                    let mut state = state.lock().unwrap();
                     // Update the highlights before rendering the next buffer.
                     // This should happen right after a new buffer has been
                     // loaded into the process callback, see 'sync_state_buffer'
@@ -391,9 +424,24 @@ impl Plugin for Pluguzu {
                     state.render(start, start + BUFFER_LEN);
                 }
                 PluguzuTask::RenderInPlace => {
+                    let mut state = state.lock().unwrap();
                     nih_log!("{current_bar}: Force update!");
                     skip_past_events.store(true, Ordering::SeqCst);
                     state.render(current_bar, current_bar + BUFFER_LEN);
+                }
+                PluguzuTask::LoadSample(smpl) => {
+                    let mname = {
+                        let state = state.lock().unwrap();
+                        state.sounds.get(&smpl.name).map(|s| s.to_string())
+                    };
+                    if let Some(name) = mname {
+                        let mut lib = samples_library.write().unwrap();
+                        if let Err(e) = lib.load(config.samples_dir(), &name, smpl) {
+                            nih_warn!("Couldn't load sample {}: {}", name, e);
+                        }
+                    } else {
+                        nih_warn!("Couldn't find sample id {}", smpl.name)
+                    }
                 }
             }
         })

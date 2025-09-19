@@ -7,6 +7,7 @@ use std::path::PathBuf;
 
 struct ConfigFiles {
     presets: PathBuf,
+    samples: PathBuf,
 }
 
 pub struct Config {
@@ -24,12 +25,20 @@ impl Config {
                         None
                     }
                     Ok(_) => {
-                        let mut presets = p;
+                        let mut presets = p.clone();
                         presets.push("presets.md");
-                        Some(ConfigFiles { presets })
+                        let mut samples = p;
+                        samples.push("samples");
+                        Some(ConfigFiles { presets, samples })
                     }
                 }
             }),
+        }
+    }
+    pub fn samples_dir(&self) -> &PathBuf {
+        match &self.files {
+            Some(cf) => &cf.samples,
+            None => panic!("Add support for global samples path"),
         }
     }
 }
