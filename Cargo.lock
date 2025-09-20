@@ -811,6 +811,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "dirt-sys"
+version = "0.1.0"
+source = "git+https://codeberg.org/TristanCacqueray/dirt-sys.git?rev=da7ae2983a4cac0ef9e332c3b9e2ec718e147ffc#da7ae2983a4cac0ef9e332c3b9e2ec718e147ffc"
+dependencies = [
+ "cc",
+]
+
+[[package]]
 name = "dispatch"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1997,6 +2005,7 @@ name = "pluguzu"
 version = "0.1.0"
 dependencies = [
  "dirs",
+ "dirt-sys",
  "egui_code_editor",
  "indexmap",
  "nih_plug",

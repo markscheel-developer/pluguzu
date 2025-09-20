@@ -1,45 +1,10 @@
 // Copyright © 2025 Tristan de Cacqueray
 // SPDX-License-Identifier: GPL-3.0
 
-use std::ffi::{c_char, c_int, c_uint, c_void};
+use std::ffi::c_int;
 
 // Using https://codeberg.org/uzu/dirt/pulls/87
 // run: `make libdirt.so LIB=1` and copy the library to pluguzu bin folder.
-
-#[link(name = "dirt")]
-unsafe extern "C" {
-    fn new_sound() -> *mut CSound;
-    fn audio_play_with_sample(sound: *mut CSound, samples: *const CSample);
-    fn audio_init_base(
-        compressor: Compressor,
-        late_trigger: bool,
-        polyphony: c_int,
-        shape_gain_comp: bool,
-    );
-    fn playback(buffers: *mut *mut f32, frame: c_int, now: f64);
-    fn dequeue(now: f64);
-    fn set_samplerate(sr: c_int);
-}
-
-#[derive(Debug, Clone, Copy)]
-#[repr(C)]
-pub struct CSample {
-    pub name: [u8; 256],
-    frames: c_int,
-    channels: c_int,
-    pub items: *const f32,
-    onsets: *const i32,
-}
-
-#[allow(dead_code)]
-#[repr(C)]
-pub enum Compressor {
-    None,
-    Dirty,
-    Clean,
-    Dave,
-    All,
-}
 
 pub struct Dirt {
     pub sr: u32,
@@ -48,12 +13,17 @@ pub struct Dirt {
 impl Dirt {
     pub fn new(polyphony: usize) -> Self {
         unsafe {
-            audio_init_base(Compressor::Clean, false, polyphony as c_int, false);
+            dirt_sys::audio_init_base(
+                dirt_sys::Compressor::Clean,
+                false,
+                polyphony as c_int,
+                false,
+            );
         }
         Dirt { sr: 44100 }
     }
     pub fn set_sample_rate(&mut self, sr: u32) {
-        unsafe { set_samplerate(sr as c_int) };
+        unsafe { dirt_sys::set_samplerate(sr as c_int) };
         self.sr = sr;
     }
 
@@ -65,8 +35,8 @@ impl Dirt {
             let right: *mut f32 = samples[1].as_mut_ptr();
             let lr: *mut *mut f32 = [left, right].as_mut_ptr();
             unsafe {
-                playback(lr, pos as c_int, now);
-                dequeue(now);
+                dirt_sys::playback(lr, pos as c_int, now);
+                dirt_sys::dequeue(now);
             }
             now += sample_time;
         }
@@ -75,7 +45,7 @@ impl Dirt {
 
 pub struct Sample {
     _samples: Vec<f32>,
-    c: CSample,
+    c: dirt_sys::Sample,
 }
 
 impl Sample {
@@ -93,7 +63,7 @@ impl Sample {
             &samples,
         )
         .unwrap();
-        let c = CSample {
+        let c = dirt_sys::Sample {
             name: [0; 256],
             items: samples.as_ptr(),
             frames: samples.len() as c_int,
@@ -107,7 +77,7 @@ impl Sample {
     }
 }
 
-pub struct Sound(&'static mut CSound, u32);
+pub struct Sound(&'static mut dirt_sys::Sound, u32);
 
 // from Dirt config.h
 const CUTOFFRATIO: f32 = 30000.0;
@@ -118,7 +88,7 @@ const MAX_ORBIT: i32 = 15;
 impl Sound {
     pub fn new(sample_rate: u32) -> Option<Self> {
         unsafe {
-            let csound = new_sound();
+            let csound = dirt_sys::new_sound();
             if csound.is_null() {
                 None
             } else {
@@ -156,7 +126,7 @@ impl Sound {
         self.0.when = start;
         self.0.cps = cps;
         unsafe {
-            audio_play_with_sample(self.0, &samples.c);
+            dirt_sys::audio_play_with_sample(self.0, &samples.c);
         };
     }
 
@@ -225,66 +195,6 @@ impl Sound {
 
 fn unit_num(c: char) -> i8 {
     u8::try_from(c).unwrap() as i8
-}
-
-// Keep in sync with dirt/audio.h t_node definition
-// cat audio.h | sed -e 's/unsigned int/c_uint/'  -e 's/ *\([^ ]*\)  *\(.*\);/ \2: \1,/' -e 's/ int/ c_int/' -e 's/float/f32/' -e 's/double/f64/' -e 's/sampletime_t/f64/'
-#[repr(C)]
-struct CSound {
-    active: c_int,
-    is_playing: c_int,
-    start_t: f64,
-    samplename: [u8; 257],
-    is_loop: c_int,
-    sample: *const CSample,
-    loop_start: c_uint,
-    channels: c_int,
-    items: *const f32,
-    next: *const c_void,
-    prev: *const c_void,
-    position: f32,
-    speed: f32,
-    reverse: c_int,
-    pan: f32,
-    offset: f32,
-    start: f32,
-    end: f32,
-    velocity: f32,
-    formant_vowelnum: c_int,
-    cutoff: f32,
-    resonance: f32,
-    accelerate: f32,
-    shape: c_int,
-    shape_k: f32,
-    kriole_chunk: c_int,
-    is_kriole: c_int,
-    started: c_int,
-    checks: c_int,
-    delay: f32,
-    delaytime: f32,
-    delayfeedback: f32,
-    gain: f32,
-    cutgroup: c_int,
-    mono: c_int,
-    crush: c_int,
-    crush_bits: f32,
-    crush_range: f32,
-    coarse: c_int,
-    hcutoff: f32,
-    hresonance: f32,
-    bandf: f32,
-    bandq: f32,
-    sample_loop: c_int,
-    cut_continue: c_int,
-    unit: c_char,
-    cps: f32,
-    when: f64,
-    attack: f32,
-    hold: f32,
-    release: f32,
-    playtime: f32,
-    orbit: c_int,
-    played: c_int,
 }
 
 unsafe impl Send for Sample {}
