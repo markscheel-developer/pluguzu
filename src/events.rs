@@ -1,6 +1,7 @@
 // Copyright © 2025 Tristan de Cacqueray
 // SPDX-License-Identifier: GPL-3.0
 use serde::Deserialize;
+use smol_str::SmolStr;
 use std::collections::HashMap;
 
 #[derive(Ord, PartialOrd, Eq, PartialEq, Debug, Clone, Copy, Deserialize)]
@@ -30,11 +31,17 @@ pub struct EventSpan {
     pub stop: f64,
 }
 
+#[derive(Debug, Clone, Deserialize, Ord, Eq, PartialOrd, PartialEq, Hash)]
+pub struct SoundEvent {
+    pub name: SmolStr,
+    pub idx: i64,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(untagged)]
 pub enum EventKind {
     EventMidi(MidiEvent),
-    EventSound(crate::samples::SampleName),
+    EventSound(SoundEvent),
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -42,5 +49,5 @@ pub struct Event {
     pub span: EventSpan,
     pub kind: EventKind,
     pub locs: Vec<LocEvent>,
-    pub value: Option<HashMap<smol_str::SmolStr, serde_json::Value>>,
+    pub value: Option<HashMap<SmolStr, serde_json::Value>>,
 }

@@ -1,6 +1,7 @@
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE OverloadedRecordDot #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE StrictData #-}
 
 -- Try on the REPL with
 -- (flip patternToEvents (mkArc 0 1)) <$> parseTidal "silence"
@@ -82,7 +83,7 @@ data EventLoc = EventLoc
 instance ToJSON EventLoc where
     toJSON ev = toJSON [ev.col, ev.row, ev.end]
 
-data EventKind = EventMidi MidiEvent | EventSound String
+data EventKind = EventMidi MidiEvent | EventSound String Int
     deriving (Show)
 
 data EventSpan = EventSpan
@@ -104,7 +105,7 @@ instance ToJSON Event where
         span = toJSON [toJSON ev.span.start, toJSON ev.span.stop]
         tag = case ev.kind of
             EventMidi midi -> toJSON [toJSON midi.data0, toJSON midi.data1, toJSON midi.data2]
-            EventSound sound -> toJSON sound
+            EventSound sound n -> toJSON [toJSON sound, toJSON n]
         loc = toJSON $ map toJSON ev.locs
         vals = case ev.value of
             Nothing -> Aeson.Null
@@ -148,8 +149,9 @@ eventToMidi ev = do
         pure (EventMidi mev, Nothing)
     soundEvent = do
         s <- Pattern.getS =<< Map.lookup "s" ev.value
-        let params = Map.filterWithKey (\k _ -> k /= "s") ev.value
-        pure (EventSound s, Just params)
+        let n = fromMaybe 0 (Pattern.getI =<< Map.lookup "n" ev.value)
+        let params = Map.filterWithKey (\k _ -> k /= "s" && k /= "n") ev.value
+        pure (EventSound s n, Just params)
 
 eventToCC :: Pattern.Event Pattern.ValueMap -> Maybe (Word8, Word8)
 eventToCC ev = do

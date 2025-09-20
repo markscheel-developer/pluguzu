@@ -1,25 +1,21 @@
 // Copyright © 2025 Tristan de Cacqueray
 // SPDX-License-Identifier: GPL-3.0
 
-use crate::dirt;
+use smol_str::SmolStr;
 use std::collections::HashMap;
 use std::io::Result;
 use std::path::PathBuf;
 
-use smol_str::SmolStr;
+use crate::dirt;
+use crate::events::SoundEvent;
 
-pub type SampleName = SmolStr;
-
-#[derive(Ord, Eq, PartialOrd, PartialEq, Hash, Debug)]
-pub struct SampleID {
-    pub name: SampleName,
-    pub idx: u8,
-}
+#[derive(Eq, Hash, PartialEq)]
+pub struct AbsoluteSoundEvent(SoundEvent);
 
 pub struct SampleLibrary {
     pub sample_rate: u32,
-    pub samples: HashMap<SampleID, dirt::Sample>,
-    pub samples_count: HashMap<SampleName, Vec<PathBuf>>,
+    pub samples: HashMap<AbsoluteSoundEvent, dirt::Sample>,
+    pub samples_count: HashMap<SmolStr, Vec<PathBuf>>,
 }
 
 impl Default for SampleLibrary {
@@ -32,13 +28,36 @@ impl Default for SampleLibrary {
     }
 }
 
+impl AbsoluteSoundEvent {
+    fn from_sev(sev: &SoundEvent, paths: &[PathBuf]) -> Self {
+        AbsoluteSoundEvent(SoundEvent {
+            name: sev.name.clone(),
+            idx: sev.idx % paths.len() as i64,
+        })
+    }
+}
+
 impl SampleLibrary {
-    pub fn load(&mut self, root: &std::path::Path, name: &str, sample_id: SampleID) -> Result<()> {
-        if let Some(paths) = self.samples_count.get(&sample_id.name) {
-            load_path(&mut self.samples, self.sample_rate, paths, sample_id)?;
+    pub fn has_sample(&self, sev: &SoundEvent) -> bool {
+        match self.samples_count.get(&sev.name) {
+            None => false,
+            Some(count) => {
+                let asev = AbsoluteSoundEvent::from_sev(sev, count);
+                self.samples.contains_key(&asev)
+            }
+        }
+    }
+    pub fn get(&self, sev: &SoundEvent) -> Option<&dirt::Sample> {
+        self.samples_count
+            .get(&sev.name)
+            .and_then(|paths| self.samples.get(&AbsoluteSoundEvent::from_sev(sev, paths)))
+    }
+    pub fn load(&mut self, root: &std::path::Path, sev: &SoundEvent) -> Result<()> {
+        if let Some(paths) = self.samples_count.get(&sev.name) {
+            load_path(&mut self.samples, self.sample_rate, paths, sev)?;
         } else {
             let mut path = root.to_path_buf();
-            path.push(name);
+            path.push(&sev.name);
             let mut samples = Vec::new();
             for elem in std::fs::read_dir(&path)? {
                 let elem = elem?;
@@ -46,8 +65,8 @@ impl SampleLibrary {
                     samples.push(elem.path())
                 }
             }
-            let name = sample_id.name.clone();
-            if let Err(e) = load_path(&mut self.samples, self.sample_rate, &samples, sample_id) {
+            let name = sev.name.clone();
+            if let Err(e) = load_path(&mut self.samples, self.sample_rate, &samples, sev) {
                 self.samples_count.insert(name, samples);
                 return Err(e);
             }
@@ -58,24 +77,20 @@ impl SampleLibrary {
 }
 
 fn load_path(
-    samples: &mut HashMap<crate::samples::SampleID, dirt::Sample>,
+    samples: &mut HashMap<AbsoluteSoundEvent, dirt::Sample>,
     sample_rate: u32,
     paths: &[PathBuf],
-    sample_id: SampleID,
+    sev: &SoundEvent,
 ) -> Result<()> {
     if paths.is_empty() {
         return Err(std::io::Error::other("empty samples path"));
     }
-    let path_idx = sample_id.idx as usize % paths.len();
-    let path = paths.get(path_idx).unwrap();
-    let sample_id = SampleID {
-        name: sample_id.name,
-        idx: path_idx
-            .try_into()
-            .expect("Convertion back to u8 should work"),
-    };
-    println!("Loading {:?} {:?}", path, sample_id);
+    let asev = AbsoluteSoundEvent::from_sev(sev, paths);
+    let path = paths
+        .get(asev.0.idx.unsigned_abs() as usize)
+        .expect("Absolute path!");
+    println!("Loading {:?} {}", path, asev.0.name);
     let sample = dirt::Sample::from_file(path.as_path(), sample_rate);
-    samples.insert(sample_id, sample);
+    samples.insert(asev, sample);
     Ok(())
 }

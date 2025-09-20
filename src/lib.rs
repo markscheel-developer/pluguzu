@@ -24,7 +24,6 @@ use crate::binding::PluguzuState;
 use crate::config::Config;
 use crate::events::{Event, EventKind};
 use crate::midi::{FutureNoteOff, ProcessMidi};
-use crate::samples::SampleID;
 
 /// Info from the engine for the UI status bar
 struct PluguzuDSP {
@@ -99,7 +98,7 @@ pub struct Pluguzu {
     /// Samples
     dirt: dirt::Dirt,
     samples_library: Arc<RwLock<crate::samples::SampleLibrary>>,
-    samples_missing: HashSet<crate::samples::SampleID>,
+    samples_missing: HashSet<crate::events::SoundEvent>,
 
     /// The info needed to send midi events.
     midi: ProcessMidi,
@@ -167,7 +166,7 @@ pub enum PluguzuTask {
     Parse(bool),
     Render(i32),
     RenderInPlace,
-    LoadSample(SampleID),
+    LoadSample(crate::events::SoundEvent),
 }
 
 const BUFFER_LEN: i32 = 4;
@@ -191,24 +190,10 @@ impl Pluguzu {
             let lib = self.samples_library.read().unwrap();
             // Collect unknown samples
             for ev in events.iter() {
-                if let EventKind::EventSound(sound) = &ev.kind {
-                    match lib.samples_count.get(sound) {
-                        None => {
-                            self.samples_missing.insert(SampleID {
-                                name: sound.clone(),
-                                idx: 0,
-                            });
-                        }
-                        Some(_count) => {
-                            let sample = SampleID {
-                                name: sound.clone(),
-                                idx: 0,
-                            };
-                            if !lib.samples.contains_key(&sample) {
-                                self.samples_missing.insert(sample);
-                            };
-                        }
-                    }
+                if let EventKind::EventSound(sev) = &ev.kind
+                    && !lib.has_sample(sev)
+                {
+                    self.samples_missing.insert(sev.clone());
                 }
             }
             // Dispatch background task to load missing samples
@@ -430,11 +415,10 @@ impl Plugin for Pluguzu {
                     skip_past_events.store(true, Ordering::SeqCst);
                     state.render(current_bar, current_bar + BUFFER_LEN);
                 }
-                PluguzuTask::LoadSample(smpl) => {
+                PluguzuTask::LoadSample(sev) => {
                     let mut lib = samples_library.write().unwrap();
-                    let name = smpl.name.clone();
-                    if let Err(e) = lib.load(config.samples_dir(), &name, smpl) {
-                        nih_warn!("Couldn't load sample {}: {}", name, e);
+                    if let Err(e) = lib.load(config.samples_dir(), &sev) {
+                        nih_warn!("Couldn't load sample {}: {}", sev.name, e);
                     }
                 }
             }

@@ -1,9 +1,8 @@
 // Copyright © 2025 Tristan de Cacqueray
 // SPDX-License-Identifier: GPL-3.0
 
-use crate::samples::{SampleID, SampleName};
 use crate::{
-    events::{Event, EventKind, EventSpan, MidiEvent},
+    events::{Event, EventKind, EventSpan, MidiEvent, SoundEvent},
     Pluguzu,
 };
 use nih_plug::{midi::NoteEvent, prelude::ProcessContext};
@@ -128,10 +127,10 @@ impl Pluguzu {
             Err(err) => println!("Couldn't decode {:?} {:?}", ev, err),
         }
     }
-    fn send_sound_event(&mut self, name: SampleName, ev: &Event) {
-        let sample_id = SampleID { name, idx: 0 };
+
+    fn send_sound_event(&mut self, ev: &Event, sev: &SoundEvent) {
         let samples_library = self.samples_library.read().expect("Samples read lock");
-        match samples_library.samples.get(&sample_id) {
+        match samples_library.get(sev) {
             Some(samples) => {
                 let mut sound = crate::dirt::Sound::new().expect("Valid new_sound");
                 // TODO: handle time offset
@@ -153,10 +152,11 @@ impl Pluguzu {
 
     fn send_tidal_event(&mut self, ev: &Event, context: &mut impl ProcessContext<Self>) {
         match &ev.kind {
-            EventKind::EventSound(sound) => self.send_sound_event(sound.clone(), ev),
+            EventKind::EventSound(sev) => self.send_sound_event(ev, sev),
             EventKind::EventMidi(mev) => self.send_midi_event(&ev.span, mev, context),
         }
     }
+
     pub fn send_tidal_events(
         &mut self,
         start_fraction: f64,
