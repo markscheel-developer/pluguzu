@@ -39,18 +39,25 @@ struct PluguzuDSP {
     pos: f64,
 }
 
-const WELCOME: &str = r#"
--- Welcome to Pluguzu
+const WELCOME: &str = r#"-- Welcome to Pluguzu
 --
--- Press shift+enter to load the code in place
+-- Press shift+enter to load the code in place.
+-- Known bugs:
+-- * backspace might remove whole words.
+--   The alt modifier might be stuck, try press ALT alone
 --
 -- Reference: https://tidalcycles.org/docs/reference/cycles
 -- Source: https://codeberg.org/TristanCacqueray/pluguzu
 --
 -- Here is an example pattern to get started:
-fast "<1 [1.5 2?]>" $ n $
-  arp "<up down diverge>" "<a'm9'8 e'7sus4'8>"
-  |- "<12 [12 5]>/2"
+stack [
+  -- a melody for MIDI synth
+  fast "<1 [1.5 2?]>" $ n $
+    arp "<up down diverge>" "<a'm9'8 e'7sus4'8>"
+    |- "<12 [12 5]>/2"
+  -- dirt demo
+, s "tok*4" # cutoff "80 100 150 500"
+]
 "#;
 
 /// The params that can be saved/loaded
