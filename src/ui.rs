@@ -19,7 +19,7 @@ use egui::{Color32, Shape, Stroke, StrokeKind};
 use crate::events::LocEvent;
 use crate::syntax::tidal;
 use crate::{highlights, presets};
-use crate::{Pluguzu, PluguzuTask};
+use crate::{ParseTask, Pluguzu, PluguzuTask};
 
 const VERT_SPACE: f32 = 3.;
 
@@ -39,7 +39,11 @@ struct UIState {
     preset: PresetState,
     highlights: BTreeMap<LocEvent, f64>,
     focused: bool,
+    updated: bool,
+    update: Option<ParseTask>,
 }
+
+const PLAY_TIP: &str = "shift-enter triggers direct play and alt-enter queues to the next bar…";
 
 impl Pluguzu {
     pub fn do_editor(&mut self, async_executor: AsyncExecutor<Self>) -> Option<Box<dyn Editor>> {
@@ -63,6 +67,8 @@ impl Pluguzu {
             },
             highlights: BTreeMap::new(),
             focused: false,
+            updated: false,
+            update: None,
         };
 
         create_egui_editor(
@@ -82,10 +88,9 @@ impl Pluguzu {
                                 if let Some(changed) = preset_ui(ui, &mut state.preset, fs) {
                                     if let Some(new_code) = changed {
                                         *code.lock().unwrap() = new_code;
-                                        async_executor
-                                            .execute_background(PluguzuTask::Parse(false));
-                                        async_executor
-                                            .execute_background(PluguzuTask::RenderInPlace);
+                                        async_executor.execute_background(PluguzuTask::Parse(
+                                            ParseTask::InPlace,
+                                        ));
                                     }
                                     state.view = UIView::Editor;
                                 };
@@ -105,6 +110,11 @@ impl Pluguzu {
                                             font_size_value = font_size_value.saturating_sub(1);
                                             font_size.store(font_size_value, Ordering::Relaxed);
                                             update_font_size(egui_ctx, font_size_value);
+                                        }
+                                        if state.updated
+                                            && ui.button("Play").on_hover_text(PLAY_TIP).clicked()
+                                        {
+                                            state.update = Some(ParseTask::NoRender);
                                         }
                                         if ui.button("Load").clicked() {
                                             state.view = UIView::Preset
@@ -139,11 +149,22 @@ impl Pluguzu {
                                     .with_numlines(true);
 
                                 let mut code_data = code.lock().unwrap();
-                                let force_update = ui.input(|i| {
-                                    i.key_pressed(egui::Key::Enter) && i.modifiers.shift
+                                let enter_update = ui.input(|i| {
+                                    if i.key_pressed(egui::Key::Enter) {
+                                        if i.modifiers.shift {
+                                            Some(ParseTask::InPlace)
+                                        } else if i.modifiers.alt {
+                                            Some(ParseTask::Next)
+                                        } else {
+                                            None
+                                        }
+                                    } else {
+                                        None
+                                    }
                                 });
-                                let output = if force_update {
-                                    async_executor.execute_background(PluguzuTask::RenderInPlace);
+                                let output = if let Some(task) = enter_update {
+                                    state.update = Some(task);
+
                                     // Render the code editor with read-only code to avoid inserting the new-line.
                                     let mut code_data: &str = code_data.deref();
                                     code_editor.show(ui, &mut code_data)
@@ -215,10 +236,15 @@ impl Pluguzu {
                                     });
                                 }
 
-                                if !force_update && output.response.changed() {
+                                if let Some(task) = state.update.take() {
+                                    state.updated = false;
+                                    async_executor.execute_background(PluguzuTask::Parse(task));
+                                    output.response.request_focus();
+                                } else if output.response.changed() {
+                                    state.updated = true;
                                     // TODO: sometime alt modifier get stuck after clicking, perhaps it could be manually removed to workaround this weird bug?
                                     // egui_ctx.input(|i| println!("HERE: {:?}", i.modifiers));
-                                    async_executor.execute_background(PluguzuTask::Parse(true))
+                                    // async_executor.execute_background(PluguzuTask::Parse(true))
                                 }
                             }
                         };

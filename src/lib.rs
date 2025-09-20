@@ -176,10 +176,16 @@ impl Default for Pluguzu {
     }
 }
 
+#[derive(Copy, Clone)]
+pub enum ParseTask {
+    InPlace,
+    Next,
+    NoRender,
+}
+
 pub enum PluguzuTask {
-    Parse(bool),
+    Parse(ParseTask),
     Render(i32),
-    RenderInPlace,
     LoadSample(crate::events::SoundEvent),
 }
 
@@ -227,7 +233,7 @@ impl Plugin for Pluguzu {
         buffer_config: &BufferConfig,
         context: &mut impl InitContext<Self>,
     ) -> bool {
-        context.execute(PluguzuTask::Parse(false));
+        context.execute(PluguzuTask::Parse(ParseTask::NoRender));
         let sr = buffer_config.sample_rate as u32;
         self.dirt.set_sample_rate(sr);
         self.samples_library.write().unwrap().sample_rate = sr;
@@ -400,14 +406,23 @@ impl Plugin for Pluguzu {
         Box::new(move |task| {
             let current_bar = current_bar.load(Ordering::Relaxed);
             match task {
-                PluguzuTask::Parse(render) => {
+                PluguzuTask::Parse(parse_task) => {
                     let mut state = state.lock().unwrap();
                     let code = code.lock().unwrap();
                     // println!("Parsing {}", code);
-                    dsp_state.write().unwrap().error = state.parse(&code);
+                    let err = state.parse(&code);
+                    let is_err = err.is_some();
+                    dsp_state.write().unwrap().error = err;
                     let start = current_bar + 1;
-                    if render {
-                        state.render(start, start + BUFFER_LEN);
+                    if !is_err {
+                        match parse_task {
+                            ParseTask::InPlace => {
+                                skip_past_events.store(true, Ordering::SeqCst);
+                                state.render(current_bar, current_bar + BUFFER_LEN);
+                            }
+                            ParseTask::Next => state.render(start, start + BUFFER_LEN),
+                            ParseTask::NoRender => {}
+                        }
                     }
                 }
                 PluguzuTask::Render(start) => {
@@ -421,12 +436,6 @@ impl Plugin for Pluguzu {
 
                     debug!("{current_bar}: Rendering {}", start);
                     state.render(start, start + BUFFER_LEN);
-                }
-                PluguzuTask::RenderInPlace => {
-                    let mut state = state.lock().unwrap();
-                    nih_log!("{current_bar}: Force update!");
-                    skip_past_events.store(true, Ordering::SeqCst);
-                    state.render(current_bar, current_bar + BUFFER_LEN);
                 }
                 PluguzuTask::LoadSample(sev) => {
                     let mut lib = samples_library.write().unwrap();
