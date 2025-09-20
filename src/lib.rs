@@ -102,6 +102,9 @@ pub struct Pluguzu {
 
     /// The info needed to send midi events.
     midi: ProcessMidi,
+    /// The cycle per second, for dirt.
+    cps: f32,
+    now: f64,
 
     /// Keep track of the current playing bar so that code update are queued to the next bar.
     current_bar: Arc<AtomicI32>,
@@ -148,6 +151,8 @@ impl Default for Pluguzu {
                 end: 0.,
                 frames_per_fraction: 0.,
             },
+            cps: 0.,
+            now: 0.,
 
             current_bar: Arc::new(AtomicI32::new(0)),
 
@@ -217,7 +222,6 @@ impl Plugin for Pluguzu {
         let sr = buffer_config.sample_rate as u32;
         self.dirt.set_sample_rate(sr);
         self.samples_library.write().unwrap().sample_rate = sr;
-
         true
     }
 
@@ -295,8 +299,10 @@ impl Plugin for Pluguzu {
         let pos = transport.pos_beats().unwrap() / 4.0;
 
         let frames = frames as f64;
-        let beat_per_sec = 60. / transport.tempo.unwrap_or(120.);
-        let bar_length = beat_per_sec * (transport.time_sig_numerator.unwrap_or(4) as f64);
+        let beat_per_min = transport.tempo.unwrap_or(120.);
+        let beat_per_sec = 60. / beat_per_min;
+        let sig_numerator = transport.time_sig_numerator.unwrap_or(4) as f64;
+        let bar_length = beat_per_sec * sig_numerator;
         let run_time = frames / (transport.sample_rate as f64);
         let run_fraction = run_time / bar_length;
         let frames_per_fraction = frames / run_fraction;
@@ -310,6 +316,14 @@ impl Plugin for Pluguzu {
             println!("Frames per fraction changed to {}", frames_per_fraction);
             self.midi.frames_per_fraction = frames_per_fraction;
         }
+
+        // Store timing offset for dirt
+        let cps = (beat_per_min / 60. / sig_numerator) as f32;
+        if cps != self.cps {
+            println!("CPS changed to {}", cps);
+            self.cps = cps;
+        }
+        self.now = now;
 
         // Send any previously registered note-off.
         self.send_note_offs(context);
