@@ -120,6 +120,8 @@ impl Sound {
         self.0.resonance = 0.1;
         self.0.hresonance = 0.1;
         self.0.bandq = 0.1;
+        // Similarly for delay, we need a minimum time.
+        self.0.delaytime = 0.5;
     }
 
     pub fn play(&mut self, start: f64, cps: f32, samples: &Sample) {
