@@ -15,7 +15,7 @@ samplerate = "0.2.4"
 serde = "1.0.225"
 smol_str = { version = "0.3.2", features = ["serde"]}
 # dirt-sys = { path = "../dirt-sys" }
-dirt-sys = { git = "https://codeberg.org/TristanCacqueray/dirt-sys.git", rev = "da7ae2983a4cac0ef9e332c3b9e2ec718e147ffc" }
+dirt-sys = { git = "https://codeberg.org/TristanCacqueray/dirt-sys.git", rev = "d5bc39268e92bced3f4fd51da1e4ec31c3e0067f" }
 
 [workspace]
 members = ["xtask"]

@@ -36,7 +36,7 @@ impl Dirt {
             let lr: *mut *mut f32 = [left, right].as_mut_ptr();
             unsafe {
                 dirt_sys::playback(lr, pos as c_int, now);
-                dirt_sys::dequeue(now);
+                dirt_sys::dequeue_nolock(now);
             }
             now += sample_time;
         }
@@ -88,7 +88,7 @@ const MAX_ORBIT: i32 = 15;
 impl Sound {
     pub fn new(sample_rate: u32) -> Option<Self> {
         unsafe {
-            let csound = dirt_sys::new_sound();
+            let csound = dirt_sys::new_sound_nolock();
             if csound.is_null() {
                 None
             } else {
@@ -128,7 +128,7 @@ impl Sound {
         self.0.when = start;
         self.0.cps = cps;
         unsafe {
-            dirt_sys::audio_play_with_sample(self.0, &samples.c);
+            dirt_sys::audio_play_with_sample_nolock(self.0, &samples.c);
         };
     }
 

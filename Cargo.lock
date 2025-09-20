@@ -813,7 +813,7 @@ dependencies = [
 [[package]]
 name = "dirt-sys"
 version = "0.1.0"
-source = "git+https://codeberg.org/TristanCacqueray/dirt-sys.git?rev=da7ae2983a4cac0ef9e332c3b9e2ec718e147ffc#da7ae2983a4cac0ef9e332c3b9e2ec718e147ffc"
+source = "git+https://codeberg.org/TristanCacqueray/dirt-sys.git?rev=d5bc39268e92bced3f4fd51da1e4ec31c3e0067f#d5bc39268e92bced3f4fd51da1e4ec31c3e0067f"
 dependencies = [
  "cc",
 ]
