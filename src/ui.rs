@@ -37,7 +37,7 @@ struct PresetState {
 struct UIState {
     view: UIView,
     preset: PresetState,
-    highlights: BTreeMap<Arc<LocEvent>, f64>,
+    highlights: BTreeMap<LocEvent, f64>,
 }
 
 impl Pluguzu {
@@ -159,13 +159,16 @@ impl Pluguzu {
                                 if dsp_state.playing {
                                     let mut pos = evlocs_pos.load(Ordering::Relaxed) as usize;
                                     while pos < evlocs.len() {
-                                        let (when, loc) = &evlocs[pos];
-                                        if dsp_state.pos < *when {
+                                        let event = &evlocs[pos];
+                                        let start = event.span.start;
+                                        if dsp_state.pos < start {
                                             break;
                                         }
 
-                                        // This doesn't replace existing highlights to avoid fast blinkin
-                                        state.highlights.entry(loc.clone()).or_insert(*when);
+                                        for loc in &event.locs {
+                                            // This doesn't replace existing highlights to avoid fast blinkin
+                                            state.highlights.entry(*loc).or_insert(start);
+                                        }
                                         pos += 1;
                                     }
                                     evlocs_pos.store(pos as u32, Ordering::Relaxed);

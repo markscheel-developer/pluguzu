@@ -3,9 +3,6 @@
 
 use crate::egui::{Galley, Pos2, Rect, Vec2};
 use std::ops::Add;
-use std::sync::{Arc, RwLock};
-
-use crate::events::{Event, LocEvent};
 
 pub struct EditorPixels<'a> {
     top_left: Pos2,
@@ -41,19 +38,6 @@ impl<'a> EditorPixels<'a> {
             )
         } else {
             Rect::NOTHING
-        }
-    }
-}
-
-pub type EvLocs = Arc<RwLock<Vec<(f64, Arc<LocEvent>)>>>;
-
-/// Convert the raw event from tidal bindings into EventLoc for faster processing.
-pub fn update_locs(evlocs: EvLocs, events: &[Event]) {
-    let mut evlocs = evlocs.write().unwrap();
-    evlocs.clear();
-    for event in events {
-        for loc in &event.locs {
-            evlocs.push((event.span.start, Arc::new(*loc)));
         }
     }
 }

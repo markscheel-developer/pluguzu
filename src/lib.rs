@@ -128,7 +128,7 @@ pub struct Pluguzu {
     skip_past_events: Arc<AtomicBool>,
 
     /// The event location for highlights.
-    evlocs: highlights::EvLocs,
+    evlocs: Arc<RwLock<Arc<Vec<Event>>>>,
     /// The last event location position.
     evlocs_pos: Arc<AtomicU32>,
 }
@@ -170,7 +170,7 @@ impl Default for Pluguzu {
 
             skip_past_events: Arc::new(AtomicBool::new(false)),
 
-            evlocs: Arc::new(RwLock::new(Vec::new())),
+            evlocs: Arc::new(RwLock::new(Arc::new(Vec::new()))),
             evlocs_pos: Arc::new(AtomicU32::new(0)),
         }
     }
@@ -388,7 +388,6 @@ impl Plugin for Pluguzu {
 
     fn task_executor(&mut self) -> TaskExecutor<Self> {
         let code = self.params.code.clone();
-        let editor_state = self.params.editor_state.clone();
         let config = self.config.clone();
         let dsp_state = self.dsp_state.clone();
         let state = self.state.clone();
@@ -397,9 +396,6 @@ impl Plugin for Pluguzu {
         let evlocs = self.evlocs.clone();
         let skip_past_events = self.skip_past_events.clone();
         let samples_library = self.samples_library.clone();
-
-        // Only the first highlight requests is always honored because we don't know if UI is opening or not.
-        let first_highlight_request = AtomicBool::new(true);
 
         Box::new(move |task| {
             let current_bar = current_bar.load(Ordering::Relaxed);
@@ -416,18 +412,12 @@ impl Plugin for Pluguzu {
                 }
                 PluguzuTask::Render(start) => {
                     let mut state = state.lock().unwrap();
-                    // Update the highlights before rendering the next buffer.
-                    // This should happen right after a new buffer has been
-                    // loaded into the process callback, see 'sync_state_buffer'
-                    if first_highlight_request.fetch_and(false, Ordering::Relaxed)
-                        || editor_state.is_open()
-                    {
-                        // nih_log!("{current_bar}: Updating highlights");
-                        highlights::update_locs(evlocs.clone(), &state.events);
-                        evlocs_pos.store(0, Ordering::Relaxed);
-                    } else {
-                        nih_log!("{current_bar}: The UI is not open, skipping highlights...");
-                    }
+
+                    // right after the events are synchronized in the audio callback
+                    // a render job is started.
+                    // so now is a good time to also share the events with the UI for highlights
+                    *evlocs.write().unwrap() = state.events.clone();
+                    evlocs_pos.store(0, Ordering::Relaxed);
 
                     debug!("{current_bar}: Rendering {}", start);
                     state.render(start, start + BUFFER_LEN);
