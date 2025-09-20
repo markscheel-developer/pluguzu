@@ -25,7 +25,8 @@ unsafe extern "C" {
 #[repr(C)]
 pub struct CSample {
     pub name: [u8; 256],
-    pub info: *const sndfile_sys::SF_INFO,
+    frames: c_int,
+    channels: c_int,
     pub items: *const f32,
     onsets: *const i32,
 }
@@ -74,7 +75,6 @@ impl Dirt {
 
 pub struct Sample {
     _samples: Vec<f32>,
-    _info: Box<sndfile_sys::SF_INFO>,
     c: CSample,
 }
 
@@ -93,24 +93,15 @@ impl Sample {
             &samples,
         )
         .unwrap();
-        let info = Box::new(sndfile_sys::SF_INFO {
-            frames: samples.len() as i64,
-            samplerate: sample_rate as i32,
-            channels: snd.get_channels() as i32,
-            format: 0,   // c_int,
-            sections: 0, // c_int,
-            seekable: 0, // c_int,
-        });
         let c = CSample {
             name: [0; 256],
             items: samples.as_ptr(),
-            info: &*info,
+            frames: samples.len() as c_int,
+            channels: snd.get_channels() as c_int,
             onsets: std::ptr::null(),
         };
-        println!("{path:?}: Loaded sample! {:p} {:p}", c.info, &info);
         Sample {
             _samples: samples,
-            _info: info,
             c,
         }
     }
