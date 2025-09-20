@@ -42,20 +42,23 @@ impl Default for PluguzuState {
 
 impl PluguzuState {
     pub fn parse(&mut self, code: &str) -> Option<String> {
-        unsafe {
-            pluguzuParse(
-                self.state,
-                std::ffi::CString::new(code).unwrap().as_ptr() as *const c_char,
-            );
-            let c_str = pluguzuError(self.state);
-            if c_str.is_null() {
+        match std::ffi::CString::new(code) {
+            Ok(code) => unsafe {
+                pluguzuParse(self.state, code.as_ptr() as *const c_char);
+                let c_str = pluguzuError(self.state);
+                if c_str.is_null() {
+                    None
+                } else {
+                    Some(
+                        std::ffi::CStr::from_ptr(c_str)
+                            .to_string_lossy()
+                            .into_owned(),
+                    )
+                }
+            },
+            Err(e) => {
+                crate::pwarn!("Couldn't convert code to cstring {e}: {code}");
                 None
-            } else {
-                Some(
-                    std::ffi::CStr::from_ptr(c_str)
-                        .to_string_lossy()
-                        .into_owned(),
-                )
             }
         }
     }

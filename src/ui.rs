@@ -87,7 +87,7 @@ impl Pluguzu {
                             UIView::Preset => {
                                 if let Some(changed) = preset_ui(ui, &mut state.preset, fs) {
                                     if let Some(new_code) = changed {
-                                        *code.lock().unwrap() = new_code;
+                                        *code.lock().expect("lock") = new_code;
                                         async_executor.execute_background(PluguzuTask::Parse(
                                             ParseTask::InPlace,
                                         ));
@@ -97,7 +97,7 @@ impl Pluguzu {
                             }
                             UIView::Editor => {
                                 let mut font_size_value = fs;
-                                let dsp_state = dsp_state.read().unwrap();
+                                let dsp_state = dsp_state.read().expect("lock");
                                 ui.with_layout(
                                     egui::Layout::left_to_right(egui::Align::Min),
                                     |ui| {
@@ -148,7 +148,7 @@ impl Pluguzu {
                                     .with_syntax(tidal())
                                     .with_numlines(true);
 
-                                let mut code_data = code.lock().unwrap();
+                                let mut code_data = code.lock().expect("lock");
                                 let enter_update = ui.input(|i| {
                                     if i.key_pressed(egui::Key::Enter) {
                                         if i.modifiers.shift {
@@ -189,7 +189,7 @@ impl Pluguzu {
                                     .retain(|_, when| dsp_state.pos - *when < 0.5);
 
                                 // Add new highlights
-                                let evlocs = evlocs.read().unwrap();
+                                let evlocs = evlocs.read().expect("lock");
                                 if dsp_state.playing {
                                     let mut pos = evlocs_pos.load(Ordering::Relaxed) as usize;
                                     while pos < evlocs.len() {

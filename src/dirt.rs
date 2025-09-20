@@ -48,13 +48,27 @@ pub struct Sample {
     c: dirt_sys::Sample,
 }
 
+use thiserror::Error;
+#[derive(Error, Debug)]
+pub enum SampleError {
+    #[error("couldn't read file")]
+    ReadError,
+
+    #[error("invalid sndfile")]
+    SoundFile(sndfile::SndFileError),
+
+    #[error("invalid sample rate convertion")]
+    SampleRate(#[from] samplerate::Error),
+}
+
 impl Sample {
-    pub fn from_file(path: &std::path::Path, sample_rate: u32) -> Sample {
+    pub fn from_file(path: &std::path::Path, sample_rate: u32) -> Result<Sample, SampleError> {
         use sndfile::*;
         let mut snd = sndfile::OpenOptions::ReadOnly(ReadOptions::Auto)
             .from_path(path)
-            .unwrap();
-        let samples = snd.read_all_to_vec().unwrap();
+            .map_err(SampleError::SoundFile)?;
+
+        let samples = snd.read_all_to_vec().map_err(|_| SampleError::ReadError)?;
         let samples = samplerate::convert(
             snd.get_samplerate() as u32,
             sample_rate,
@@ -62,7 +76,7 @@ impl Sample {
             samplerate::converter_type::ConverterType::SincBestQuality,
             &samples,
         )
-        .unwrap();
+        .map_err(SampleError::SampleRate)?;
         let c = dirt_sys::Sample {
             name: [0; 256],
             items: samples.as_ptr(),
@@ -70,10 +84,10 @@ impl Sample {
             channels: snd.get_channels() as c_int,
             onsets: std::ptr::null(),
         };
-        Sample {
+        Ok(Sample {
             _samples: samples,
             c,
-        }
+        })
     }
 }
 
@@ -196,7 +210,7 @@ impl Sound {
 }
 
 fn unit_num(c: char) -> i8 {
-    u8::try_from(c).unwrap() as i8
+    u8::try_from(c).unwrap_or(0) as i8
 }
 
 unsafe impl Send for Sample {}

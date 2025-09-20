@@ -30,9 +30,14 @@ impl Default for SampleLibrary {
 
 impl AbsoluteSoundEvent {
     fn from_sev(sev: &SoundEvent, paths: &[PathBuf]) -> Self {
+        let idx = if paths.len() == 0 {
+            0
+        } else {
+            sev.idx % paths.len() as i64
+        };
         AbsoluteSoundEvent(SoundEvent {
             name: sev.name.clone(),
-            idx: sev.idx % paths.len() as i64,
+            idx,
         })
     }
 }
@@ -58,19 +63,11 @@ impl SampleLibrary {
         } else {
             let mut path = root.to_path_buf();
             path.push(&sev.name);
-            let mut samples = Vec::new();
-            for elem in std::fs::read_dir(&path)? {
-                let elem = elem?;
-                if elem.file_type()?.is_file() {
-                    samples.push(elem.path())
-                }
-            }
+            let paths = read_files(&path)
+                .map_err(|e| std::io::Error::other(format!("{}: {e}", path.display())))?;
             let name = sev.name.clone();
-            if let Err(e) = load_path(&mut self.samples, self.sample_rate, &samples, sev) {
-                self.samples_count.insert(name, samples);
-                return Err(e);
-            }
-            self.samples_count.insert(name, samples);
+            load_path(&mut self.samples, self.sample_rate, &paths, sev)?;
+            self.samples_count.insert(name, paths);
         }
         Ok(())
     }
@@ -83,14 +80,34 @@ fn load_path(
     sev: &SoundEvent,
 ) -> Result<()> {
     if paths.is_empty() {
-        return Err(std::io::Error::other("empty samples path"));
-    }
+        panic!("The impossible have happened, paths should be non empty");
+    };
     let asev = AbsoluteSoundEvent::from_sev(sev, paths);
     let path = paths
         .get(asev.0.idx.unsigned_abs() as usize)
         .expect("Absolute path!");
     info!("Loading {:?} {:?}", path, asev.0);
-    let sample = dirt::Sample::from_file(path.as_path(), sample_rate);
+    let sample = dirt::Sample::from_file(path.as_path(), sample_rate)
+        .map_err(|err| std::io::Error::other(format!("{}: {err}", path.display())))?;
     samples.insert(asev, sample);
     Ok(())
+}
+
+fn read_files(path: &std::path::Path) -> Result<Vec<PathBuf>> {
+    let mut samples = Vec::new();
+    for elem in std::fs::read_dir(&path)? {
+        let elem = elem?;
+        if elem.file_type()?.is_file() {
+            // TODO: filter non samples
+            samples.push(elem.path())
+        }
+    }
+    if samples.is_empty() {
+        Err(std::io::Error::other(format!(
+            "{}: no files found",
+            path.display()
+        )))
+    } else {
+        Ok(samples)
+    }
 }

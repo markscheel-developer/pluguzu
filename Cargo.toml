@@ -17,6 +17,8 @@ smol_str = { version = "0.3.2", features = ["serde"]}
 # dirt-sys = { path = "../dirt-sys" }
 dirt-sys = { git = "https://codeberg.org/TristanCacqueray/dirt-sys.git", rev = "d5bc39268e92bced3f4fd51da1e4ec31c3e0067f" }
 
+thiserror = "2"
+
 [workspace]
 members = ["xtask"]
 

@@ -207,7 +207,7 @@ impl Pluguzu {
         // Pre Load samples
         {
             self.samples_missing.clear();
-            let lib = self.samples_library.read().unwrap();
+            let lib = self.samples_library.read().expect("lock");
             // Collect unknown samples
             for ev in events.iter() {
                 if let EventKind::EventSound(sev) = &ev.kind
@@ -236,7 +236,7 @@ impl Plugin for Pluguzu {
         context.execute(PluguzuTask::Parse(ParseTask::NoRender));
         let sr = buffer_config.sample_rate as u32;
         self.dirt.set_sample_rate(sr);
-        self.samples_library.write().unwrap().sample_rate = sr;
+        self.samples_library.write().expect("lock").sample_rate = sr;
         true
     }
 
@@ -254,7 +254,7 @@ impl Plugin for Pluguzu {
         // Lookup transport and read the current bar.
         let transport = context.transport();
         let playing = transport.playing;
-        let now = transport.pos_beats().unwrap();
+        let now = transport.pos_beats().expect("beat");
         let pos = now / 4.0;
         let cur_bar = pos.floor() as i32;
         self.current_bar.store(cur_bar, Ordering::Relaxed);
@@ -266,7 +266,7 @@ impl Plugin for Pluguzu {
         // When not playing...
         if !playing || transport.preroll_active.unwrap_or(false) {
             {
-                let mut state = self.dsp_state.write().unwrap();
+                let mut state = self.dsp_state.write().expect("lock");
                 state.playing = false;
                 // Advance the time for the highlights
                 state.pos += 0.2;
@@ -283,7 +283,7 @@ impl Plugin for Pluguzu {
         // Ensure the events buffer is ready
         let next_buffer = {
             let state = self.state.clone();
-            let mut state = state.lock().unwrap();
+            let mut state = state.lock().expect("lock");
             if cur_bar < self.events_start_bar || cur_bar >= self.events_start_bar + BUFFER_LEN {
                 nih_plug::util::permit_alloc(|| {
                     debug!(
@@ -308,10 +308,10 @@ impl Plugin for Pluguzu {
             }
         };
 
-        let mut events = self.events.as_ref().unwrap().clone();
+        let mut events = self.events.as_ref().expect("events to exist").clone();
 
         // Compute current frame info
-        let pos = transport.pos_beats().unwrap() / 4.0;
+        let pos = transport.pos_beats().expect("pos beats") / 4.0;
 
         let frames = frames as f64;
         let beat_per_min = transport.tempo.unwrap_or(120.);
@@ -365,13 +365,13 @@ impl Plugin for Pluguzu {
         if stop_fraction > next_buffer as f64 {
             // try to resync buffer, e.g.: when the current run overlap with the next chunk
             let state = self.state.clone();
-            let mut state = state.lock().unwrap();
+            let mut state = state.lock().expect("lock");
             if let Some(start) = state.bar_start
                 && next_buffer >= start
             {
                 debug!("{pos:.4} process buffer overlaps with next event buffer {stop_fraction} > {next_buffer}");
                 self.sync_state_buffer(state.deref_mut(), next_buffer, context);
-                events = self.events.as_ref().unwrap().clone();
+                events = self.events.as_ref().expect("events").clone();
                 self.send_tidal_events(start_fraction, stop_fraction, &events, context);
             } else {
                 nih_error!(
@@ -382,7 +382,7 @@ impl Plugin for Pluguzu {
         }
 
         // Update status for the UI
-        let mut dsp_state = self.dsp_state.write().unwrap();
+        let mut dsp_state = self.dsp_state.write().expect("lock");
         dsp_state.playing = playing;
         dsp_state.next = next_buffer - cur_bar;
         dsp_state.remaining = events.len() - self.events_pos;
@@ -407,12 +407,12 @@ impl Plugin for Pluguzu {
             let current_bar = current_bar.load(Ordering::Relaxed);
             match task {
                 PluguzuTask::Parse(parse_task) => {
-                    let mut state = state.lock().unwrap();
-                    let code = code.lock().unwrap();
+                    let mut state = state.lock().expect("lock");
+                    let code = code.lock().expect("lock");
                     // println!("Parsing {}", code);
                     let err = state.parse(&code);
                     let is_err = err.is_some();
-                    dsp_state.write().unwrap().error = err;
+                    dsp_state.write().expect("lock").error = err;
                     let start = current_bar + 1;
                     if !is_err {
                         match parse_task {
@@ -426,19 +426,19 @@ impl Plugin for Pluguzu {
                     }
                 }
                 PluguzuTask::Render(start) => {
-                    let mut state = state.lock().unwrap();
+                    let mut state = state.lock().expect("lock");
 
                     // right after the events are synchronized in the audio callback
                     // a render job is started.
                     // so now is a good time to also share the events with the UI for highlights
-                    *evlocs.write().unwrap() = state.events.clone();
+                    *evlocs.write().expect("lock") = state.events.clone();
                     evlocs_pos.store(0, Ordering::Relaxed);
 
                     debug!("{current_bar}: Rendering {}", start);
                     state.render(start, start + BUFFER_LEN);
                 }
                 PluguzuTask::LoadSample(sev) => {
-                    let mut lib = samples_library.write().unwrap();
+                    let mut lib = samples_library.write().expect("lock");
                     if let Err(e) = lib.load(config.samples_dir(), &sev) {
                         nih_warn!("Couldn't load sample {}: {}", sev.name, e);
                     }
