@@ -2,10 +2,11 @@
 // SPDX-License-Identifier: GPL-3.0
 
 use crate::{
+    debug,
     events::{Event, EventKind, EventSpan, MidiEvent, SoundEvent},
-    Pluguzu,
+    pwarn, Pluguzu,
 };
-use nih_plug::{midi::NoteEvent, prelude::ProcessContext};
+use nih_plug::{midi::NoteEvent, nih_error, prelude::ProcessContext};
 
 #[derive(Debug)]
 pub struct FutureNoteOff {
@@ -44,7 +45,7 @@ impl ProcessMidi {
             note,
             velocity: 0.,
         };
-        println!("{:.4}: sending note off      {:?}", self.start, mev);
+        debug!("{:.4}: sending note off      {:?}", self.start, mev);
         context.send_event(mev);
     }
 
@@ -92,7 +93,7 @@ impl Pluguzu {
         };
         match NoteEvent::<()>::from_midi(offset, &ev.data()) {
             Ok(mev) => {
-                println!(
+                debug!(
                     "{:.4}: sending event {:.4} {:?}",
                     self.midi.start, span.start, mev
                 );
@@ -124,7 +125,7 @@ impl Pluguzu {
                     }
                 }
             }
-            Err(err) => println!("Couldn't decode {:?} {:?}", ev, err),
+            Err(err) => nih_error!("Couldn't decode {:?} {:?}", ev, err),
         }
     }
 
@@ -134,7 +135,6 @@ impl Pluguzu {
             Some(samples) => {
                 let mut sound = crate::dirt::Sound::new(48000).expect("Valid new_sound");
                 if let Some(value) = ev.value.as_ref() {
-                    println!("Playing {} with {value:?}", sev.name);
                     for (k, v) in value.iter() {
                         if let Some(val) = v.as_f64() {
                             sound.apply_param(k, val as f32)
@@ -143,13 +143,17 @@ impl Pluguzu {
                         }
                     }
                 }
+                debug!(
+                    "{:.4}: playing sample {} with {ev:?}",
+                    ev.span.start, sev.name
+                );
                 let frame_offset = self.midi.event_offset(ev.span.start) as f64;
                 let sample_time = 1. / (self.dirt.sr as f64);
                 let when = self.now + sample_time * frame_offset;
                 sound.play(when, self.cps, samples)
             }
             None => {
-                println!("Sample not ready! {:?}", ev);
+                pwarn!("Sample not ready! {:?}", sev);
             }
         };
     }
@@ -177,14 +181,14 @@ impl Pluguzu {
                 // The event is due for this buffer
                 self.send_tidal_event(ev, context);
             } else if ev.span.stop > 0. && ev.span.stop <= stop_fraction {
-                println!(
+                pwarn!(
                     "{start_fraction:.4} Missed event start, but it still make sense to send it now... {:.4}..{:.4} < {stop_fraction:.4}",
                     ev.span.start, ev.span.stop
                 );
                 self.send_tidal_event(ev, context);
             } else if start_fraction > ev.span.start {
                 // That's odd, it looks like we missed an event?!
-                println!("{start_fraction:.4} Skipped event {:.4}", ev.span.start);
+                pwarn!("{start_fraction:.4} Skipped event {:.4}", ev.span.start);
             }
 
             // Advance the event buffer position

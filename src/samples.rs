@@ -6,8 +6,8 @@ use std::collections::HashMap;
 use std::io::Result;
 use std::path::PathBuf;
 
-use crate::dirt;
 use crate::events::SoundEvent;
+use crate::{dirt, info};
 
 #[derive(Eq, Hash, PartialEq)]
 pub struct AbsoluteSoundEvent(SoundEvent);
@@ -89,7 +89,7 @@ fn load_path(
     let path = paths
         .get(asev.0.idx.unsigned_abs() as usize)
         .expect("Absolute path!");
-    println!("Loading {:?} {}", path, asev.0.name);
+    info!("Loading {:?} {:?}", path, asev.0);
     let sample = dirt::Sample::from_file(path.as_path(), sample_rate);
     samples.insert(asev, sample);
     Ok(())

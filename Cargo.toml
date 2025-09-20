@@ -23,6 +23,9 @@ members = ["xtask"]
 [lib]
 crate-type = ["cdylib", "lib"]
 
+[features]
+debug = []
+
 [profile.release]
 lto = "thin"
 strip = "symbols"

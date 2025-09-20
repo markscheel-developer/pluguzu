@@ -3,6 +3,7 @@
 
 pub mod binding;
 mod config;
+mod debug;
 mod dirt;
 mod events;
 mod highlights;
@@ -11,6 +12,7 @@ mod presets;
 mod samples;
 mod syntax;
 mod ui;
+pub(crate) use debug::{debug, info, pwarn};
 
 use nih_plug::prelude::*;
 use nih_plug_egui::{egui, EguiState};
@@ -205,7 +207,7 @@ impl Pluguzu {
                 if let EventKind::EventSound(sev) = &ev.kind
                     && !lib.has_sample(sev)
                 {
-                    self.samples_missing.insert(sev.clone());
+                    nih_plug::util::permit_alloc(|| self.samples_missing.insert(sev.clone()));
                 }
             }
             // Dispatch background task to load missing samples
@@ -278,7 +280,7 @@ impl Plugin for Pluguzu {
             let mut state = state.lock().unwrap();
             if cur_bar < self.events_start_bar || cur_bar >= self.events_start_bar + BUFFER_LEN {
                 nih_plug::util::permit_alloc(|| {
-                    println!(
+                    debug!(
                     "{pos:.4}: {cur_bar} is out of sync {}..{}, rendering the event synchronously... ",
                     self.events_start_bar,
                     self.events_start_bar + BUFFER_LEN
@@ -289,7 +291,7 @@ impl Plugin for Pluguzu {
                 cur_bar + BUFFER_LEN
             } else if let Some(start) = state.bar_start {
                 if cur_bar >= start {
-                    println!("{cur_bar}: Copying buffer data from {}", start);
+                    debug!("{cur_bar}: Copying buffer data from {}", start);
                     self.sync_state_buffer(state.deref_mut(), start, context);
                     start + BUFFER_LEN
                 } else {
@@ -320,14 +322,14 @@ impl Plugin for Pluguzu {
         self.midi.start = start_fraction;
         self.midi.end = stop_fraction;
         if frames_per_fraction != self.midi.frames_per_fraction {
-            println!("Frames per fraction changed to {}", frames_per_fraction);
+            debug!("Frames per fraction changed to {}", frames_per_fraction);
             self.midi.frames_per_fraction = frames_per_fraction;
         }
 
         // Store timing offset for dirt
         let cps = (beat_per_min / 60. / sig_numerator) as f32;
         if cps != self.cps {
-            println!("CPS changed to {}", cps);
+            debug!("CPS changed to {}", cps);
             self.cps = cps;
         }
         self.now = now;
@@ -337,7 +339,7 @@ impl Plugin for Pluguzu {
 
         if self.skip_past_events.fetch_and(false, Ordering::SeqCst) {
             if self.events_pos == 0 {
-                println!("Skipping event due to forced in-place update...");
+                debug!("Skipping event due to forced in-place update...");
                 while self.events_pos < events.len() {
                     let ev = &events[self.events_pos];
                     if ev.span.start >= stop_fraction {
@@ -346,7 +348,7 @@ impl Plugin for Pluguzu {
                     self.events_pos += 1;
                 }
             } else {
-                println!("Skipping past event was requested, but the current buffer hasn't been re-initialized?!");
+                pwarn!("Skipping past event was requested, but the current buffer hasn't been re-initialized?!");
             }
         }
 
@@ -361,12 +363,12 @@ impl Plugin for Pluguzu {
             if let Some(start) = state.bar_start
                 && next_buffer >= start
             {
-                println!("{pos:.4} process buffer overlaps with next event buffer {stop_fraction} > {next_buffer}");
+                debug!("{pos:.4} process buffer overlaps with next event buffer {stop_fraction} > {next_buffer}");
                 self.sync_state_buffer(state.deref_mut(), next_buffer, context);
                 events = self.events.as_ref().unwrap().clone();
                 self.send_tidal_events(start_fraction, stop_fraction, &events, context);
             } else {
-                println!(
+                nih_error!(
                     "{pos:.4} ERROR: the next event buffer is not ready?! {next_buffer} {:?}",
                     state.bar_start
                 );
@@ -427,7 +429,7 @@ impl Plugin for Pluguzu {
                         nih_log!("{current_bar}: The UI is not open, skipping highlights...");
                     }
 
-                    nih_log!("{current_bar}: Rendering {}", start);
+                    debug!("{current_bar}: Rendering {}", start);
                     state.render(start, start + BUFFER_LEN);
                 }
                 PluguzuTask::RenderInPlace => {
