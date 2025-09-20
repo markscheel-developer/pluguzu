@@ -40,7 +40,9 @@ struct UIState {
     highlights: BTreeMap<LocEvent, f64>,
     focused: bool,
     updated: bool,
+    unsaved: bool,
     update: Option<ParseTask>,
+    picked_path: Option<String>,
 }
 
 const PLAY_TIP: &str = "shift-enter triggers direct play and alt-enter queues to the next bar…";
@@ -52,6 +54,7 @@ impl Pluguzu {
         let code = params.code.clone();
         let font_size = params.font_size.clone();
         let initial_font_size = font_size.load(Ordering::Relaxed);
+        let initial_file = self.initial_file.clone();
 
         let dsp_state = self.dsp_state.clone();
 
@@ -69,15 +72,19 @@ impl Pluguzu {
             focused: false,
             updated: false,
             update: None,
+            unsaved: false,
+            picked_path: None,
         };
 
         create_egui_editor(
             self.params.editor_state.clone(),
             state,
-            move |egui_ctx, _state| {
+            move |egui_ctx, state| {
+                state.picked_path = initial_file.lock().unwrap().take();
                 update_font_size(egui_ctx, initial_font_size);
             },
             move |egui_ctx, _setter, state| {
+                // TODO: handle input dropped_files!
                 ResizableWindow::new("res-wind")
                     .min_size(Vec2::new(80.0, 60.0))
                     .show(egui_ctx, egui_state.as_ref(), |ui| {
@@ -98,35 +105,73 @@ impl Pluguzu {
                             UIView::Editor => {
                                 let mut font_size_value = fs;
                                 let dsp_state = dsp_state.read().expect("lock");
-                                ui.with_layout(
-                                    egui::Layout::left_to_right(egui::Align::Min),
-                                    |ui| {
-                                        if ui.button("+").clicked() {
-                                            font_size_value = font_size_value.saturating_add(1);
-                                            font_size.store(font_size_value, Ordering::Relaxed);
-                                            update_font_size(egui_ctx, font_size_value);
+                                egui::MenuBar::new().ui(ui, |ui| {
+                                    let style = ui.style_mut();
+                                    style.spacing.item_spacing.x = 8.;
+                                    if ui.button("+").clicked() {
+                                        font_size_value = font_size_value.saturating_add(1);
+                                        font_size.store(font_size_value, Ordering::Relaxed);
+                                        update_font_size(egui_ctx, font_size_value);
+                                    }
+                                    if font_size_value > 4 && ui.button("-").clicked() {
+                                        font_size_value = font_size_value.saturating_sub(1);
+                                        font_size.store(font_size_value, Ordering::Relaxed);
+                                        update_font_size(egui_ctx, font_size_value);
+                                    }
+                                    let file_menu = if state.unsaved { "File*" } else { "File" };
+                                    ui.menu_button(file_menu, |ui| {
+                                        if ui.button("New").clicked() {
+                                            *code.lock().expect("lock") = "".to_string();
+                                            async_executor.execute_background(PluguzuTask::Parse(
+                                                ParseTask::InPlace,
+                                            ));
                                         }
-                                        if font_size_value > 4 && ui.button("-").clicked() {
-                                            font_size_value = font_size_value.saturating_sub(1);
-                                            font_size.store(font_size_value, Ordering::Relaxed);
-                                            update_font_size(egui_ctx, font_size_value);
-                                        }
-                                        if state.updated
-                                            && ui.button("Play").on_hover_text(PLAY_TIP).clicked()
+                                        if ui.button("Open").clicked()
+                                            && let Some(path) = file_dialog(false)
                                         {
-                                            state.update = Some(ParseTask::NoRender);
+                                            state.unsaved = false;
+                                            state.picked_path = Some(path.display().to_string());
+                                            async_executor
+                                                .execute_background(PluguzuTask::LoadCode(path))
                                         }
-                                        if ui.button("Load").clicked() {
+                                        if state.unsaved
+                                            && let Some(path) = &state.picked_path
+                                            && ui.button("Save").on_hover_text("ctrl-s").clicked()
+                                        {
+                                            state.unsaved = false;
+                                            async_executor.execute_background(
+                                                PluguzuTask::SaveCode(path.into()),
+                                            )
+                                        }
+
+                                        if state.unsaved
+                                            && ui.button("Save-As").clicked()
+                                            && let Some(path) = file_dialog(true)
+                                        {
+                                            state.unsaved = false;
+                                            state.picked_path = Some(path.display().to_string());
+                                            async_executor
+                                                .execute_background(PluguzuTask::SaveCode(path))
+                                        }
+                                        if ui.button("Load Preset").clicked() {
                                             state.view = UIView::Preset
                                         }
-                                        let status = if dsp_state.playing { ">>=" } else { "|-|" };
-                                        let next = dsp_state.next;
-                                        let remaining = dsp_state.remaining;
-                                        ui.label(RichText::new(format!(
-                                            "{status} {next} | {remaining} events"
-                                        )));
-                                    },
-                                );
+                                    });
+                                    let status = if dsp_state.playing { ">>=" } else { "|-|" };
+                                    let next = dsp_state.next;
+                                    let remaining = dsp_state.remaining;
+                                    ui.label(RichText::new(format!(
+                                        "{status} {next} | {remaining} events"
+                                    )));
+                                    if state.updated
+                                        && ui.button("Play").on_hover_text(PLAY_TIP).clicked()
+                                    {
+                                        state.update = Some(ParseTask::NoRender);
+                                    }
+                                    if let Some(path) = state.picked_path.as_ref() {
+                                        ui.label(file_name(path));
+                                    }
+                                });
 
                                 let mut theme = ColorTheme::SONOKAI;
                                 let status_line = if dsp_state.error.is_some() {
@@ -158,6 +203,14 @@ impl Pluguzu {
                                         } else {
                                             None
                                         }
+                                    } else if i.key_pressed(egui::Key::S)
+                                        && i.modifiers.ctrl
+                                        && let Some(path) = &state.picked_path
+                                    {
+                                        state.unsaved = false;
+                                        async_executor
+                                            .execute_background(PluguzuTask::SaveCode(path.into()));
+                                        None
                                     } else {
                                         None
                                     }
@@ -242,6 +295,7 @@ impl Pluguzu {
                                     output.response.request_focus();
                                 } else if output.response.changed() {
                                     state.updated = true;
+                                    state.unsaved = true;
                                     // TODO: sometime alt modifier get stuck after clicking, perhaps it could be manually removed to workaround this weird bug?
                                     // egui_ctx.input(|i| println!("HERE: {:?}", i.modifiers));
                                     // async_executor.execute_background(PluguzuTask::Parse(true))
@@ -345,4 +399,21 @@ fn preset_ui(ui: &mut egui::Ui, state: &mut PresetState, font_size: u8) -> Optio
         result = Some(None)
     }
     result
+}
+
+fn file_name(s: &str) -> &str {
+    if let Some(p) = s.rfind('/') {
+        &s[p + 1..]
+    } else {
+        s
+    }
+}
+
+fn file_dialog(save: bool) -> Option<std::path::PathBuf> {
+    let diag = rfd::FileDialog::new().add_filter("code", &["hs"]);
+    if save {
+        diag.save_file()
+    } else {
+        diag.pick_file()
+    }
 }

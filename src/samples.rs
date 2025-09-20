@@ -7,30 +7,22 @@ use std::io::Result;
 use std::path::PathBuf;
 
 use crate::events::SoundEvent;
-use crate::{dirt, info};
+use crate::{dirt, info, pwarn};
 
 #[derive(Eq, Hash, PartialEq)]
 pub struct AbsoluteSoundEvent(SoundEvent);
 
 pub struct SampleLibrary {
+    search_path: PathBuf,
     pub sample_rate: u32,
     pub samples: HashMap<AbsoluteSoundEvent, dirt::Sample>,
     pub samples_count: HashMap<SmolStr, Vec<PathBuf>>,
 }
 
-impl Default for SampleLibrary {
-    fn default() -> Self {
-        SampleLibrary {
-            sample_rate: 48000,
-            samples: HashMap::new(),
-            samples_count: HashMap::new(),
-        }
-    }
-}
-
 impl AbsoluteSoundEvent {
     fn from_sev(sev: &SoundEvent, paths: &[PathBuf]) -> Self {
-        let idx = if paths.len() == 0 {
+        let idx = if paths.is_empty() {
+            pwarn!("Empty paths shall not be possible!");
             0
         } else {
             sev.idx % paths.len() as i64
@@ -43,6 +35,14 @@ impl AbsoluteSoundEvent {
 }
 
 impl SampleLibrary {
+    pub fn new(search_path: PathBuf) -> Self {
+        SampleLibrary {
+            search_path,
+            sample_rate: 48000,
+            samples: HashMap::new(),
+            samples_count: HashMap::new(),
+        }
+    }
     pub fn has_sample(&self, sev: &SoundEvent) -> bool {
         match self.samples_count.get(&sev.name) {
             None => false,
@@ -57,11 +57,11 @@ impl SampleLibrary {
             .get(&sev.name)
             .and_then(|paths| self.samples.get(&AbsoluteSoundEvent::from_sev(sev, paths)))
     }
-    pub fn load(&mut self, root: &std::path::Path, sev: &SoundEvent) -> Result<()> {
+    pub fn load(&mut self, sev: &SoundEvent) -> Result<()> {
         if let Some(paths) = self.samples_count.get(&sev.name) {
             load_path(&mut self.samples, self.sample_rate, paths, sev)?;
         } else {
-            let mut path = root.to_path_buf();
+            let mut path = self.search_path.to_path_buf();
             path.push(&sev.name);
             let paths = read_files(&path)
                 .map_err(|e| std::io::Error::other(format!("{}: {e}", path.display())))?;
@@ -95,7 +95,7 @@ fn load_path(
 
 fn read_files(path: &std::path::Path) -> Result<Vec<PathBuf>> {
     let mut samples = Vec::new();
-    for elem in std::fs::read_dir(&path)? {
+    for elem in std::fs::read_dir(path)? {
         let elem = elem?;
         if elem.file_type()?.is_file() {
             // TODO: filter non samples

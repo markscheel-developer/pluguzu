@@ -18,6 +18,7 @@ use nih_plug::prelude::*;
 use nih_plug_egui::{egui, EguiState};
 use std::collections::{HashMap, HashSet};
 use std::ops::DerefMut;
+use std::path::PathBuf;
 use std::sync::atomic::Ordering;
 use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU32, AtomicU8};
 use std::sync::{Arc, Mutex, RwLock};
@@ -98,6 +99,9 @@ pub struct Pluguzu {
     /// User config
     config: Arc<Config>,
 
+    /// Initial file when running standalone
+    initial_file: Arc<Mutex<Option<String>>>,
+
     /// The info shared to the UI.
     dsp_state: Arc<RwLock<PluguzuDSP>>,
 
@@ -135,10 +139,13 @@ pub struct Pluguzu {
 
 impl Default for Pluguzu {
     fn default() -> Self {
+        let config = Config::new();
+        let samples_dir = config.path("samples");
         Self {
             params: Arc::new(PluguzuParams::default()),
             state: Arc::new(Mutex::new(PluguzuState::default())),
-            config: Arc::new(Config::new()),
+            config: Arc::new(config),
+            initial_file: Arc::new(Mutex::new(None)),
             events: None,
 
             dsp_state: Arc::new(RwLock::new(PluguzuDSP {
@@ -151,7 +158,7 @@ impl Default for Pluguzu {
 
             dirt: dirt::Dirt::new(8),
             samples_missing: HashSet::with_capacity(42),
-            samples_library: Arc::new(RwLock::new(crate::samples::SampleLibrary::default())),
+            samples_library: Arc::new(RwLock::new(crate::samples::SampleLibrary::new(samples_dir))),
 
             note_offs: HashMap::with_capacity(255),
 
@@ -187,6 +194,8 @@ pub enum PluguzuTask {
     Parse(ParseTask),
     Render(i32),
     LoadSample(crate::events::SoundEvent),
+    LoadCode(PathBuf),
+    SaveCode(PathBuf),
 }
 
 const BUFFER_LEN: i32 = 4;
@@ -233,6 +242,18 @@ impl Plugin for Pluguzu {
         buffer_config: &BufferConfig,
         context: &mut impl InitContext<Self>,
     ) -> bool {
+        // Load file
+        if context.plugin_api() == PluginApi::Standalone {
+            let default_file = std::env::args()
+                .nth(1)
+                .map(|s| s.into())
+                .unwrap_or_else(|| self.config.path("default.txt"));
+            if std::fs::exists(&default_file).unwrap_or(false) {
+                *self.initial_file.lock().unwrap() = Some(default_file.display().to_string())
+            }
+            context.execute(PluguzuTask::LoadCode(default_file));
+        }
+
         context.execute(PluguzuTask::Parse(ParseTask::NoRender));
         let sr = buffer_config.sample_rate as u32;
         self.dirt.set_sample_rate(sr);
@@ -394,7 +415,6 @@ impl Plugin for Pluguzu {
 
     fn task_executor(&mut self) -> TaskExecutor<Self> {
         let code = self.params.code.clone();
-        let config = self.config.clone();
         let dsp_state = self.dsp_state.clone();
         let state = self.state.clone();
         let current_bar = self.current_bar.clone();
@@ -439,9 +459,28 @@ impl Plugin for Pluguzu {
                 }
                 PluguzuTask::LoadSample(sev) => {
                     let mut lib = samples_library.write().expect("lock");
-                    if let Err(e) = lib.load(config.samples_dir(), &sev) {
+                    if let Err(e) = lib.load(&sev) {
                         nih_warn!("Couldn't load sample {}: {}", sev.name, e);
                     }
+                }
+                PluguzuTask::SaveCode(path) => {
+                    let code = code.lock().expect("lock");
+                    if let Err(e) = std::fs::write(&path, code.as_bytes()) {
+                        nih_warn!("{}: couldn't save {e}", path.display())
+                    } else {
+                        info!("{}: saved!", path.display())
+                    }
+                }
+
+                PluguzuTask::LoadCode(path) => {
+                    match std::fs::read_to_string(&path) {
+                        Ok(new_code) => {
+                            if !new_code.is_empty() {
+                                *code.lock().expect("lock") = new_code;
+                            }
+                        }
+                        Err(e) => nih_warn!("{}: couldn't load {e}", path.display()),
+                    };
                 }
             }
         })
