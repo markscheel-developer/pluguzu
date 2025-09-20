@@ -7,13 +7,8 @@ fn main() {
             println!("Parse failure: {err}");
         } else {
             ps.render(0, 4);
-            let frames_per_fraction = 1000.;
             for (nr, ev) in ps.events.iter().enumerate() {
-                let offset = (ev.midi.start * frames_per_fraction) as u32;
-                match nih_plug::midi::NoteEvent::<()>::from_midi(offset, &ev.midi.data()) {
-                    Ok(mev) => println!("{nr}=> {ev:?} {mev:?}"),
-                    Err(err) => println!("{nr}=> {ev:?} {err:?}"),
-                }
+                println!("{nr}=> {ev:?}");
             }
         }
     } else {

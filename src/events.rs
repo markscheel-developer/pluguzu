@@ -12,18 +12,7 @@ pub struct LocEvent {
 
 #[derive(Debug, Clone, Copy, Deserialize)]
 #[repr(C)]
-pub struct ParamEvent {
-    pub pos: usize,
-    pub param_id: u8,
-    pub param_value: f32,
-}
-
-#[derive(Debug, Clone, Copy, Deserialize)]
-#[repr(C)]
 pub struct MidiEvent {
-    pub start: f64,
-    pub stop: f64,
-    pub sound: i32,
     pub d0: u8,
     pub d1: u8,
     pub d2: u8,
@@ -35,10 +24,23 @@ impl MidiEvent {
     }
 }
 
+#[derive(Debug, Clone, Copy, Deserialize)]
+pub struct EventSpan {
+    pub start: f64,
+    pub stop: f64,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(untagged)]
+pub enum EventKind {
+    EventMidi(MidiEvent),
+    EventSound(crate::samples::SampleName),
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct Event {
-    pub midi: MidiEvent,
+    pub span: EventSpan,
+    pub kind: EventKind,
     pub locs: Vec<LocEvent>,
-    pub sound: Option<crate::samples::SampleName>,
     pub value: Option<HashMap<smol_str::SmolStr, serde_json::Value>>,
 }

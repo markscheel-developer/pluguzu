@@ -22,7 +22,7 @@ use std::sync::{Arc, Mutex, RwLock};
 
 use crate::binding::PluguzuState;
 use crate::config::Config;
-use crate::events::Event;
+use crate::events::{Event, EventKind};
 use crate::midi::{FutureNoteOff, ProcessMidi};
 use crate::samples::SampleID;
 
@@ -191,7 +191,7 @@ impl Pluguzu {
             let lib = self.samples_library.read().unwrap();
             // Collect unknown samples
             for ev in events.iter() {
-                if let Some(sound) = &ev.sound {
+                if let EventKind::EventSound(sound) = &ev.kind {
                     match lib.samples_count.get(sound) {
                         None => {
                             self.samples_missing.insert(SampleID {
@@ -334,7 +334,7 @@ impl Plugin for Pluguzu {
                 println!("Skipping event due to forced in-place update...");
                 while self.events_pos < events.len() {
                     let ev = &events[self.events_pos];
-                    if ev.midi.start >= stop_fraction {
+                    if ev.span.start >= stop_fraction {
                         break;
                     }
                     self.events_pos += 1;

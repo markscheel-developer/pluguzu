@@ -3,7 +3,7 @@
 
 use crate::samples::{SampleID, SampleName};
 use crate::{
-    events::{Event, MidiEvent},
+    events::{Event, EventKind, EventSpan, MidiEvent},
     Pluguzu,
 };
 use nih_plug::{midi::NoteEvent, prelude::ProcessContext};
@@ -80,9 +80,14 @@ impl Pluguzu {
         });
     }
 
-    pub fn send_midi_event(&mut self, ev: &MidiEvent, context: &mut impl ProcessContext<Self>) {
-        let offset = if ev.start > self.midi.start {
-            self.midi.event_offset(ev.start)
+    pub fn send_midi_event(
+        &mut self,
+        span: &EventSpan,
+        ev: &MidiEvent,
+        context: &mut impl ProcessContext<Self>,
+    ) {
+        let offset = if span.start > self.midi.start {
+            self.midi.event_offset(span.start)
         } else {
             0
         };
@@ -90,16 +95,16 @@ impl Pluguzu {
             Ok(mev) => {
                 println!(
                     "{:.4}: sending event {:.4} {:?}",
-                    self.midi.start, ev.start, mev
+                    self.midi.start, span.start, mev
                 );
                 context.send_event(mev);
                 if let NoteEvent::NoteOn { note, channel, .. } = mev {
-                    if ev.stop < self.midi.end {
+                    if span.stop < self.midi.end {
                         // This is a fast event, schedule the note-off right away
                         self.midi.send_note_off(
                             note,
                             &FutureNoteOff {
-                                when: ev.stop,
+                                when: span.stop,
                                 channel,
                             },
                             context,
@@ -109,7 +114,7 @@ impl Pluguzu {
                         let prev = self.note_offs.insert(
                             note,
                             FutureNoteOff {
-                                when: ev.stop,
+                                when: span.stop,
                                 channel,
                             },
                         );
@@ -134,7 +139,7 @@ impl Pluguzu {
                 if let Some(value) = ev.value.as_ref() {
                     for (k, v) in value.iter() {
                         if let Some(val) = v.as_f64() {
-                            sound.apply_param(&k, val as f32)
+                            sound.apply_param(k, val as f32)
                         }
                     }
                 }
@@ -147,10 +152,9 @@ impl Pluguzu {
     }
 
     fn send_tidal_event(&mut self, ev: &Event, context: &mut impl ProcessContext<Self>) {
-        if let Some(sound) = &ev.sound {
-            self.send_sound_event(sound.clone(), ev)
-        } else {
-            self.send_midi_event(&ev.midi, context)
+        match &ev.kind {
+            EventKind::EventSound(sound) => self.send_sound_event(sound.clone(), ev),
+            EventKind::EventMidi(mev) => self.send_midi_event(&ev.span, mev, context),
         }
     }
     pub fn send_tidal_events(
@@ -162,21 +166,21 @@ impl Pluguzu {
     ) {
         while self.events_pos < events.len() {
             let ev = &events[self.events_pos];
-            if ev.midi.start >= stop_fraction {
+            if ev.span.start >= stop_fraction {
                 // This event and the following one are scheduled for later
                 break;
-            } else if start_fraction <= ev.midi.start && ev.midi.start < stop_fraction {
+            } else if start_fraction <= ev.span.start && ev.span.start < stop_fraction {
                 // The event is due for this buffer
                 self.send_tidal_event(ev, context);
-            } else if ev.midi.stop > 0. && ev.midi.stop <= stop_fraction {
+            } else if ev.span.stop > 0. && ev.span.stop <= stop_fraction {
                 println!(
                     "{start_fraction:.4} Missed event start, but it still make sense to send it now... {:.4}..{:.4} < {stop_fraction:.4}",
-                    ev.midi.start, ev.midi.stop
+                    ev.span.start, ev.span.stop
                 );
                 self.send_tidal_event(ev, context);
-            } else if start_fraction > ev.midi.start {
+            } else if start_fraction > ev.span.start {
                 // That's odd, it looks like we missed an event?!
-                println!("{start_fraction:.4} Skipped event {:.4}", ev.midi.start);
+                println!("{start_fraction:.4} Skipped event {:.4}", ev.span.start);
             }
 
             // Advance the event buffer position

@@ -53,7 +53,7 @@ pub fn update_locs(evlocs: EvLocs, events: &[Event]) {
     evlocs.clear();
     for event in events {
         for loc in &event.locs {
-            evlocs.push((event.midi.start, Arc::new(*loc)));
+            evlocs.push((event.span.start, Arc::new(*loc)));
         }
     }
 }
