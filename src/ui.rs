@@ -38,6 +38,7 @@ struct UIState {
     view: UIView,
     preset: PresetState,
     highlights: BTreeMap<LocEvent, f64>,
+    focused: bool,
 }
 
 impl Pluguzu {
@@ -61,6 +62,7 @@ impl Pluguzu {
                 presets: load_presets(),
             },
             highlights: BTreeMap::new(),
+            focused: false,
         };
 
         create_egui_editor(
@@ -110,21 +112,29 @@ impl Pluguzu {
                                         let status = if dsp_state.playing { ">>=" } else { "|-|" };
                                         let next = dsp_state.next;
                                         let remaining = dsp_state.remaining;
-                                        let error = dsp_state.error.as_deref().unwrap_or("OK");
                                         ui.label(RichText::new(format!(
-                                            "{status} {next} | {remaining} events | {error}"
+                                            "{status} {next} | {remaining} events"
                                         )));
                                     },
                                 );
 
+                                let mut theme = ColorTheme::SONOKAI;
+                                let status_line = if dsp_state.error.is_some() {
+                                    theme.cursor = "#ff0000";
+                                    1
+                                } else {
+                                    0
+                                };
+
                                 let line_height = font_size_value as f32 + VERT_SPACE;
-                                let avail_lines = (ui.available_height() / line_height).floor();
+                                let avail_lines = (ui.available_height() / line_height).floor()
+                                    - status_line as f32;
 
                                 let mut code_editor = CodeEditor::default()
                                     .id_source("code editor")
                                     .with_rows(avail_lines as usize)
                                     .with_fontsize(font_size_value as f32)
-                                    .with_theme(ColorTheme::SONOKAI)
+                                    .with_theme(theme)
                                     .with_syntax(tidal())
                                     .with_numlines(true);
 
@@ -141,7 +151,10 @@ impl Pluguzu {
                                     code_editor.show(ui, code_data.deref_mut())
                                 };
 
-                                output.response.request_focus();
+                                if !state.focused {
+                                    output.response.request_focus();
+                                    state.focused = true;
+                                }
 
                                 let painter = ui.painter_at(output.response.rect);
                                 let ep = highlights::EditorPixels::new(
@@ -192,6 +205,15 @@ impl Pluguzu {
                                     )
                                 });
                                 painter.extend(shapes);
+
+                                if status_line > 0 {
+                                    ui.horizontal(|ui| {
+                                        if let Some(error) = dsp_state.error.as_deref() {
+                                            ui.label("Error: ");
+                                            ui.label(error);
+                                        }
+                                    });
+                                }
 
                                 if !force_update && output.response.changed() {
                                     // TODO: sometime alt modifier get stuck after clicking, perhaps it could be manually removed to workaround this weird bug?
