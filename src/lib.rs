@@ -242,6 +242,8 @@ impl Plugin for Pluguzu {
         buffer_config: &BufferConfig,
         context: &mut impl InitContext<Self>,
     ) -> bool {
+        #[cfg(not(feature = "debug"))]
+        nih_plug::log::set_max_level(nih_plug::log::LevelFilter::Info);
         // Load file
         if context.plugin_api() == PluginApi::Standalone {
             let default_file = std::env::args()
