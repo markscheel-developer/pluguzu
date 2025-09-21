@@ -201,7 +201,7 @@ pub enum PluguzuTask {
 const BUFFER_LEN: i32 = 4;
 
 impl Pluguzu {
-    fn sync_state_buffer(
+    fn sync_events_buffer(
         &mut self,
         state: &mut PluguzuState,
         start: i32,
@@ -316,12 +316,12 @@ impl Plugin for Pluguzu {
                     );
                     state.render(cur_bar, cur_bar + BUFFER_LEN);
                 });
-                self.sync_state_buffer(state.deref_mut(), cur_bar, context);
+                self.sync_events_buffer(state.deref_mut(), cur_bar, context);
                 cur_bar + BUFFER_LEN
             } else if let Some(start) = state.bar_start {
                 if cur_bar >= start {
                     debug!("{cur_bar}: Copying buffer data from {}", start);
-                    self.sync_state_buffer(state.deref_mut(), start, context);
+                    self.sync_events_buffer(state.deref_mut(), start, context);
                     start + BUFFER_LEN
                 } else {
                     start
@@ -393,7 +393,7 @@ impl Plugin for Pluguzu {
                 && next_buffer >= start
             {
                 debug!("{pos:.4} process buffer overlaps with next event buffer {stop_fraction} > {next_buffer}");
-                self.sync_state_buffer(state.deref_mut(), next_buffer, context);
+                self.sync_events_buffer(state.deref_mut(), next_buffer, context);
                 events = self.events.as_ref().expect("events").clone();
                 self.send_tidal_events(start_fraction, stop_fraction, &events, context);
             } else {

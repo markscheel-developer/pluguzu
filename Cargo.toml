@@ -2,6 +2,10 @@
 name = "pluguzu"
 version = "0.1.0"
 edition = "2024"
+license = "GPL-3.0"
+repository = "https://codeberg.org/TristanCacqueray/pluguzu"
+authors = ["TristanCacqueray"]
+
 
 [dependencies]
 nih_plug = { git = "https://github.com/robbert-vdh/nih-plug.git", rev = "ed09eca4301f67f17d43474cd3d21ea10b639046", features = ["assert_process_allocs", "standalone"] }

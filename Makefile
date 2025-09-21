@@ -10,15 +10,16 @@ install-vst3:
 	@ln -sf $(PWD)/bin/pluguzu.vst3 ~/.vst3
 	@ln -sf $(PWD)/bin/libpluguzu.so bin/pluguzu.vst3/Contents/x86_64-linux
 	@chmod +x bin/pluguzu.vst3/Contents/x86_64-linux/pluguzu.so
-	@echo "Installed VST3: ~/.vst3/pluguzu.vst3"
+	@echo "[+] Installed VST3: ~/.vst3/pluguzu.vst3"
 
 install-clap:
 	@mkdir -p ~/.clap
 	@ln -sf $(PWD)/bin/libpluguzu.so $(PWD)/bin/pluguzu.clap ~/.clap
 	@chmod +x bin/pluguzu.clap
-	@echo "Installed CLAP: ~/.clap/pluguzu.clap"
+	@echo "[+] Installed CLAP: ~/.clap/pluguzu.clap"
 
 install: install-vst3 install-clap
+	@sh -c "test -e ~/.config/pluguzu/samples && echo -e '[Warning] No samples found in ~/.config/pluguzu/samples, try running:\n  git clone --depth 1 https://github.com/tidalcycles/Dirt-Samples ~/.config/pluguzu/samples'"
 
 render-presets:
 	@echo "renderPresetData" | cabal repl
