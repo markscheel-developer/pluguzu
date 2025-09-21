@@ -101,6 +101,7 @@ pub struct Pluguzu {
 
     /// Initial file when running standalone
     initial_file: Arc<Mutex<Option<String>>>,
+    hosted_in_daw: Arc<AtomicBool>,
 
     /// The info shared to the UI.
     dsp_state: Arc<RwLock<PluguzuDSP>>,
@@ -146,6 +147,7 @@ impl Default for Pluguzu {
             state: Arc::new(Mutex::new(PluguzuState::default())),
             config: Arc::new(config),
             initial_file: Arc::new(Mutex::new(None)),
+            hosted_in_daw: Arc::new(AtomicBool::new(true)),
             events: None,
 
             dsp_state: Arc::new(RwLock::new(PluguzuDSP {
@@ -257,6 +259,7 @@ impl Plugin for Pluguzu {
         nih_plug::log::set_max_level(nih_plug::log::LevelFilter::Info);
         // Load file
         if context.plugin_api() == PluginApi::Standalone {
+            self.hosted_in_daw.store(false, Ordering::Relaxed);
             let default_file = std::env::args()
                 .nth(1)
                 .map(|s| s.into())

@@ -43,6 +43,7 @@ struct UIState {
     unsaved: bool,
     update: Option<ParseTask>,
     picked_path: Option<String>,
+    hosted_in_daw: bool,
 }
 
 const PLAY_TIP: &str = "shift-enter triggers direct play and alt-enter queues to the next bar…";
@@ -55,6 +56,7 @@ impl Pluguzu {
         let font_size = params.font_size.clone();
         let initial_font_size = font_size.load(Ordering::Relaxed);
         let initial_file = self.initial_file.clone();
+        let initial_hosted_in_daw = self.hosted_in_daw.clone();
 
         let dsp_state = self.dsp_state.clone();
 
@@ -74,12 +76,14 @@ impl Pluguzu {
             update: None,
             unsaved: false,
             picked_path: None,
+            hosted_in_daw: false,
         };
 
         create_egui_editor(
             self.params.editor_state.clone(),
             state,
             move |egui_ctx, state| {
+                state.hosted_in_daw = initial_hosted_in_daw.load(Ordering::Relaxed);
                 state.picked_path = initial_file.lock().unwrap().take();
                 update_font_size(egui_ctx, initial_font_size);
             },
@@ -118,7 +122,13 @@ impl Pluguzu {
                                         font_size.store(font_size_value, Ordering::Relaxed);
                                         update_font_size(egui_ctx, font_size_value);
                                     }
-                                    let file_menu = if state.unsaved { "File*" } else { "File" };
+                                    let file_menu = if state.unsaved
+                                        && (!state.hosted_in_daw || state.picked_path.is_some())
+                                    {
+                                        "File*"
+                                    } else {
+                                        "File"
+                                    };
                                     ui.menu_button(file_menu, |ui| {
                                         if ui.button("New").clicked() {
                                             *code.lock().expect("lock") = "".to_string();
