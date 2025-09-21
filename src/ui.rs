@@ -93,7 +93,7 @@ impl Pluguzu {
             font_size: self.params.font_size.clone(),
             hosted_in_daw: false,
         };
-
+        let params = self.params.clone();
         create_egui_editor(
             self.params.editor_state.clone(),
             state,
@@ -102,7 +102,7 @@ impl Pluguzu {
                 state.editor.picked_path = initial_file.lock().unwrap().take();
                 state.update_font_size(egui_ctx, state.font_size.load(Ordering::Relaxed));
             },
-            move |egui_ctx, _setter, state| {
+            move |egui_ctx, setter, state| {
                 // TODO: handle input dropped_files!
                 ResizableWindow::new("res-wind")
                     .min_size(Vec2::new(80.0, 60.0))
@@ -161,6 +161,14 @@ impl Pluguzu {
 
                                 if let Some(task) = state.editor.update.take() {
                                     if let PluguzuTask::Parse(_) = task {
+                                        if !state.editor.updated {
+                                            // Tell the host that the project needs to be saved
+                                            setter.set_parameter(
+                                                &params.version,
+                                                params.version.value().overflowing_add(1).0,
+                                            );
+                                        }
+                                        setter.end_set_parameter(&params.version);
                                         state.editor.updated = false;
                                     }
                                     async_executor.execute_background(task);

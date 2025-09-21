@@ -80,6 +80,10 @@ pub struct PluguzuParams {
     /// The font size.
     #[persist = "font-size"]
     font_size: Arc<AtomicU8>,
+
+    /// Code "version" number, used to tell the host when the code changed.
+    #[id = "version"]
+    version: IntParam,
 }
 
 impl Default for PluguzuParams {
@@ -88,6 +92,14 @@ impl Default for PluguzuParams {
             editor_state: EguiState::from_size(800, 600),
             code: Arc::new(Mutex::new(WELCOME.trim_end().into())),
             font_size: Arc::new(AtomicU8::new(20)),
+            version: IntParam::new(
+                "version",
+                0,
+                IntRange::Linear {
+                    min: 0,
+                    max: i32::MAX,
+                },
+            ),
         }
     }
 }
