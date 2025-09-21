@@ -1,6 +1,8 @@
 // Copyright © 2025 Tristan de Cacqueray
 // SPDX-License-Identifier: GPL-3.0
 
+//! This module defines midi (and sound) event management.
+
 use crate::{
     debug,
     events::{Event, EventKind, EventSpan, MidiEvent, SoundEvent},

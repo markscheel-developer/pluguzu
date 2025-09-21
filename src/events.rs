@@ -1,5 +1,8 @@
 // Copyright © 2025 Tristan de Cacqueray
 // SPDX-License-Identifier: GPL-3.0
+
+//! This module defines the events produced by Haskell.
+
 use serde::Deserialize;
 use smol_str::SmolStr;
 use std::collections::HashMap;

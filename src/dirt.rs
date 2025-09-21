@@ -1,10 +1,8 @@
 // Copyright © 2025 Tristan de Cacqueray
 // SPDX-License-Identifier: GPL-3.0
 
+//! This module defines a high-level API for the dirt-sys binding.
 use std::ffi::c_int;
-
-// Using https://codeberg.org/uzu/dirt/pulls/87
-// run: `make libdirt.so LIB=1` and copy the library to pluguzu bin folder.
 
 pub struct Dirt {
     pub sr: u32,

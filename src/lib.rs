@@ -1,13 +1,14 @@
 // Copyright © 2025 Tristan de Cacqueray
 // SPDX-License-Identifier: GPL-3.0
 
-/// This module is the main entry point.
-/// It defines the Pluguzu struct which is instantiated by nih-plug as a standalone app or a DAW plugin.
-pub mod binding;
+//! This module is the main entry point.
+//! It defines the Pluguzu struct which is instantiated by nih-plug as a standalone app or a DAW plugin.
+
 mod config;
 mod debug;
 mod dirt;
 mod events;
+pub mod haskell;
 mod highlights;
 mod midi;
 mod presets;
@@ -25,9 +26,9 @@ use std::sync::atomic::Ordering;
 use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU32, AtomicU8};
 use std::sync::{Arc, Mutex, RwLock};
 
-use crate::binding::PluguzuState;
 use crate::config::Config;
 use crate::events::{Event, EventKind};
+use crate::haskell::HaskellState;
 use crate::midi::{FutureNoteOff, ProcessMidi};
 
 /// Info from the engine for the UI status bar
@@ -96,7 +97,7 @@ pub struct Pluguzu {
     params: Arc<PluguzuParams>,
 
     /// The Haskell binding state.
-    state: Arc<Mutex<PluguzuState>>,
+    state: Arc<Mutex<HaskellState>>,
 
     /// User config
     config: Arc<Config>,
@@ -146,7 +147,7 @@ impl Default for Pluguzu {
         let samples_dir = config.path("samples");
         Self {
             params: Arc::new(PluguzuParams::default()),
-            state: Arc::new(Mutex::new(PluguzuState::default())),
+            state: Arc::new(Mutex::new(HaskellState::default())),
             config: Arc::new(config),
             initial_file: Arc::new(Mutex::new(None)),
             hosted_in_daw: Arc::new(AtomicBool::new(true)),
@@ -207,7 +208,7 @@ const BUFFER_LEN: i32 = 4;
 impl Pluguzu {
     fn sync_events_buffer(
         &mut self,
-        state: &mut PluguzuState,
+        state: &mut HaskellState,
         start: i32,
         ctx: &impl ProcessContext<Self>,
     ) {

@@ -1,6 +1,8 @@
 // Copyright © 2025 Tristan de Cacqueray
 // SPDX-License-Identifier: GPL-3.0
 
+//! The code syntax definition.
+
 use egui_code_editor::Syntax;
 use std::collections::BTreeSet;
 

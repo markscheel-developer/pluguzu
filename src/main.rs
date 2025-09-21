@@ -1,4 +1,9 @@
-use pluguzu::binding::PluguzuState;
+// Copyright © 2025 Tristan de Cacqueray
+// SPDX-License-Identifier: GPL-3.0
+
+//! The command line entry point
+
+use pluguzu::haskell::HaskellState;
 
 fn main() {
     let mut args = std::env::args().collect::<Vec<_>>();
@@ -6,7 +11,7 @@ fn main() {
         && cmd == "debug"
     {
         let pat = args.get(2).expect("a pattern");
-        let mut ps = PluguzuState::default();
+        let mut ps = HaskellState::default();
         if let Some(err) = ps.parse(pat) {
             println!("Parse failure: {err}");
         } else {

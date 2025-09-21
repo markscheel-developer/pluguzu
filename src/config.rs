@@ -1,6 +1,7 @@
 // Copyright © 2025 Tristan de Cacqueray
 // SPDX-License-Identifier: GPL-3.0
-#![allow(dead_code)]
+
+//! This module defines user config location.
 
 use nih_plug::nih_warn;
 use std::path::PathBuf;

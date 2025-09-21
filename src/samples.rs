@@ -1,6 +1,8 @@
 // Copyright © 2025 Tristan de Cacqueray
 // SPDX-License-Identifier: GPL-3.0
 
+//! This modules defines a library of samples
+
 use smol_str::SmolStr;
 use std::collections::HashMap;
 use std::io::Result;

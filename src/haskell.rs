@@ -1,7 +1,8 @@
 // Copyright © 2025 Tristan de Cacqueray
 // SPDX-License-Identifier: GPL-3.0
 
-use std::collections::BTreeMap;
+//! This module defines the Haskell FFI.
+
 use std::ffi::c_char;
 use std::sync::Arc;
 
@@ -10,37 +11,35 @@ use crate::events::Event;
 #[link(name = "pluguzu")]
 unsafe extern "C" {
     fn pluguzu_init();
-    fn pluguzuNew() -> *mut CPluguzuState;
-    fn pluguzuParse(state: *mut CPluguzuState, code: *const c_char);
-    fn pluguzuError(state: *mut CPluguzuState) -> *const c_char;
-    fn pluguzuRender(state: *mut CPluguzuState, start: u64, end: u64, count: &mut u64) -> *mut u8;
+    fn pluguzuNew() -> *mut CHaskellState;
+    fn pluguzuParse(state: *mut CHaskellState, code: *const c_char);
+    fn pluguzuError(state: *mut CHaskellState) -> *const c_char;
+    fn pluguzuRender(state: *mut CHaskellState, start: u64, end: u64, count: &mut u64) -> *mut u8;
 }
 
-pub struct PluguzuState {
-    state: *mut CPluguzuState,
+pub struct HaskellState {
+    state: *mut CHaskellState,
     pub stale: Option<Arc<Vec<Event>>>,
     pub events: Arc<Vec<Event>>,
     pub bar_start: Option<i32>,
-    pub sounds: BTreeMap<i32, &'static str>,
 }
 
-impl Default for PluguzuState {
+impl Default for HaskellState {
     fn default() -> Self {
         let state = unsafe {
             pluguzu_init();
             pluguzuNew()
         };
-        PluguzuState {
+        HaskellState {
             state,
             stale: None,
             events: Arc::new(vec![]),
             bar_start: None,
-            sounds: BTreeMap::new(),
         }
     }
 }
 
-impl PluguzuState {
+impl HaskellState {
     pub fn parse(&mut self, code: &str) -> Option<String> {
         match std::ffi::CString::new(code) {
             Ok(code) => unsafe {
@@ -81,8 +80,8 @@ impl PluguzuState {
 }
 
 #[repr(C)]
-struct CPluguzuState {
+struct CHaskellState {
     _data: (),
     _marker: core::marker::PhantomData<(*mut u8, core::marker::PhantomPinned)>,
 }
-unsafe impl Send for PluguzuState {}
+unsafe impl Send for HaskellState {}

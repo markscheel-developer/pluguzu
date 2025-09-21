@@ -1,6 +1,8 @@
 // Copyright © 2025 Tristan de Cacqueray
 // SPDX-License-Identifier: GPL-3.0
 
+//! The pluguzu UI.
+
 use egui_code_editor::{CodeEditor, ColorTheme};
 use nih_plug::prelude::*;
 use nih_plug_egui::{

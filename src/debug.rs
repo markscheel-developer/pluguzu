@@ -1,6 +1,8 @@
 // Copyright © 2025 Tristan de Cacqueray
 // SPDX-License-Identifier: GPL-3.0
 
+//! This modules provides convenient logging helpers
+
 macro_rules! debug {
     ($($rest:tt)+) => {
         #[cfg(feature = "debug")]

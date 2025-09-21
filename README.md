@@ -91,13 +91,14 @@ Here are the important files:
 - [Pluguzu.hs](./Pluguzu.hs) is the foreign library called by the plugin.
 - [lib.rs](./src/lib.rs) is the nih-plug implementation.
 - [dirt.rs](./src/dirt.rs) is the dirt sampler integration.
+- [ui.rs](./src/ui.rs) is the UI definition.
 - [pluguzu-presets.md](./pluguzu-presets.md) is the preset library.
 - [PluguzuWrapper.c](./PluguzuWrapper.c) is the C wrapper to enable calling Haskell from C.
 
 Pluguzu implements a double buffering logic to render the upcoming events in the background:
 
 - See the `Pluguzu::sync_events_buffer` for the realtime part, and,
-- `PluguzuState::render` for the background work.
+- `HaskellState::render` for the background work.
 
 Pluguzu is driven by the host transport and it takes care of performing the MIDI and Sound events.
 
