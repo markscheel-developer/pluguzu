@@ -207,7 +207,18 @@ impl Pluguzu {
         start: i32,
         ctx: &impl ProcessContext<Self>,
     ) {
+        // Here is the tricky part.
+        // We must not de-allocate the events buffer in the audio callback.
+        if let Some(stale) = state.stale.take() {
+            // This should never happen because the background thread always free the buffer after the sync.
+            nih_plug::util::permit_alloc(move || {
+                nih_warn!("Stale buffer is not free, de-allocating from audio callback...");
+                std::mem::drop(stale);
+            })
+        }
+        // So we lend back the forground buffer to avoid dropping it ourself.
         state.stale = self.events.take();
+        // And we borrow the new ones.
         let events = state.events.clone();
         self.events_pos = 0;
         self.events_start_bar = start;

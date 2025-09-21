@@ -70,8 +70,12 @@ impl PluguzuState {
             let count = count_u64 as usize;
             std::slice::from_raw_parts(buf, count)
         };
+        // de-allocate the unused buffer that the audio callback gave back.
         self.stale.take();
-        self.events = Arc::new(serde_json::from_slice(data).expect("JSON"));
+        self.events = Arc::new(serde_json::from_slice(data).unwrap_or_else(|err| {
+            crate::pwarn!("FFI decode error {err}: {}", String::from_utf8_lossy(data));
+            vec![]
+        }));
         self.bar_start = Some(start);
     }
 }
