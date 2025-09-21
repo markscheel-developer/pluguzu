@@ -71,8 +71,9 @@ make install
 - Validate by making sure this command doesn't output a missing dependencies:
 
 ```bash
-ldd ~/.vst3/pluguzu.vst3/Contents/x86_64-linux/pluguzu.so | grep "not found"
+ldd ~/.local/bin/pluguzu                                  | grep "not found"
 ldd ~/.clap/pluguzu.clap                                  | grep "not found"
+ldd ~/.vst3/pluguzu.vst3/Contents/x86_64-linux/pluguzu.so | grep "not found"
 ```
 
 - Run the standalone JACK client:
