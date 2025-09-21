@@ -33,9 +33,9 @@ impl Dirt {
         for pos in 0..len {
             let left: *mut f32 = samples[0].as_mut_ptr();
             let right: *mut f32 = samples[1].as_mut_ptr();
-            let lr: *mut *mut f32 = [left, right].as_mut_ptr();
+            let mut arr = [left, right];
             unsafe {
-                dirt_sys::playback(lr, pos as c_int, now);
+                dirt_sys::playback(arr.as_mut_ptr(), pos as c_int, now);
                 dirt_sys::dequeue_nolock(now);
             }
             now += sample_time;
