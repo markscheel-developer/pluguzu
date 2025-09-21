@@ -1,6 +1,8 @@
 // Copyright © 2025 Tristan de Cacqueray
 // SPDX-License-Identifier: GPL-3.0
 
+/// This module is the main entry point.
+/// It defines the Pluguzu struct which is instantiated by nih-plug as a standalone app or a DAW plugin.
 pub mod binding;
 mod config;
 mod debug;
@@ -246,6 +248,33 @@ impl Pluguzu {
         self.events = Some(events);
         ctx.execute_background(PluguzuTask::Render(start + BUFFER_LEN))
     }
+
+    fn ensure_events_buffer(&mut self, cur_bar: i32, ctx: &impl ProcessContext<Self>) -> i32 {
+        let state = self.state.clone();
+        let mut state = state.lock().expect("lock");
+        if cur_bar < self.events_start_bar || cur_bar >= self.events_start_bar + BUFFER_LEN {
+            nih_plug::util::permit_alloc(|| {
+                debug!(
+                    "{pos:.4}: {cur_bar} is out of sync {}..{}, rendering the event synchronously... ",
+                    self.events_start_bar,
+                    self.events_start_bar + BUFFER_LEN
+                    );
+                state.render(cur_bar, cur_bar + BUFFER_LEN);
+            });
+            self.sync_events_buffer(state.deref_mut(), cur_bar, ctx);
+            cur_bar + BUFFER_LEN
+        } else if let Some(start) = state.bar_start {
+            if cur_bar >= start {
+                debug!("{cur_bar}: Copying buffer data from {}", start);
+                self.sync_events_buffer(state.deref_mut(), start, ctx);
+                start + BUFFER_LEN
+            } else {
+                start
+            }
+        } else {
+            self.events_start_bar + BUFFER_LEN
+        }
+    }
 }
 
 impl Plugin for Pluguzu {
@@ -289,16 +318,13 @@ impl Plugin for Pluguzu {
         }
 
         // Lookup transport and read the current bar.
+        let frames_usize = buffer.samples();
         let transport = context.transport();
         let playing = transport.playing;
-        let now = transport.pos_beats().expect("beat");
-        let pos = now / 4.0;
+        self.now = transport.pos_beats().expect("beat");
+        let pos = self.now / 4.0;
         let cur_bar = pos.floor() as i32;
         self.current_bar.store(cur_bar, Ordering::Relaxed);
-
-        // Play dirt
-        let frames = buffer.samples();
-        self.dirt.playback(now, frames, buffer.as_slice());
 
         // When not playing...
         if !playing || transport.preroll_active.unwrap_or(false) {
@@ -318,39 +344,12 @@ impl Plugin for Pluguzu {
         }
 
         // Ensure the events buffer is ready
-        let next_buffer = {
-            let state = self.state.clone();
-            let mut state = state.lock().expect("lock");
-            if cur_bar < self.events_start_bar || cur_bar >= self.events_start_bar + BUFFER_LEN {
-                nih_plug::util::permit_alloc(|| {
-                    debug!(
-                    "{pos:.4}: {cur_bar} is out of sync {}..{}, rendering the event synchronously... ",
-                    self.events_start_bar,
-                    self.events_start_bar + BUFFER_LEN
-                    );
-                    state.render(cur_bar, cur_bar + BUFFER_LEN);
-                });
-                self.sync_events_buffer(state.deref_mut(), cur_bar, context);
-                cur_bar + BUFFER_LEN
-            } else if let Some(start) = state.bar_start {
-                if cur_bar >= start {
-                    debug!("{cur_bar}: Copying buffer data from {}", start);
-                    self.sync_events_buffer(state.deref_mut(), start, context);
-                    start + BUFFER_LEN
-                } else {
-                    start
-                }
-            } else {
-                self.events_start_bar + BUFFER_LEN
-            }
-        };
-
+        let next_buffer = self.ensure_events_buffer(cur_bar, context);
         let mut events = self.events.as_ref().expect("events to exist").clone();
 
         // Compute current frame info
         let pos = transport.pos_beats().expect("pos beats") / 4.0;
-
-        let frames = frames as f64;
+        let frames = frames_usize as f64;
         let beat_per_min = transport.tempo.unwrap_or(120.);
         let beat_per_sec = 60. / beat_per_min;
         let sig_numerator = transport.time_sig_numerator.unwrap_or(4) as f64;
@@ -358,12 +357,10 @@ impl Plugin for Pluguzu {
         let run_time = frames / (transport.sample_rate as f64);
         let run_fraction = run_time / bar_length;
         let frames_per_fraction = frames / run_fraction;
-        let start_fraction = pos;
-        let stop_fraction = pos + run_fraction;
 
         // Store the midi offset stuff
-        self.midi.start = start_fraction;
-        self.midi.end = stop_fraction;
+        self.midi.start = pos;
+        self.midi.end = pos + run_fraction;
         if frames_per_fraction != self.midi.frames_per_fraction {
             debug!("Frames per fraction changed to {}", frames_per_fraction);
             self.midi.frames_per_fraction = frames_per_fraction;
@@ -375,7 +372,6 @@ impl Plugin for Pluguzu {
             debug!("CPS changed to {}", cps);
             self.cps = cps;
         }
-        self.now = now;
 
         // Send any previously registered note-off.
         self.send_note_offs(context);
@@ -385,7 +381,7 @@ impl Plugin for Pluguzu {
                 debug!("Skipping event due to forced in-place update...");
                 while self.events_pos < events.len() {
                     let ev = &events[self.events_pos];
-                    if ev.span.start >= stop_fraction {
+                    if ev.span.start >= self.midi.end {
                         break;
                     }
                     self.events_pos += 1;
@@ -396,20 +392,23 @@ impl Plugin for Pluguzu {
         }
 
         // Send events.
-        self.send_tidal_events(start_fraction, stop_fraction, &events, context);
+        self.send_tidal_events(self.midi.start, self.midi.end, &events, context);
 
         // Send events from the begining of the next-buffer.
-        if stop_fraction > next_buffer as f64 {
+        if self.midi.end > next_buffer as f64 {
             // try to resync buffer, e.g.: when the current run overlap with the next chunk
             let state = self.state.clone();
             let mut state = state.lock().expect("lock");
             if let Some(start) = state.bar_start
                 && next_buffer >= start
             {
-                debug!("{pos:.4} process buffer overlaps with next event buffer {stop_fraction} > {next_buffer}");
+                debug!(
+                    "{pos:.4} process buffer overlaps with next event buffer {} > {next_buffer}",
+                    self.midi.end
+                );
                 self.sync_events_buffer(state.deref_mut(), next_buffer, context);
                 events = self.events.as_ref().expect("events").clone();
-                self.send_tidal_events(start_fraction, stop_fraction, &events, context);
+                self.send_tidal_events(self.midi.start, self.midi.end, &events, context);
             } else {
                 nih_error!(
                     "{pos:.4} ERROR: the next event buffer is not ready?! {next_buffer} {:?}",
@@ -418,12 +417,16 @@ impl Plugin for Pluguzu {
             }
         }
 
+        // Play dirt
+        self.dirt
+            .playback(self.now, frames_usize, buffer.as_slice());
+
         // Update status for the UI
         let mut dsp_state = self.dsp_state.write().expect("lock");
         dsp_state.playing = playing;
         dsp_state.next = next_buffer - cur_bar;
         dsp_state.remaining = events.len() - self.events_pos;
-        dsp_state.pos = start_fraction;
+        dsp_state.pos = self.midi.start;
         ProcessStatus::KeepAlive
     }
 
@@ -487,7 +490,6 @@ impl Plugin for Pluguzu {
                         info!("{}: saved!", path.display())
                     }
                 }
-
                 PluguzuTask::LoadCode(path) => {
                     match std::fs::read_to_string(&path) {
                         Ok(new_code) => {
