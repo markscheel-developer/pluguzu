@@ -1,6 +1,6 @@
 #!/usr/bin/make -f
 
-all: haskell-lib build-standalone build-rust
+all: haskell-lib build-rust
 
 clean:
 	@rm -Rf bin
@@ -33,12 +33,7 @@ render-presets:
 build-rust:
 	@cargo xtask bundle pluguzu --release
 	@rm -Rf bin/pluguzu.vst3
-	@mv target/bundled/pluguzu.clap target/bundled/pluguzu.vst3/ bin/
-
-build-standalone:
-	@cargo build --release
-	@rm bin/pluguzu
-	@cp target/debug/pluguzu bin/pluguzu
+	@mv target/bundled/pluguzu* bin/
 
 haskell-lib:
 	@cabal build
