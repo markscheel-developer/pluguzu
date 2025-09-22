@@ -164,14 +164,15 @@ impl Pluguzu {
 
                                 if let Some(task) = state.editor.update.take() {
                                     if let PluguzuTask::Parse(_) = task {
-                                        if !state.editor.updated {
+                                        if state.editor.updated {
                                             // Tell the host that the project needs to be saved
+                                            setter.begin_set_parameter(&params.version);
                                             setter.set_parameter(
                                                 &params.version,
                                                 params.version.value().overflowing_add(1).0,
                                             );
+                                            setter.end_set_parameter(&params.version);
                                         }
-                                        setter.end_set_parameter(&params.version);
                                         state.editor.updated = false;
                                     }
                                     async_executor.execute_background(task);
