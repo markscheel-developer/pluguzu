@@ -31,6 +31,7 @@ dirt-sys = { git = "https://codeberg.org/TristanCacqueray/dirt-sys.git", rev = "
 # dirt-sys = { path = "../dirt-sys" }
 # Helper to show file picker.
 rfd = "0.15.4"
+atomic_float = "1.1.0"
 
 [workspace]
 members = ["xtask"]

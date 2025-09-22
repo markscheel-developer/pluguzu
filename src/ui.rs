@@ -21,7 +21,7 @@ use egui::{Color32, Shape, Stroke, StrokeKind};
 use crate::events::{Event, LocEvent};
 use crate::syntax::tidal;
 use crate::{highlights, presets};
-use crate::{ParseTask, Pluguzu, PluguzuTask};
+use crate::{BackgroundState, ParseTask, Pluguzu, PluguzuTask};
 
 const VERT_SPACE: f32 = 3.;
 
@@ -57,6 +57,7 @@ struct UIState {
     editor: EditorState,
     preset: PresetState,
     font_size: Arc<AtomicU8>,
+    background_state: Arc<Mutex<BackgroundState>>,
     hosted_in_daw: bool,
 }
 
@@ -91,6 +92,7 @@ impl Pluguzu {
                 picked_path: None,
             },
             font_size: self.params.font_size.clone(),
+            background_state: self.background_state.clone(),
             hosted_in_daw: false,
         };
         let params = self.params.clone();
@@ -122,7 +124,6 @@ impl Pluguzu {
                                 };
                             }
                             UIView::Editor => {
-                                let dsp_state = dsp_state.read().expect("lock");
                                 // Top-bar
                                 egui::MenuBar::new().ui(ui, |ui| {
                                     let style = ui.style_mut();
@@ -145,14 +146,15 @@ impl Pluguzu {
                                 });
 
                                 // Code editor
-                                let status_line = if dsp_state.error.is_some() { 1 } else { 0 };
+                                let bg_state = state.background_state.lock().expect("lock");
+                                let status_line = if bg_state.error.is_some() { 1 } else { 0 };
                                 let output = state.editor.code_editor(ui, status_line);
                                 state.editor.render_highlights(ui, &dsp_state, &output);
 
                                 // Bottom-bar
                                 if status_line > 0 {
                                     ui.horizontal(|ui| {
-                                        if let Some(error) = dsp_state.error.as_deref() {
+                                        if let Some(error) = bg_state.error.as_deref() {
                                             ui.label("Error: ");
                                             ui.label(error);
                                         }
@@ -386,9 +388,10 @@ impl EditorState {
         }
     }
     fn render_status(&mut self, ui: &mut egui::Ui, dsp_state: &crate::PluguzuDSP) {
-        let status = if dsp_state.playing { ">>=" } else { "|-|" };
-        let next = dsp_state.next;
-        let remaining = dsp_state.remaining;
+        let playing = dsp_state.playing.load(Ordering::Relaxed);
+        let status = if playing { ">>=" } else { "|-|" };
+        let next = dsp_state.next.load(Ordering::Relaxed);
+        let remaining = dsp_state.remaining.load(Ordering::Relaxed);
         ui.label(RichText::new(format!(
             "{status} {next} | {remaining} events"
         )));
@@ -408,19 +411,20 @@ impl EditorState {
     ) {
         let painter = ui.painter_at(output.response.rect);
         let ep = highlights::EditorPixels::new(output.galley_pos, &output.galley);
+        let dsp_state_pos = dsp_state.pos.load(Ordering::Relaxed);
 
         // Remove old highlights
         self.highlights
-            .retain(|_, when| dsp_state.pos - *when < 0.5);
+            .retain(|_, when| dsp_state_pos - *when < 0.5);
 
         // Add new highlights
         let evlocs = self.evlocs.read().expect("lock");
-        if dsp_state.playing {
+        if dsp_state.playing.load(Ordering::Relaxed) {
             let mut pos = self.evlocs_pos.load(Ordering::Relaxed) as usize;
             while pos < evlocs.len() {
                 let event = &evlocs[pos];
                 let start = event.span.start;
-                if dsp_state.pos < start {
+                if dsp_state_pos < start {
                     break;
                 }
 
@@ -434,7 +438,7 @@ impl EditorState {
         }
 
         let shapes = self.highlights.iter().map(|(el, when)| {
-            let alpha = (egui::lerp(1.0..=0.3, (dsp_state.pos - when) / 0.5) * 255.) as u8;
+            let alpha = (egui::lerp(1.0..=0.3, (dsp_state_pos - when) / 0.5) * 255.) as u8;
             Shape::rect_stroke(
                 ep.highlight_rect(el.col, el.row, el.len),
                 5.,

@@ -17,13 +17,14 @@ mod syntax;
 mod ui;
 pub(crate) use debug::{debug, info, pwarn};
 
+use atomic_float::AtomicF64;
 use nih_plug::prelude::*;
 use nih_plug_egui::{egui, EguiState};
 use std::collections::{HashMap, HashSet};
 use std::ops::DerefMut;
 use std::path::PathBuf;
 use std::sync::atomic::Ordering;
-use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU32, AtomicU8};
+use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU32, AtomicU8, AtomicUsize};
 use std::sync::{Arc, Mutex, RwLock};
 
 use crate::config::Config;
@@ -33,16 +34,14 @@ use crate::midi::{FutureNoteOff, ProcessMidi};
 
 /// Info from the engine for the UI status bar
 struct PluguzuDSP {
-    /// The current code parsing error.
-    error: Option<String>,
     /// Is the transport playing?
-    playing: bool,
+    playing: AtomicBool,
     /// When is the next events buffer starting.
-    next: i32,
+    next: AtomicI32,
     /// Count down of the remaining bar until the next events buffer start.
-    remaining: usize,
+    remaining: AtomicUsize,
     /// The current start fraction for event highlights
-    pos: f64,
+    pos: AtomicF64,
 }
 
 const WELCOME: &str = r#"-- Welcome to Pluguzu
@@ -104,6 +103,13 @@ impl Default for PluguzuParams {
     }
 }
 
+/// This structure is shared between the background executor and the UI
+/// It is not accessed nor lock in the process audio callback
+struct BackgroundState {
+    /// The current code parsing error.
+    error: Option<String>,
+}
+
 pub struct Pluguzu {
     /// The params saved to the DAW.
     params: Arc<PluguzuParams>,
@@ -119,7 +125,7 @@ pub struct Pluguzu {
     hosted_in_daw: Arc<AtomicBool>,
 
     /// The info shared to the UI.
-    dsp_state: Arc<RwLock<PluguzuDSP>>,
+    dsp_state: Arc<PluguzuDSP>,
 
     /// The pending note-offs.
     note_offs: HashMap<u8, FutureNoteOff>,
@@ -151,6 +157,7 @@ pub struct Pluguzu {
     evlocs: Arc<RwLock<Arc<Vec<Event>>>>,
     /// The last event location position.
     evlocs_pos: Arc<AtomicU32>,
+    background_state: Arc<Mutex<BackgroundState>>,
 }
 
 impl Default for Pluguzu {
@@ -165,13 +172,12 @@ impl Default for Pluguzu {
             hosted_in_daw: Arc::new(AtomicBool::new(true)),
             events: None,
 
-            dsp_state: Arc::new(RwLock::new(PluguzuDSP {
-                playing: false,
-                error: None,
-                next: 0,
-                remaining: 0,
-                pos: 0.,
-            })),
+            dsp_state: Arc::new(PluguzuDSP {
+                playing: AtomicBool::new(false),
+                next: AtomicI32::new(0),
+                remaining: AtomicUsize::new(0),
+                pos: AtomicF64::new(0.),
+            }),
 
             dirt: dirt::Dirt::new(8),
             samples_missing: HashSet::with_capacity(42),
@@ -196,6 +202,7 @@ impl Default for Pluguzu {
 
             evlocs: Arc::new(RwLock::new(Arc::new(Vec::new()))),
             evlocs_pos: Arc::new(AtomicU32::new(0)),
+            background_state: Arc::new(Mutex::new(BackgroundState { error: None })),
         }
     }
 }
@@ -342,10 +349,9 @@ impl Plugin for Pluguzu {
         // When not playing...
         if !playing || transport.preroll_active.unwrap_or(false) {
             {
-                let mut state = self.dsp_state.write().expect("lock");
-                state.playing = false;
+                self.dsp_state.playing.store(false, Ordering::Relaxed);
                 // Advance the time for the highlights
-                state.pos += 0.2;
+                self.dsp_state.pos.fetch_add(0.2, Ordering::Relaxed);
             }
 
             // Reset event position.
@@ -435,11 +441,12 @@ impl Plugin for Pluguzu {
             .playback(self.now, frames_usize, buffer.as_slice());
 
         // Update status for the UI
-        let mut dsp_state = self.dsp_state.write().expect("lock");
-        dsp_state.playing = playing;
-        dsp_state.next = next_buffer - cur_bar;
-        dsp_state.remaining = events.len() - self.events_pos;
-        dsp_state.pos = self.midi.start;
+        self.dsp_state.playing.store(playing, Ordering::Relaxed);
+        let next = next_buffer - cur_bar;
+        self.dsp_state.next.store(next, Ordering::Relaxed);
+        let remaining = events.len() - self.events_pos;
+        self.dsp_state.remaining.store(remaining, Ordering::Relaxed);
+        self.dsp_state.pos.store(self.midi.start, Ordering::Relaxed);
         ProcessStatus::KeepAlive
     }
 
@@ -447,13 +454,13 @@ impl Plugin for Pluguzu {
 
     fn task_executor(&mut self) -> TaskExecutor<Self> {
         let code = self.params.code.clone();
-        let dsp_state = self.dsp_state.clone();
         let state = self.state.clone();
         let current_bar = self.current_bar.clone();
         let evlocs_pos = self.evlocs_pos.clone();
         let evlocs = self.evlocs.clone();
         let skip_past_events = self.skip_past_events.clone();
         let samples_library = self.samples_library.clone();
+        let background_state = self.background_state.clone();
 
         Box::new(move |task| {
             let current_bar = current_bar.load(Ordering::Relaxed);
@@ -464,7 +471,7 @@ impl Plugin for Pluguzu {
                     // println!("Parsing {}", code);
                     let err = state.parse(&code);
                     let is_err = err.is_some();
-                    dsp_state.write().expect("lock").error = err;
+                    background_state.lock().expect("lock").error = err;
                     let start = current_bar + 1;
                     if !is_err {
                         match parse_task {
