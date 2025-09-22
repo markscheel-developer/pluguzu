@@ -2,6 +2,8 @@
 
 A standalone live coding text editor.
 
+> Discuss: https://club.tidalcycles.org/t/introducing-pluguzu-a-plugin-to-run-tidal-natively-in-a-daw/5758
+
 ## Overview and scope
 
 The goal of pluguzu is to provide an easy to use environment to perform live code.
