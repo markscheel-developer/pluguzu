@@ -274,11 +274,11 @@ impl Pluguzu {
         let mut state = state.lock().expect("lock");
         if cur_bar < self.events_start_bar || cur_bar >= self.events_start_bar + BUFFER_LEN {
             nih_plug::util::permit_alloc(|| {
-                debug!(
-                    "{pos:.4}: {cur_bar} is out of sync {}..{}, rendering the event synchronously... ",
+                pwarn!(
+                    "{cur_bar} is out of sync {}..{}, rendering the event synchronously... ",
                     self.events_start_bar,
                     self.events_start_bar + BUFFER_LEN
-                    );
+                );
                 state.render(cur_bar, cur_bar + BUFFER_LEN);
             });
             self.sync_events_buffer(state.deref_mut(), cur_bar, ctx);

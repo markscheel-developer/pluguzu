@@ -6,7 +6,9 @@
 macro_rules! debug {
     ($($rest:tt)+) => {
         #[cfg(feature = "debug")]
-        println!($($rest)*)
+        nih_plug::util::permit_alloc(|| {
+            println!($($rest)*)
+        })
     }
 }
 
