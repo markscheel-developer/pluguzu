@@ -44,27 +44,6 @@ struct PluguzuDSP {
     pos: AtomicF64,
 }
 
-const WELCOME: &str = r#"-- Welcome to Pluguzu
---
--- Press shift+enter to load the code in place.
--- Known bugs:
--- * backspace might remove whole words.
---   The alt modifier might be stuck, try press ALT alone
---
--- Reference: https://tidalcycles.org/docs/reference/cycles
--- Source: https://codeberg.org/TristanCacqueray/pluguzu
---
--- Here is an example pattern to get started:
-stack [
-  -- a melody for MIDI synth
-  fast "<1 [1.5 2?]>" $ n $
-    arp "<up down diverge>" "<a'm9'8 e'7sus4'8>"
-    |- "<12 [12 5]>/2"
-  -- dirt demo
-, s "tok*4" # cutoff "80 100 150 500"
-]
-"#;
-
 /// The params that can be saved/loaded
 #[derive(Params)]
 pub struct PluguzuParams {
@@ -89,7 +68,7 @@ impl Default for PluguzuParams {
     fn default() -> Self {
         Self {
             editor_state: EguiState::from_size(800, 600),
-            code: Arc::new(Mutex::new(WELCOME.trim_end().into())),
+            code: Arc::new(Mutex::new(crate::config::WELCOME.trim_end().into())),
             font_size: Arc::new(AtomicU8::new(20)),
             version: IntParam::new(
                 "version",

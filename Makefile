@@ -44,5 +44,6 @@ haskell-lib:
 	@find $(PWD)/dist-newstyle/ \( -name libpluguzu.so  -or -name Pluguzu_stub.h \) -exec ln -sf {} bin/ \;
 	@ln -sf $(shell ghc-pkg field rts include-dirs --simple-output) bin/rts-header
 
-run-standalone:
-	@env LD_LIBRARY_PATH=./bin ./target/release/pluguzu
+run-debug:
+	@cargo build --features debug
+	@env LD_LIBRARY_PATH=./bin ./target/debug/pluguzu
