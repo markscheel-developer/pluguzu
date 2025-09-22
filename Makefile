@@ -24,7 +24,10 @@ install-standalone:
 	@echo "[+] Installed STANDALONE: ~/.local/bin/pluguzu"
 
 install: install-standalone install-clap install-vst3
-	@sh -c "test -e ~/.config/pluguzu/samples && echo -e '[Warning] No samples found in ~/.config/pluguzu/samples, try running:\n  git clone --depth 1 https://github.com/tidalcycles/Dirt-Samples ~/.config/pluguzu/samples'"
+	@test -e ~/.config/pluguzu/samples || { \
+		echo "[Warning] No samples found in ~/.config/pluguzu/samples, try running:" ; \
+		echo "  git clone --depth 1 https://github.com/tidalcycles/Dirt-Samples ~/.config/pluguzu/samples" ; \
+	}
 
 render-presets:
 	@echo "renderPresetData" | cabal repl
@@ -42,5 +45,4 @@ haskell-lib:
 	@ln -sf $(shell ghc-pkg field rts include-dirs --simple-output) bin/rts-header
 
 run-standalone:
-	@cargo build
-	@env LD_LIBRARY_PATH=./bin ./target/debug/pluguzu
+	@env LD_LIBRARY_PATH=./bin ./target/release/pluguzu

@@ -510,7 +510,7 @@ impl Plugin for Pluguzu {
                                 *code.lock().expect("lock") = new_code;
                             }
                         }
-                        Err(e) => nih_warn!("{}: couldn't load {e}", path.display()),
+                        Err(e) => nih_warn!("{}: couldn't load: {e}", path.display()),
                     };
                 }
             }

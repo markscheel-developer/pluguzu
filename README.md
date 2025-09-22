@@ -45,7 +45,8 @@ Pluguzu is known to work on the following system:
 
 ```bash
 # Install Fedora/CentOS system dependencies
-sudo dnf install -y mesa-libGL-devel libXext-devel libXrandr-devel libXfixes-devel dbus-devel libsndfile-devel gcc gcc-c++ gmp gmp-devel make ncurses ncurses-compat-libs xz perl pkg-config git
+sudo dnf install -y cmake alsa-lib-devel wayland-devel jack-audio-connection-kit-devel liblo-devel libsamplerate-devel mesa-libGL-devel libXext-devel libXrandr-devel libXfixes-devel dbus-devel libsndfile-devel gcc gcc-c++ gmp gmp-devel make ncurses ncurses-compat-libs xz perl pkg-config git
+
 
 # Install Haskell cabal
 curl --proto '=https' --tlsv1.2 -sSf https://get-ghcup.haskell.org | env BOOTSTRAP_HASKELL_GHC_VERSION=latest BOOTSTRAP_HASKELL_NONINTERACTIVE=1 sh
