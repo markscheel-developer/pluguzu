@@ -3,7 +3,7 @@
 
 //! The command line entry point
 
-use pluguzu::haskell::HaskellState;
+use pluguzu::haskell::HaskellRuntime;
 
 fn main() {
     let mut args = std::env::args().collect::<Vec<_>>();
@@ -11,12 +11,12 @@ fn main() {
         && cmd == "debug"
     {
         let pat = args.get(2).expect("a pattern");
-        let mut ps = HaskellState::default();
+        let mut ps = HaskellRuntime::default();
         if let Some(err) = ps.parse(pat) {
             println!("Parse failure: {err}");
         } else {
-            ps.render(0, 4);
-            for (nr, ev) in ps.events.iter().enumerate() {
+            let events = ps.render(0, 4);
+            for (nr, ev) in events.iter().enumerate() {
                 println!("{nr}=> {ev:?}");
             }
         }

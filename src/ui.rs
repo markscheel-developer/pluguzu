@@ -398,7 +398,7 @@ impl EditorState {
             "{status} {next} | {remaining} events"
         )));
         if self.updated && ui.button("Play").on_hover_text(PLAY_TIP).clicked() {
-            self.update = Some(PluguzuTask::Parse(ParseTask::NoRender));
+            self.update = Some(PluguzuTask::Parse(ParseTask::InPlace));
         }
         if let Some(path) = self.picked_path.as_ref() {
             ui.label("  | ");

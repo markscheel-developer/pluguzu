@@ -29,7 +29,7 @@ use std::sync::{Arc, Mutex, RwLock};
 
 use crate::config::Config;
 use crate::events::{Event, EventKind};
-use crate::haskell::HaskellState;
+use crate::haskell::{HaskellRuntime, HaskellState};
 use crate::midi::{FutureNoteOff, ProcessMidi};
 
 /// Info from the engine for the UI status bar
@@ -97,8 +97,14 @@ pub struct Pluguzu {
     /// The params saved to the DAW.
     params: Arc<PluguzuParams>,
 
-    /// The Haskell binding state.
-    state: Arc<Mutex<HaskellState>>,
+    /// The Haskell runtime, used to parse and render events. This is not used by the process callback.
+    /// Once the events are generated, they are written to the haskell_state.
+    haskell_runtime: Arc<Mutex<HaskellRuntime>>,
+
+    /// The Haskell binding state. This is locked by the process callback to check for new events.
+    /// This must not be held longer than necessary by the background task.
+    /// Maybe a Mutex is not necessary, something like a crossbeam channels or a UnsafeRefCell could be used instead?
+    haskell_state: Arc<Mutex<HaskellState>>,
 
     /// User config
     config: Arc<Config>,
@@ -133,8 +139,6 @@ pub struct Pluguzu {
     events_pos: usize,
     /// When the event buffers was last synchronized.
     events_start_bar: i32,
-    /// When updating in-place with shift-enter, this boolean indicate that past event needs to be skipped.
-    skip_past_events: Arc<AtomicBool>,
 
     background_state: Arc<Mutex<BackgroundState>>,
 }
@@ -145,7 +149,8 @@ impl Default for Pluguzu {
         let samples_dir = config.path("samples");
         Self {
             params: Arc::new(PluguzuParams::default()),
-            state: Arc::new(Mutex::new(HaskellState::default())),
+            haskell_state: Arc::new(Mutex::new(HaskellState::default())),
+            haskell_runtime: Arc::new(Mutex::new(HaskellRuntime::default())),
             config: Arc::new(config),
             initial_file: Arc::new(Mutex::new(None)),
             hosted_in_daw: Arc::new(AtomicBool::new(true)),
@@ -176,8 +181,6 @@ impl Default for Pluguzu {
 
             events_start_bar: -1024,
             events_pos: 0,
-
-            skip_past_events: Arc::new(AtomicBool::new(false)),
 
             background_state: Arc::new(Mutex::new(BackgroundState {
                 error: None,
@@ -215,7 +218,7 @@ impl Pluguzu {
         // Here is the tricky part.
         // We must not de-allocate the events buffer in the audio callback.
         if let Some(stale) = state.stale.take() {
-            // This should never happen because the background thread always free the buffer after the sync.
+            // This should never happen because the background thread should always free the buffer after the sync.
             nih_plug::util::permit_alloc(move || {
                 nih_warn!("Stale buffer is not free, de-allocating from audio callback...");
                 std::mem::drop(stale);
@@ -229,7 +232,19 @@ impl Pluguzu {
         self.events_start_bar = start;
         state.bar_start = None;
 
+        if state.in_place {
+            debug!("Skipping event due to forced in-place update...");
+            while self.events_pos < events.len() {
+                let ev = &events[self.events_pos];
+                if ev.span.start >= self.midi.end {
+                    break;
+                }
+                self.events_pos += 1;
+            }
+        }
+
         // Pre Load samples
+        // TODO: this could be done outside of the state lock...
         {
             self.samples_missing.clear();
             let lib = self.samples_library.read().expect("lock");
@@ -251,29 +266,37 @@ impl Pluguzu {
     }
 
     fn ensure_events_buffer(&mut self, cur_bar: i32, ctx: &impl ProcessContext<Self>) -> i32 {
-        let state = self.state.clone();
+        let state = self.haskell_state.clone();
         let mut state = state.lock().expect("lock");
-        if cur_bar < self.events_start_bar || cur_bar >= self.events_start_bar + BUFFER_LEN {
+        if let Some(start) = state.bar_start
+            && cur_bar >= start
+            && cur_bar < start + BUFFER_LEN
+        {
+            // new events are already avail
+            debug!("{}: Copying buffer data from {}", self.midi.start, start);
+            self.sync_events_buffer(state.deref_mut(), start, ctx);
+            start + BUFFER_LEN
+        } else if cur_bar < self.events_start_bar || cur_bar >= self.events_start_bar + BUFFER_LEN {
+            // We are out of sync, need new events
             nih_plug::util::permit_alloc(|| {
                 pwarn!(
-                    "{cur_bar} is out of sync {}..{}, rendering the event synchronously... ",
+                    "{}: {cur_bar} is out of sync {}..{}, rendering the event synchronously... ",
+                    self.midi.start,
                     self.events_start_bar,
                     self.events_start_bar + BUFFER_LEN
                 );
-                state.render(cur_bar, cur_bar + BUFFER_LEN);
+                // TODO: it might be possible that the events are being generated right now in the background.
+                // so if the runtime is already locked, then maybe we could skip the render now?
+                let mut runtime = self.haskell_runtime.lock().expect("lock");
+                let events = runtime.render(cur_bar, cur_bar + BUFFER_LEN);
+                state.update(cur_bar, events, &mut runtime, false);
             });
             self.sync_events_buffer(state.deref_mut(), cur_bar, ctx);
             cur_bar + BUFFER_LEN
-        } else if let Some(start) = state.bar_start {
-            if cur_bar >= start {
-                debug!("{cur_bar}: Copying buffer data from {}", start);
-                self.sync_events_buffer(state.deref_mut(), start, ctx);
-                start + BUFFER_LEN
-            } else {
-                start
-            }
         } else {
-            self.events_start_bar + BUFFER_LEN
+            state
+                .bar_start
+                .unwrap_or(self.events_start_bar + BUFFER_LEN)
         }
     }
 }
@@ -343,10 +366,6 @@ impl Plugin for Pluguzu {
             // return ProcessStatus::KeepAlive;
         }
 
-        // Ensure the events buffer is ready
-        let next_buffer = self.ensure_events_buffer(cur_bar, context);
-        let mut events = self.events.as_ref().expect("events to exist").clone();
-
         // Compute current frame info
         let pos = transport.pos_beats().expect("pos beats") / 4.0;
         let frames = frames_usize as f64;
@@ -376,20 +395,9 @@ impl Plugin for Pluguzu {
         // Send any previously registered note-off.
         self.send_note_offs(context);
 
-        if self.skip_past_events.fetch_and(false, Ordering::SeqCst) {
-            if self.events_pos == 0 {
-                debug!("Skipping event due to forced in-place update...");
-                while self.events_pos < events.len() {
-                    let ev = &events[self.events_pos];
-                    if ev.span.start >= self.midi.end {
-                        break;
-                    }
-                    self.events_pos += 1;
-                }
-            } else {
-                pwarn!("Skipping past event was requested, but the current buffer hasn't been re-initialized?!");
-            }
-        }
+        // Ensure the events buffer is ready
+        let next_buffer = self.ensure_events_buffer(cur_bar, context);
+        let mut events = self.events.as_ref().expect("events to exist").clone();
 
         // Send events.
         self.send_tidal_events(self.midi.start, self.midi.end, &events, context);
@@ -397,22 +405,22 @@ impl Plugin for Pluguzu {
         // Send events from the begining of the next-buffer.
         if self.midi.end > next_buffer as f64 {
             // try to resync buffer, e.g.: when the current run overlap with the next chunk
-            let state = self.state.clone();
-            let mut state = state.lock().expect("lock");
-            if let Some(start) = state.bar_start
+            let haskell_state = self.haskell_state.clone();
+            let mut haskell_state = haskell_state.lock().expect("lock");
+            if let Some(start) = haskell_state.bar_start
                 && next_buffer >= start
             {
                 debug!(
                     "{pos:.4} process buffer overlaps with next event buffer {} > {next_buffer}",
                     self.midi.end
                 );
-                self.sync_events_buffer(state.deref_mut(), next_buffer, context);
+                self.sync_events_buffer(haskell_state.deref_mut(), next_buffer, context);
                 events = self.events.as_ref().expect("events").clone();
                 self.send_tidal_events(self.midi.start, self.midi.end, &events, context);
             } else {
-                nih_error!(
+                pwarn!(
                     "{pos:.4} ERROR: the next event buffer is not ready?! {next_buffer} {:?}",
-                    state.bar_start
+                    haskell_state.bar_start
                 );
             }
         }
@@ -435,46 +443,73 @@ impl Plugin for Pluguzu {
 
     fn task_executor(&mut self) -> TaskExecutor<Self> {
         let code = self.params.code.clone();
-        let state = self.state.clone();
+        let haskell_runtime = self.haskell_runtime.clone();
+        let haskell_state = self.haskell_state.clone();
         let current_bar = self.current_bar.clone();
-        let skip_past_events = self.skip_past_events.clone();
         let samples_library = self.samples_library.clone();
         let background_state = self.background_state.clone();
 
         Box::new(move |task| {
             let current_bar = current_bar.load(Ordering::Relaxed);
-            match task {
-                PluguzuTask::Parse(parse_task) => {
-                    let mut state = state.lock().expect("lock");
-                    let code = code.lock().expect("lock");
-                    // println!("Parsing {}", code);
-                    let err = state.parse(&code);
-                    let is_err = err.is_some();
-                    background_state.lock().expect("lock").error = err;
-                    let start = current_bar + 1;
-                    if !is_err {
-                        match parse_task {
-                            ParseTask::InPlace => {
-                                skip_past_events.store(true, Ordering::SeqCst);
-                                state.render(current_bar, current_bar + BUFFER_LEN);
-                            }
-                            ParseTask::Next => state.render(start, start + BUFFER_LEN),
-                            ParseTask::NoRender => {}
-                        }
+            let do_parse = |parse_task| {
+                // Acquire the Haskell runtime.
+                let mut runtime = haskell_runtime.lock().expect("lock");
+
+                let code = code.lock().expect("lock");
+                // println!("Parsing {}", code);
+
+                // Perform code parse and maybe render
+                let err = runtime.parse(&code);
+                let is_err = err.is_some();
+                background_state.lock().expect("lock").error = err;
+                let render = |runtime: &mut HaskellRuntime, start, in_place| {
+                    let events = runtime.render(start, start + BUFFER_LEN);
+                    // Lock the process callback at the end to update the shared state with the new events.
+                    debug!(
+                        "{current_bar} parsed and rendered {start}..{} (in place: {in_place})",
+                        start + BUFFER_LEN
+                    );
+                    haskell_state
+                        .lock()
+                        .expect("lock")
+                        .update(start, events, runtime, in_place);
+                };
+                if !is_err {
+                    match parse_task {
+                        ParseTask::InPlace => render(&mut runtime, current_bar, true),
+                        ParseTask::Next => render(&mut runtime, current_bar + 1, false),
+                        ParseTask::NoRender => {}
                     }
                 }
+            };
+            match task {
+                PluguzuTask::Parse(parse_task) => do_parse(parse_task),
                 PluguzuTask::Render(start) => {
-                    let mut state = state.lock().expect("lock");
+                    // This task happens right after the process callback got the events.
+                    debug!("{current_bar}: Rendering {}", start);
 
-                    // right after the events are synchronized in the audio callback
-                    // a render job is started.
-                    // so now is a good time to also share the events with the UI for highlights
+                    // First acquire the Haskell runtime to render the next batch.
+                    let mut haskell_runtime = haskell_runtime.lock().expect("lock");
+                    let next_events = haskell_runtime.render(start, start + BUFFER_LEN);
+
+                    // Also acquire the background state tot update the evlocs for highlights...
                     let mut bg_state = background_state.lock().expect("lock");
-                    bg_state.evlocs = state.events.clone();
                     bg_state.evlocs_pos = 0;
 
-                    debug!("{current_bar}: Rendering {}", start);
-                    state.render(start, start + BUFFER_LEN);
+                    // Finally lock the process callback to store the new events.
+                    let mut haskell_state = haskell_state.lock().expect("lock");
+
+                    // Copy the events that are used in the process callback for the evlocs.
+                    // note: this sometime doesn't work on the first cycle when the transport has jitter, see:
+                    //  CPS changed to 0.5
+                    //  01:31:45 [WARN] pluguzu: 3885.173333333333: 3885 is out of sync -1024..-1020, rendering the event synchronously...
+                    //  01:31:45 [WARN] pluguzu: 722.1653333333334: 722 is out of sync 3885..3889, rendering the event synchronously...
+                    //  722: Rendering 3889
+                    //  722: Rendering 726
+                    // ^ it looks like the render are queued and this causes a desync between the locs and the events?
+                    bg_state.evlocs = haskell_state.events.clone();
+                    // And update the shared state.
+                    haskell_state.update(start, next_events, &mut haskell_runtime, false)
                 }
                 PluguzuTask::LoadSample(sev) => {
                     let mut lib = samples_library.write().expect("lock");
@@ -495,6 +530,7 @@ impl Plugin for Pluguzu {
                         Ok(new_code) => {
                             if !new_code.is_empty() {
                                 *code.lock().expect("lock") = new_code;
+                                do_parse(ParseTask::InPlace)
                             }
                         }
                         Err(e) => nih_warn!("{}: couldn't load: {e}", path.display()),
