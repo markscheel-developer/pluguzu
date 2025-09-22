@@ -24,7 +24,7 @@ use std::collections::{HashMap, HashSet};
 use std::ops::DerefMut;
 use std::path::PathBuf;
 use std::sync::atomic::Ordering;
-use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU32, AtomicU8, AtomicUsize};
+use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU8, AtomicUsize};
 use std::sync::{Arc, Mutex, RwLock};
 
 use crate::config::Config;
@@ -108,6 +108,10 @@ impl Default for PluguzuParams {
 struct BackgroundState {
     /// The current code parsing error.
     error: Option<String>,
+    /// The event location for highlights.
+    evlocs: Arc<Vec<Event>>,
+    /// The last event location position.
+    evlocs_pos: usize,
 }
 
 pub struct Pluguzu {
@@ -153,10 +157,6 @@ pub struct Pluguzu {
     /// When updating in-place with shift-enter, this boolean indicate that past event needs to be skipped.
     skip_past_events: Arc<AtomicBool>,
 
-    /// The event location for highlights.
-    evlocs: Arc<RwLock<Arc<Vec<Event>>>>,
-    /// The last event location position.
-    evlocs_pos: Arc<AtomicU32>,
     background_state: Arc<Mutex<BackgroundState>>,
 }
 
@@ -200,9 +200,11 @@ impl Default for Pluguzu {
 
             skip_past_events: Arc::new(AtomicBool::new(false)),
 
-            evlocs: Arc::new(RwLock::new(Arc::new(Vec::new()))),
-            evlocs_pos: Arc::new(AtomicU32::new(0)),
-            background_state: Arc::new(Mutex::new(BackgroundState { error: None })),
+            background_state: Arc::new(Mutex::new(BackgroundState {
+                error: None,
+                evlocs: Arc::new(Vec::new()),
+                evlocs_pos: 0,
+            })),
         }
     }
 }
@@ -456,8 +458,6 @@ impl Plugin for Pluguzu {
         let code = self.params.code.clone();
         let state = self.state.clone();
         let current_bar = self.current_bar.clone();
-        let evlocs_pos = self.evlocs_pos.clone();
-        let evlocs = self.evlocs.clone();
         let skip_past_events = self.skip_past_events.clone();
         let samples_library = self.samples_library.clone();
         let background_state = self.background_state.clone();
@@ -490,8 +490,9 @@ impl Plugin for Pluguzu {
                     // right after the events are synchronized in the audio callback
                     // a render job is started.
                     // so now is a good time to also share the events with the UI for highlights
-                    *evlocs.write().expect("lock") = state.events.clone();
-                    evlocs_pos.store(0, Ordering::Relaxed);
+                    let mut bg_state = background_state.lock().expect("lock");
+                    bg_state.evlocs = state.events.clone();
+                    bg_state.evlocs_pos = 0;
 
                     debug!("{current_bar}: Rendering {}", start);
                     state.render(start, start + BUFFER_LEN);

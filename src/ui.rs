@@ -13,12 +13,12 @@ use nih_plug_egui::{
 
 use std::collections::BTreeMap;
 use std::ops::{Deref, DerefMut};
-use std::sync::atomic::{AtomicU32, AtomicU8, Ordering};
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::{Arc, Mutex};
 
 use egui::{Color32, Shape, Stroke, StrokeKind};
 
-use crate::events::{Event, LocEvent};
+use crate::events::LocEvent;
 use crate::syntax::tidal;
 use crate::{highlights, presets};
 use crate::{BackgroundState, ParseTask, Pluguzu, PluguzuTask};
@@ -40,8 +40,6 @@ struct EditorState {
     code: Arc<Mutex<String>>,
     font_size: f32,
 
-    evlocs: Arc<RwLock<Arc<Vec<Event>>>>,
-    evlocs_pos: Arc<AtomicU32>,
     highlights: BTreeMap<LocEvent, f64>,
 
     focused: bool,
@@ -83,8 +81,6 @@ impl Pluguzu {
                 code: self.params.code.clone(),
                 font_size: 0.,
                 highlights: BTreeMap::new(),
-                evlocs: self.evlocs.clone(),
-                evlocs_pos: self.evlocs_pos.clone(),
                 focused: false,
                 updated: false,
                 unsaved: false,
@@ -146,10 +142,15 @@ impl Pluguzu {
                                 });
 
                                 // Code editor
-                                let bg_state = state.background_state.lock().expect("lock");
+                                let mut bg_state = state.background_state.lock().expect("lock");
                                 let status_line = if bg_state.error.is_some() { 1 } else { 0 };
                                 let output = state.editor.code_editor(ui, status_line);
-                                state.editor.render_highlights(ui, &dsp_state, &output);
+                                state.editor.render_highlights(
+                                    ui,
+                                    &dsp_state,
+                                    &mut bg_state,
+                                    &output,
+                                );
 
                                 // Bottom-bar
                                 if status_line > 0 {
@@ -407,6 +408,7 @@ impl EditorState {
         &mut self,
         ui: &mut egui::Ui,
         dsp_state: &crate::PluguzuDSP,
+        bg_state: &mut crate::BackgroundState,
         output: &TextEditOutput,
     ) {
         let painter = ui.painter_at(output.response.rect);
@@ -418,11 +420,9 @@ impl EditorState {
             .retain(|_, when| dsp_state_pos - *when < 0.5);
 
         // Add new highlights
-        let evlocs = self.evlocs.read().expect("lock");
         if dsp_state.playing.load(Ordering::Relaxed) {
-            let mut pos = self.evlocs_pos.load(Ordering::Relaxed) as usize;
-            while pos < evlocs.len() {
-                let event = &evlocs[pos];
+            while bg_state.evlocs_pos < bg_state.evlocs.len() {
+                let event = &bg_state.evlocs[bg_state.evlocs_pos];
                 let start = event.span.start;
                 if dsp_state_pos < start {
                     break;
@@ -432,9 +432,8 @@ impl EditorState {
                     // This doesn't replace existing highlights to avoid fast blinkin
                     self.highlights.entry(*loc).or_insert(start);
                 }
-                pos += 1;
+                bg_state.evlocs_pos += 1;
             }
-            self.evlocs_pos.store(pos as u32, Ordering::Relaxed);
         }
 
         let shapes = self.highlights.iter().map(|(el, when)| {
