@@ -101,7 +101,10 @@ Here are the important files:
 Pluguzu implements a double buffering logic to render the upcoming events in the background:
 
 - See the `Pluguzu::sync_events_buffer` for the realtime part, and,
-- `HaskellState::render` for the background work.
+- `HaskellRuntime::render` for the background work.
+
+> Note that the implementation is a work in progress to implement a lock less solution
+> to ensure a smooth process callback, thus it is kind of ugly at the moment.
 
 Pluguzu is driven by the host transport and it takes care of performing the MIDI and Sound events.
 

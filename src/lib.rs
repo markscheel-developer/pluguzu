@@ -21,7 +21,6 @@ use atomic_float::AtomicF64;
 use nih_plug::prelude::*;
 use nih_plug_egui::{egui, EguiState};
 use std::collections::{HashMap, HashSet};
-use std::ops::DerefMut;
 use std::path::PathBuf;
 use std::sync::atomic::Ordering;
 use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU8, AtomicUsize};
@@ -29,7 +28,7 @@ use std::sync::{Arc, Mutex, RwLock};
 
 use crate::config::Config;
 use crate::events::{Event, EventKind};
-use crate::haskell::{HaskellRuntime, HaskellState};
+use crate::haskell::HaskellState;
 use crate::midi::{FutureNoteOff, ProcessMidi};
 
 /// Info from the engine for the UI status bar
@@ -97,14 +96,16 @@ pub struct Pluguzu {
     /// The params saved to the DAW.
     params: Arc<PluguzuParams>,
 
+    haskell_state: Arc<HaskellState>,
+
     /// The Haskell runtime, used to parse and render events. This is not used by the process callback.
-    /// Once the events are generated, they are written to the haskell_state.
-    haskell_runtime: Arc<Mutex<HaskellRuntime>>,
+    /// Once the events are generated, they are written to the background_buffer.
+    // haskell_runtime: Arc<Mutex<HaskellRuntime>>,
 
     /// The Haskell binding state. This is locked by the process callback to check for new events.
     /// This must not be held longer than necessary by the background task.
     /// Maybe a Mutex is not necessary, something like a crossbeam channels or a UnsafeRefCell could be used instead?
-    haskell_state: Arc<Mutex<HaskellState>>,
+    // background_buffer: Arc<Mutex<BackgroundBuffer>>,
 
     /// User config
     config: Arc<Config>,
@@ -121,6 +122,7 @@ pub struct Pluguzu {
 
     /// Samples
     dirt: dirt::Dirt,
+    // TODO: replace this RwLock<> with evmap to avoid locking the process callback when loading samples
     samples_library: Arc<RwLock<crate::samples::SampleLibrary>>,
     samples_missing: HashSet<crate::events::SoundEvent>,
 
@@ -141,6 +143,8 @@ pub struct Pluguzu {
     events_start_bar: i32,
 
     background_state: Arc<Mutex<BackgroundState>>,
+
+    skip_first: bool,
 }
 
 impl Default for Pluguzu {
@@ -149,8 +153,7 @@ impl Default for Pluguzu {
         let samples_dir = config.path("samples");
         Self {
             params: Arc::new(PluguzuParams::default()),
-            haskell_state: Arc::new(Mutex::new(HaskellState::default())),
-            haskell_runtime: Arc::new(Mutex::new(HaskellRuntime::default())),
+            haskell_state: Arc::new(HaskellState::default()),
             config: Arc::new(config),
             initial_file: Arc::new(Mutex::new(None)),
             hosted_in_daw: Arc::new(AtomicBool::new(true)),
@@ -187,6 +190,7 @@ impl Default for Pluguzu {
                 evlocs: Arc::new(Vec::new()),
                 evlocs_pos: 0,
             })),
+            skip_first: false,
         }
     }
 }
@@ -209,30 +213,18 @@ pub enum PluguzuTask {
 const BUFFER_LEN: i32 = 4;
 
 impl Pluguzu {
+    // Setup the process callback buffer.
     fn sync_events_buffer(
         &mut self,
-        state: &mut HaskellState,
         start: i32,
+        in_place: bool,
+        events: Arc<Vec<Event>>,
         ctx: &impl ProcessContext<Self>,
     ) {
-        // Here is the tricky part.
-        // We must not de-allocate the events buffer in the audio callback.
-        if let Some(stale) = state.stale.take() {
-            // This should never happen because the background thread should always free the buffer after the sync.
-            nih_plug::util::permit_alloc(move || {
-                nih_warn!("Stale buffer is not free, de-allocating from audio callback...");
-                std::mem::drop(stale);
-            })
-        }
-        // So we lend back the forground buffer to avoid dropping it ourself.
-        state.stale = self.events.take();
-        // And we borrow the new ones.
-        let events = state.events.clone();
         self.events_pos = 0;
         self.events_start_bar = start;
-        state.bar_start = None;
 
-        if state.in_place {
+        if in_place {
             debug!("Skipping event due to forced in-place update...");
             while self.events_pos < events.len() {
                 let ev = &events[self.events_pos];
@@ -244,7 +236,6 @@ impl Pluguzu {
         }
 
         // Pre Load samples
-        // TODO: this could be done outside of the state lock...
         {
             self.samples_missing.clear();
             let lib = self.samples_library.read().expect("lock");
@@ -262,41 +253,42 @@ impl Pluguzu {
             }
         }
         self.events = Some(events);
+        // Request for next batch to be rendered.
         ctx.execute_background(PluguzuTask::Render(start + BUFFER_LEN))
     }
 
+    fn lock_sync_events_buffer(&mut self, start: i32, ctx: &impl ProcessContext<Self>) {
+        let (in_place, events) = self.haskell_state.lock_read_events(self.events.take());
+        self.sync_events_buffer(start, in_place, events, ctx);
+    }
+
     fn ensure_events_buffer(&mut self, cur_bar: i32, ctx: &impl ProcessContext<Self>) -> i32 {
-        let state = self.haskell_state.clone();
-        let mut state = state.lock().expect("lock");
-        if let Some(start) = state.bar_start
+        let bar_start = self.haskell_state.load_bar_start();
+        if let Some(start) = bar_start
             && cur_bar >= start
             && cur_bar < start + BUFFER_LEN
         {
             // new events are already avail
             debug!("{}: Copying buffer data from {}", self.midi.start, start);
-            self.sync_events_buffer(state.deref_mut(), start, ctx);
+            self.lock_sync_events_buffer(start, ctx);
             start + BUFFER_LEN
         } else if cur_bar < self.events_start_bar || cur_bar >= self.events_start_bar + BUFFER_LEN {
             // We are out of sync, need new events
-            nih_plug::util::permit_alloc(|| {
+            let events = nih_plug::util::permit_alloc(|| {
                 pwarn!(
                     "{}: {cur_bar} is out of sync {}..{}, rendering the event synchronously... ",
                     self.midi.start,
                     self.events_start_bar,
                     self.events_start_bar + BUFFER_LEN
                 );
-                // TODO: it might be possible that the events are being generated right now in the background.
-                // so if the runtime is already locked, then maybe we could skip the render now?
-                let mut runtime = self.haskell_runtime.lock().expect("lock");
-                let events = runtime.render(cur_bar, cur_bar + BUFFER_LEN);
-                state.update(cur_bar, events, &mut runtime, false);
+                self.events.take();
+                self.haskell_state.lock_render_events(cur_bar)
             });
-            self.sync_events_buffer(state.deref_mut(), cur_bar, ctx);
+            self.sync_events_buffer(cur_bar, true, events, ctx);
+            // self.sync_events_buffer(cur_bar, ctx);
             cur_bar + BUFFER_LEN
         } else {
-            state
-                .bar_start
-                .unwrap_or(self.events_start_bar + BUFFER_LEN)
+            bar_start.unwrap_or(self.events_start_bar + BUFFER_LEN)
         }
     }
 }
@@ -320,6 +312,7 @@ impl Plugin for Pluguzu {
             if std::fs::exists(&default_file).unwrap_or(false) {
                 *self.params.code.lock().unwrap() = std::fs::read_to_string(&default_file).unwrap();
             }
+            self.skip_first = true;
         }
 
         context.execute(PluguzuTask::Parse(ParseTask::NoRender));
@@ -338,6 +331,22 @@ impl Plugin for Pluguzu {
         // Pass through midi events:
         while let Some(event) = context.next_event() {
             context.send_event(event)
+        }
+
+        if self.skip_first {
+            // Sometime, in standalone mode, the very first callback happens at the wrong time.
+            // Here is how it looks in debug:
+            //    CPS changed to 0.5
+            //    01:31:45 [WARN] pluguzu: 3885.173333333333: 3885 is out of sync -1024..-1020, rendering the event synchronously...
+            //    01:31:45 [WARN] pluguzu: 722.1653333333334: 722 is out of sync 3885..3889, rendering the event synchronously...
+            //    722: Rendering 3889
+            //    722: Rendering 726
+            // The issue is simply the highlights not being displayed correctly. See the related
+            // comments in the PluguzuTask::Render handler below.
+            //
+            // For now, this is a ugly hack:)
+            self.skip_first = false;
+            return ProcessStatus::KeepAlive;
         }
 
         // Lookup transport and read the current bar.
@@ -404,22 +413,20 @@ impl Plugin for Pluguzu {
         // Send events from the begining of the next-buffer.
         if self.midi.end > next_buffer as f64 {
             // try to resync buffer, e.g.: when the current run overlap with the next chunk
-            let haskell_state = self.haskell_state.clone();
-            let mut haskell_state = haskell_state.lock().expect("lock");
-            if let Some(start) = haskell_state.bar_start
+            if let Some(start) = self.haskell_state.load_bar_start()
                 && next_buffer >= start
             {
                 debug!(
                     "{pos:.4} process buffer overlaps with next event buffer {} > {next_buffer}",
                     self.midi.end
                 );
-                self.sync_events_buffer(haskell_state.deref_mut(), next_buffer, context);
+                self.lock_sync_events_buffer(next_buffer, context);
                 events = self.events.as_ref().expect("events").clone();
                 self.send_tidal_events(self.midi.start, self.midi.end, &events, context);
             } else {
                 pwarn!(
                     "{pos:.4} ERROR: the next event buffer is not ready?! {next_buffer} {:?}",
-                    haskell_state.bar_start
+                    42
                 );
             }
         }
@@ -442,7 +449,6 @@ impl Plugin for Pluguzu {
 
     fn task_executor(&mut self) -> TaskExecutor<Self> {
         let code = self.params.code.clone();
-        let haskell_runtime = self.haskell_runtime.clone();
         let haskell_state = self.haskell_state.clone();
         let current_bar = self.current_bar.clone();
         let samples_library = self.samples_library.clone();
@@ -452,7 +458,7 @@ impl Plugin for Pluguzu {
             let current_bar = current_bar.load(Ordering::Relaxed);
             let do_parse = |parse_task| {
                 // Acquire the Haskell runtime.
-                let mut runtime = haskell_runtime.lock().expect("lock");
+                let mut runtime = haskell_state.rts.lock().expect("lock");
 
                 let code = code.lock().expect("lock");
                 // println!("Parsing {}", code);
@@ -461,22 +467,19 @@ impl Plugin for Pluguzu {
                 let err = runtime.parse(&code);
                 let is_err = err.is_some();
                 background_state.lock().expect("lock").error = err;
-                let render = |runtime: &mut HaskellRuntime, start, in_place| {
+                let mut render = |start, in_place| {
                     let events = runtime.render(start, start + BUFFER_LEN);
                     // Lock the process callback at the end to update the shared state with the new events.
                     debug!(
                         "{current_bar} parsed and rendered {start}..{} (in place: {in_place})",
                         start + BUFFER_LEN
                     );
-                    haskell_state
-                        .lock()
-                        .expect("lock")
-                        .update(start, events, runtime, in_place);
+                    haskell_state.lock_write_events(start, events, in_place);
                 };
                 if !is_err {
                     match parse_task {
-                        ParseTask::InPlace => render(&mut runtime, current_bar, true),
-                        ParseTask::Next => render(&mut runtime, current_bar + 1, false),
+                        ParseTask::InPlace => render(current_bar, true),
+                        ParseTask::Next => render(current_bar + 1, false),
                         ParseTask::NoRender => {}
                     }
                 }
@@ -488,27 +491,23 @@ impl Plugin for Pluguzu {
                     debug!("{current_bar}: Rendering {}", start);
 
                     // First acquire the Haskell runtime to render the next batch.
-                    let mut haskell_runtime = haskell_runtime.lock().expect("lock");
+                    let mut haskell_runtime = haskell_state.rts.lock().expect("lock");
                     let next_events = haskell_runtime.render(start, start + BUFFER_LEN);
 
-                    // Also acquire the background state tot update the evlocs for highlights...
+                    // Also acquire the background state to update the evlocs for highlights...
                     let mut bg_state = background_state.lock().expect("lock");
                     bg_state.evlocs_pos = 0;
 
                     // Finally lock the process callback to store the new events.
-                    let mut haskell_state = haskell_state.lock().expect("lock");
+                    let current_events = haskell_state.lock_write_events(start, next_events, false);
 
-                    // Copy the events that are used in the process callback for the evlocs.
-                    // note: this sometime doesn't work on the first cycle when the transport has jitter, see:
-                    //  CPS changed to 0.5
-                    //  01:31:45 [WARN] pluguzu: 3885.173333333333: 3885 is out of sync -1024..-1020, rendering the event synchronously...
-                    //  01:31:45 [WARN] pluguzu: 722.1653333333334: 722 is out of sync 3885..3889, rendering the event synchronously...
-                    //  722: Rendering 3889
-                    //  722: Rendering 726
-                    // ^ it looks like the render are queued and this causes a desync between the locs and the events?
-                    bg_state.evlocs = haskell_state.events.clone();
-                    // And update the shared state.
-                    haskell_state.update(start, next_events, &mut haskell_runtime, false)
+                    // This is kind of weird. This assumes that the Render task happens
+                    // right after the sync_events_buffer, and thus we can use the 'current_events'
+                    // to setup the highlight.
+                    // This is problematiic in the events two Render task happens back to back,
+                    // then the highlights won't be in sync until the next update.
+                    // To fix that, we can try to use arc-swap instead of Arc<Mutex<Vec<Event>>
+                    bg_state.evlocs = current_events;
                 }
                 PluguzuTask::LoadSample(sev) => {
                     let mut lib = samples_library.write().expect("lock");
