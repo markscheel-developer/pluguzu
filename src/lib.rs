@@ -318,9 +318,8 @@ impl Plugin for Pluguzu {
                 .map(|s| s.into())
                 .unwrap_or_else(|| self.config.path("default.txt"));
             if std::fs::exists(&default_file).unwrap_or(false) {
-                *self.initial_file.lock().unwrap() = Some(default_file.display().to_string())
+                *self.params.code.lock().unwrap() = std::fs::read_to_string(&default_file).unwrap();
             }
-            context.execute(PluguzuTask::LoadCode(default_file));
         }
 
         context.execute(PluguzuTask::Parse(ParseTask::NoRender));
