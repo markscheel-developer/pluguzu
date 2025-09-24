@@ -17,6 +17,7 @@ mod syntax;
 mod ui;
 pub(crate) use debug::{debug, info, pwarn};
 
+use arc_swap::ArcSwap;
 use atomic_float::AtomicF64;
 use nih_plug::prelude::*;
 use nih_plug_egui::{egui, EguiState};
@@ -86,11 +87,11 @@ impl Default for PluguzuParams {
 /// It is not accessed nor lock in the process audio callback
 struct BackgroundState {
     /// The current code parsing error.
-    error: Option<String>,
+    error: Mutex<Option<String>>,
     /// The event location for highlights.
-    evlocs: Arc<Vec<Event>>,
+    evlocs: ArcSwap<Vec<Event>>,
     /// The last event location position.
-    evlocs_pos: usize,
+    evlocs_pos: AtomicUsize,
 }
 
 pub struct Pluguzu {
@@ -143,7 +144,7 @@ pub struct Pluguzu {
     /// When the event buffers was last synchronized.
     events_start_bar: i32,
 
-    background_state: Arc<Mutex<BackgroundState>>,
+    background_state: Arc<BackgroundState>,
 
     skip_first: bool,
 }
@@ -186,17 +187,17 @@ impl Default for Pluguzu {
             events_start_bar: -1024,
             events_pos: 0,
 
-            background_state: Arc::new(Mutex::new(BackgroundState {
-                error: None,
-                evlocs: Arc::new(Vec::new()),
-                evlocs_pos: 0,
-            })),
+            background_state: Arc::new(BackgroundState {
+                error: Mutex::new(None),
+                evlocs: ArcSwap::from_pointee(Vec::new()),
+                evlocs_pos: AtomicUsize::new(0),
+            }),
             skip_first: false,
         }
     }
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, PartialEq)]
 pub enum ParseTask {
     InPlace,
     Next,
@@ -265,7 +266,18 @@ impl Pluguzu {
                 ctx.execute_background(PluguzuTask::LoadSample(missing));
             }
         }
+
+        // Share the events with the foreground thread
+        if self.events.is_none() {
+            // arc-swap does a small allocation the first time it is used...
+            nih_plug::util::permit_alloc(|| self.background_state.evlocs.store(events.clone()));
+        } else {
+            self.background_state.evlocs.store(events.clone())
+        }
+        self.background_state.evlocs_pos.store(0, Ordering::Relaxed);
+
         self.events = Some(events);
+
         // Request for next batch to be rendered.
         ctx.execute_background(PluguzuTask::Render(start + BUFFER_LEN))
     }
@@ -480,7 +492,7 @@ impl Plugin for Pluguzu {
                 // Perform code parse and maybe render
                 let err = haskell_state.rts.lock().parse(&code);
                 let is_err = err.is_some();
-                background_state.lock().expect("lock").error = err;
+                *background_state.error.lock().expect("lock") = err;
                 let render = |start, in_place| {
                     let events = haskell_state.rts.lock().render(start, start + BUFFER_LEN);
 
@@ -508,21 +520,11 @@ impl Plugin for Pluguzu {
                     // First acquire the Haskell runtime to render the next batch.
                     let next_events = haskell_state.rts.lock().render(start, start + BUFFER_LEN);
 
-                    // Also acquire the background state to update the evlocs for highlights...
-                    let mut bg_state = background_state.lock().expect("lock");
-                    bg_state.evlocs_pos = 0;
-
-                    // Finally lock the process callback to store the new events.
-                    let mut buffer = haskell_state.buffer.lock();
-
-                    // This is kind of weird. This assumes that the Render task happens
-                    // right after the sync_events_buffer, and thus we can use the 'current_events'
-                    // to setup the highlight.
-                    // This is problematiic in the events two Render task happens back to back,
-                    // then the highlights won't be in sync until the next update.
-                    // To fix that, we can try to use arc-swap instead of Arc<Mutex<Vec<Event>>
-                    bg_state.evlocs = buffer.events.clone();
-                    buffer.update(start, next_events, false);
+                    // Then lock the process callback to store the new events.
+                    haskell_state
+                        .buffer
+                        .lock()
+                        .update(start, next_events, false);
                 }
                 PluguzuTask::LoadSample(sev) => {
                     let mut lib = samples_library.write().expect("lock");

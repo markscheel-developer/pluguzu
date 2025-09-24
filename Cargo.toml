@@ -33,6 +33,7 @@ dirt-sys = { git = "https://codeberg.org/TristanCacqueray/dirt-sys.git", rev = "
 rfd = "0.15.4"
 atomic_float = "1.1.0"
 parking_lot = "0.12.4"
+arc-swap = "1.7.1"
 
 [workspace]
 members = ["xtask"]

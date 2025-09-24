@@ -55,8 +55,8 @@ struct UIState {
     editor: EditorState,
     preset: PresetState,
     font_size: Arc<AtomicU8>,
-    background_state: Arc<Mutex<BackgroundState>>,
     hosted_in_daw: bool,
+    background_state: Arc<BackgroundState>,
 }
 
 const PLAY_TIP: &str = "shift-enter triggers direct play and alt-enter queues to the next bar…";
@@ -142,20 +142,20 @@ impl Pluguzu {
                                 });
 
                                 // Code editor
-                                let mut bg_state = state.background_state.lock().expect("lock");
-                                let status_line = if bg_state.error.is_some() { 1 } else { 0 };
+                                let error = state.background_state.error.lock().expect("lock");
+                                let status_line = if error.is_some() { 1 } else { 0 };
                                 let output = state.editor.code_editor(ui, status_line);
                                 state.editor.render_highlights(
                                     ui,
                                     &dsp_state,
-                                    &mut bg_state,
+                                    &state.background_state,
                                     &output,
                                 );
 
                                 // Bottom-bar
                                 if status_line > 0 {
                                     ui.horizontal(|ui| {
-                                        if let Some(error) = bg_state.error.as_deref() {
+                                        if let Some(error) = error.as_deref() {
                                             ui.label("Error: ");
                                             ui.label(error);
                                         }
@@ -409,7 +409,7 @@ impl EditorState {
         &mut self,
         ui: &mut egui::Ui,
         dsp_state: &crate::PluguzuDSP,
-        bg_state: &mut crate::BackgroundState,
+        background_state: &BackgroundState,
         output: &TextEditOutput,
     ) {
         let painter = ui.painter_at(output.response.rect);
@@ -422,8 +422,11 @@ impl EditorState {
 
         // Add new highlights
         if dsp_state.playing.load(Ordering::Relaxed) {
-            while bg_state.evlocs_pos < bg_state.evlocs.len() {
-                let event = &bg_state.evlocs[bg_state.evlocs_pos];
+            let mut evlocs_pos = background_state.evlocs_pos.load(Ordering::Relaxed);
+            let initial_pos = evlocs_pos;
+            let evlocs = background_state.evlocs.load();
+            while evlocs_pos < evlocs.len() {
+                let event = &evlocs[evlocs_pos];
                 let start = event.span.start;
                 if dsp_state_pos < start {
                     break;
@@ -433,8 +436,20 @@ impl EditorState {
                     // This doesn't replace existing highlights to avoid fast blinkin
                     self.highlights.entry(*loc).or_insert(start);
                 }
-                bg_state.evlocs_pos += 1;
+                evlocs_pos += 1;
             }
+            let _ = background_state.evlocs_pos.fetch_update(
+                Ordering::Relaxed,
+                Ordering::Relaxed,
+                |old_pos| {
+                    // Only update the pos if the main thread didn't update it in the meantime.
+                    if initial_pos == old_pos {
+                        Some(evlocs_pos)
+                    } else {
+                        None
+                    }
+                },
+            );
         }
 
         let shapes = self.highlights.iter().map(|(el, when)| {
