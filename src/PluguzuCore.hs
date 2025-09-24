@@ -149,7 +149,7 @@ eventToMidi ev = do
         pure (EventMidi mev, Nothing)
     soundEvent = do
         s <- Pattern.getS =<< Map.lookup "s" ev.value
-        let n = fromMaybe 0 (Pattern.getI =<< Map.lookup "n" ev.value)
+        let n = maybe 0 round (Pattern.getN =<< Map.lookup "n" ev.value)
         let params = Map.filterWithKey (\k _ -> k /= "s" && k /= "n") ev.value
         pure (EventSound s n, Just params)
 
