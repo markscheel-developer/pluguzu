@@ -24,10 +24,6 @@ fn main() {
         if let Some(path) = args.get(1)
             && !path.starts_with('-')
         {
-            if !std::fs::exists(path).unwrap_or(false) {
-                std::fs::File::create(path)
-                    .unwrap_or_else(|err| panic!("{path}: can't create {err}"));
-            }
             // The args will be read when the plugin initialize.
             // We need to remove it from what nih standalone expect.
             args.remove(1);

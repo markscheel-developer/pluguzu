@@ -46,4 +46,4 @@ haskell-lib:
 
 run-debug:
 	@cargo build --features debug
-	@env LD_LIBRARY_PATH=./bin ./target/debug/pluguzu
+	@env LD_LIBRARY_PATH=./bin ./target/debug/pluguzu pluguzu-test.hs

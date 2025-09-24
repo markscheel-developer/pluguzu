@@ -98,19 +98,11 @@ pub struct Pluguzu {
     /// The params saved to the DAW.
     params: Arc<PluguzuParams>,
 
+    /// The Haskell runtime and background buffer
     haskell_state: Arc<HaskellState>,
 
-    /// The Haskell runtime, used to parse and render events. This is not used by the process callback.
-    /// Once the events are generated, they are written to the background_buffer.
-    // haskell_runtime: Arc<Mutex<HaskellRuntime>>,
-
-    /// The Haskell binding state. This is locked by the process callback to check for new events.
-    /// This must not be held longer than necessary by the background task.
-    /// Maybe a Mutex is not necessary, something like a crossbeam channels or a UnsafeRefCell could be used instead?
-    // background_buffer: Arc<Mutex<BackgroundBuffer>>,
-
     /// User config
-    config: Arc<Config>,
+    _config: Arc<Config>,
 
     /// Initial file when running standalone
     initial_file: Arc<Mutex<Option<String>>>,
@@ -130,23 +122,26 @@ pub struct Pluguzu {
     midi: ProcessMidi,
     /// The cycle per second, for dirt.
     cps: f32,
+    /// The current beat position.
     now: f64,
+    /// The sample rate.
+    sample_rate: u32,
 
     /// Keep track of the current playing bar so that code update are queued to the next bar.
     current_bar: Arc<AtomicI32>,
 
-    /// The current event buffers to be sent.
+    /// The current events buffer to be sent.
     events: Option<Arc<Vec<Event>>>,
-    /// The last event buffer position.
+    /// The current events buffer position, e.g. the index of the last event submitted.
     events_pos: usize,
-    /// When the event buffers was last synchronized.
+    /// The current event buffers starting bar, e.g. when it was last synchronized.
     events_start_bar: i32,
 
+    /// The state shared between the UI and the background task executor.
     background_state: Arc<BackgroundState>,
 
+    /// Detect the first process callback, to work around a silly bug in nih-plug.
     skip_first: bool,
-
-    sample_rate: u32,
 }
 
 impl Default for Pluguzu {
@@ -156,7 +151,7 @@ impl Default for Pluguzu {
         Self {
             params: Arc::new(PluguzuParams::default()),
             haskell_state: Arc::new(HaskellState::default()),
-            config: Arc::new(config),
+            _config: Arc::new(config),
             initial_file: Arc::new(Mutex::new(None)),
             hosted_in_daw: Arc::new(AtomicBool::new(true)),
             events: None,
@@ -217,6 +212,7 @@ impl Pluguzu {
     // Setup the process callback buffer.
     fn sync_events_buffer(
         &mut self,
+        // The starting bar position of the buffer
         start: i32,
         buffer: &mut BackgroundBuffer,
         ctx: &impl ProcessContext<Self>,
@@ -230,13 +226,16 @@ impl Pluguzu {
                 std::mem::drop(stale);
             })
         }
+        // Store the previous events back in the buffer so that they will be freed by the background task
         buffer.stale = self.events.take();
-        // And we borrow the new ones.
+        // Borrow the new events.
         let events = buffer.events.clone();
         self.events_pos = 0;
         self.events_start_bar = start;
+        // Mark the background buffer as used.
         buffer.bar_start = None;
 
+        // When the buffer is updated in-place, then we advance the buffer pos to skip past events
         if buffer.in_place {
             debug!("Skipping event due to forced in-place update...");
             while self.events_pos < events.len() {
@@ -248,7 +247,7 @@ impl Pluguzu {
             }
         }
 
-        // Share the events with the foreground thread
+        // Share the events with the UI
         if self.events.is_none() {
             // arc-swap does a small allocation the first time it is used...
             nih_plug::util::permit_alloc(|| self.background_state.evlocs.store(events.clone()));
@@ -257,12 +256,14 @@ impl Pluguzu {
         }
         self.background_state.evlocs_pos.store(0, Ordering::Relaxed);
 
+        // Keep a copy of the events for the process callback
         self.events = Some(events);
 
         // Request for next batch to be rendered.
         ctx.execute_background(PluguzuTask::Render(start + BUFFER_LEN))
     }
 
+    // Make sure the events buffer is synchronized, return the end bar of the current buffer.
     fn ensure_events_buffer(&mut self, cur_bar: i32, ctx: &impl ProcessContext<Self>) -> i32 {
         let state = self.haskell_state.clone();
         let mut buffer = state.buffer.lock();
@@ -270,7 +271,7 @@ impl Pluguzu {
             && cur_bar >= start
             && cur_bar < start + BUFFER_LEN
         {
-            // new events are already avail
+            // New events are already available.
             debug!("{}: Copying buffer data from {}", self.midi.start, start);
             self.sync_events_buffer(start, buffer.deref_mut(), ctx);
             start + BUFFER_LEN
@@ -288,15 +289,13 @@ impl Pluguzu {
                     pwarn!("A background is locking the Haskell runtime?!");
                 }
                 let events = state.rts.lock().render(cur_bar, cur_bar + BUFFER_LEN);
-                buffer.update(cur_bar, events, false);
+                buffer.update(cur_bar, events, true);
             });
             self.sync_events_buffer(cur_bar, buffer.deref_mut(), ctx);
-            // self.sync_events_buffer(cur_bar, ctx);
             cur_bar + BUFFER_LEN
         } else {
-            buffer
-                .bar_start
-                .unwrap_or(self.events_start_bar + BUFFER_LEN)
+            // We are in sync.
+            self.events_start_bar + BUFFER_LEN
         }
     }
 }
@@ -313,21 +312,27 @@ impl Plugin for Pluguzu {
         // Load file
         if context.plugin_api() == PluginApi::Standalone {
             self.hosted_in_daw.store(false, Ordering::Relaxed);
-            let default_file = std::env::args()
-                .nth(1)
-                .map(|s| s.into())
-                .unwrap_or_else(|| self.config.path("default.txt"));
-            if std::fs::exists(&default_file).unwrap_or(false) {
-                *self.params.code.lock().unwrap() = std::fs::read_to_string(&default_file).unwrap();
+            match std::env::args().nth(1) {
+                Some(fp) if !fp.starts_with("-") => {
+                    *self.params.code.lock().unwrap() =
+                        std::fs::read_to_string(&fp).unwrap_or_else(|_| format!("-- {fp}\n"));
+                    *self.initial_file.lock().unwrap() = Some(fp);
+                }
+                _ => {}
             }
+
             self.skip_first = true;
         }
 
+        // Parse the initial code
         context.execute(PluguzuTask::Parse(ParseTask::NoRender));
+
+        // Setup sample-rate
         let sr = buffer_config.sample_rate as u32;
         self.dirt.set_sample_rate(sr);
         self.sample_rate = sr;
         self.samples_library.set_sample_rate(sr);
+
         true
     }
 
@@ -377,6 +382,7 @@ impl Plugin for Pluguzu {
 
             // Reset event position.
             self.events_pos = 0;
+            self.background_state.evlocs_pos.store(0, Ordering::Relaxed);
 
             self.send_all_note_offs(context);
             return ProcessStatus::Normal;
