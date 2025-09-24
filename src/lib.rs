@@ -126,7 +126,6 @@ pub struct Pluguzu {
     dirt: dirt::Dirt,
     // TODO: replace this RwLock<> with evmap to avoid locking the process callback when loading samples
     samples_library: Arc<RwLock<crate::samples::SampleLibrary>>,
-    samples_missing: HashSet<crate::events::SoundEvent>,
 
     /// The info needed to send midi events.
     midi: ProcessMidi,
@@ -169,7 +168,6 @@ impl Default for Pluguzu {
             }),
 
             dirt: dirt::Dirt::new(8),
-            samples_missing: HashSet::with_capacity(42),
             samples_library: Arc::new(RwLock::new(crate::samples::SampleLibrary::new(samples_dir))),
 
             note_offs: HashMap::with_capacity(255),
@@ -207,7 +205,6 @@ pub enum ParseTask {
 pub enum PluguzuTask {
     Parse(ParseTask),
     Render(i32),
-    LoadSample(crate::events::SoundEvent),
     LoadCode(PathBuf),
     SaveCode(PathBuf),
 }
@@ -246,24 +243,6 @@ impl Pluguzu {
                     break;
                 }
                 self.events_pos += 1;
-            }
-        }
-
-        // Pre Load samples
-        {
-            self.samples_missing.clear();
-            let lib = self.samples_library.read().expect("lock");
-            // Collect unknown samples
-            for ev in events.iter() {
-                if let EventKind::EventSound(sev) = &ev.kind
-                    && !lib.has_sample(sev)
-                {
-                    nih_plug::util::permit_alloc(|| self.samples_missing.insert(sev.clone()));
-                }
-            }
-            // Dispatch background task to load missing samples
-            for missing in self.samples_missing.drain() {
-                ctx.execute_background(PluguzuTask::LoadSample(missing));
             }
         }
 
@@ -488,6 +467,27 @@ impl Plugin for Pluguzu {
 
         Box::new(move |task| {
             let current_bar = current_bar.load(Ordering::Relaxed);
+
+            let load_missing_samples = |events: &[Event]| {
+                let mut missing = HashSet::new();
+                missing.clear();
+                let mut lib = samples_library.write().expect("lock");
+                // Collect unknown samples
+                for ev in events.iter() {
+                    if let EventKind::EventSound(sev) = &ev.kind
+                        && !lib.has_sample(sev)
+                    {
+                        missing.insert(sev.clone());
+                    }
+                }
+                // Dispatch background task to load missing samples
+                for sev in missing.drain() {
+                    if let Err(e) = lib.load(&sev) {
+                        nih_warn!("Couldn't load sample {}: {}", sev.name, e);
+                    }
+                }
+            };
+
             let do_parse = |parse_task| {
                 let code = code.lock().expect("lock");
                 // println!("Parsing {}", code);
@@ -504,7 +504,11 @@ impl Plugin for Pluguzu {
                         "{current_bar} parsed and rendered {start}..{} (in place: {in_place})",
                         start + BUFFER_LEN
                     );
-                    haskell_state.buffer.lock().update(start, events, in_place);
+                    haskell_state
+                        .buffer
+                        .lock()
+                        .update(start, events.clone(), in_place);
+                    load_missing_samples(&events)
                 };
                 if !is_err {
                     match parse_task {
@@ -532,19 +536,14 @@ impl Plugin for Pluguzu {
                     debug!("{current_bar}: Rendering {}", start);
 
                     // First acquire the Haskell runtime to render the next batch.
-                    let next_events = haskell_state.rts.lock().render(start, start + BUFFER_LEN);
+                    let events = haskell_state.rts.lock().render(start, start + BUFFER_LEN);
 
                     // Then lock the process callback to store the new events.
                     haskell_state
                         .buffer
                         .lock()
-                        .update(start, next_events, false);
-                }
-                PluguzuTask::LoadSample(sev) => {
-                    let mut lib = samples_library.write().expect("lock");
-                    if let Err(e) = lib.load(&sev) {
-                        nih_warn!("Couldn't load sample {}: {}", sev.name, e);
-                    }
+                        .update(start, events.clone(), false);
+                    load_missing_samples(&events)
                 }
                 PluguzuTask::SaveCode(path) => {
                     let code = code.lock().expect("lock");
