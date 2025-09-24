@@ -3,10 +3,11 @@
 
 //! This modules defines a library of samples
 
+use dashmap::{mapref::one::Ref, DashMap};
 use smol_str::SmolStr;
-use std::collections::HashMap;
 use std::io::Result;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU32, Ordering};
 
 use crate::events::SoundEvent;
 use crate::{dirt, info, pwarn};
@@ -16,9 +17,9 @@ pub struct AbsoluteSoundEvent(SoundEvent);
 
 pub struct SampleLibrary {
     search_path: PathBuf,
-    pub sample_rate: u32,
-    pub samples: HashMap<AbsoluteSoundEvent, dirt::Sample>,
-    pub samples_count: HashMap<SmolStr, Vec<PathBuf>>,
+    sample_rate: AtomicU32,
+    pub samples: DashMap<AbsoluteSoundEvent, dirt::Sample>,
+    pub samples_count: DashMap<SmolStr, Vec<PathBuf>>,
 }
 
 impl AbsoluteSoundEvent {
@@ -40,35 +41,40 @@ impl SampleLibrary {
     pub fn new(search_path: PathBuf) -> Self {
         SampleLibrary {
             search_path,
-            sample_rate: 48000,
-            samples: HashMap::new(),
-            samples_count: HashMap::new(),
+            sample_rate: AtomicU32::new(48000),
+            samples: DashMap::new(),
+            samples_count: DashMap::new(),
         }
     }
+    pub fn set_sample_rate(&self, sr: u32) {
+        self.sample_rate.store(sr, Ordering::Relaxed);
+    }
+
     pub fn has_sample(&self, sev: &SoundEvent) -> bool {
         match self.samples_count.get(&sev.name) {
             None => false,
             Some(count) => {
-                let asev = AbsoluteSoundEvent::from_sev(sev, count);
+                let asev = AbsoluteSoundEvent::from_sev(sev, &count);
                 self.samples.contains_key(&asev)
             }
         }
     }
-    pub fn get(&self, sev: &SoundEvent) -> Option<&dirt::Sample> {
+    pub fn get(&self, sev: &SoundEvent) -> Option<Ref<'_, AbsoluteSoundEvent, dirt::Sample>> {
         self.samples_count
             .get(&sev.name)
-            .and_then(|paths| self.samples.get(&AbsoluteSoundEvent::from_sev(sev, paths)))
+            .and_then(|paths| self.samples.get(&AbsoluteSoundEvent::from_sev(sev, &paths)))
     }
-    pub fn load(&mut self, sev: &SoundEvent) -> Result<()> {
+    pub fn load(&self, sev: &SoundEvent) -> Result<()> {
+        let sr = self.sample_rate.load(Ordering::Relaxed);
         if let Some(paths) = self.samples_count.get(&sev.name) {
-            load_path(&mut self.samples, self.sample_rate, paths, sev)?;
+            load_path(&self.samples, sr, &paths, sev)?;
         } else {
             let mut path = self.search_path.to_path_buf();
             path.push(&sev.name);
             let paths = read_files(&path)
                 .map_err(|e| std::io::Error::other(format!("{}: {e}", path.display())))?;
             let name = sev.name.clone();
-            load_path(&mut self.samples, self.sample_rate, &paths, sev)?;
+            load_path(&self.samples, sr, &paths, sev)?;
             self.samples_count.insert(name, paths);
         }
         Ok(())
@@ -76,7 +82,7 @@ impl SampleLibrary {
 }
 
 fn load_path(
-    samples: &mut HashMap<AbsoluteSoundEvent, dirt::Sample>,
+    samples: &DashMap<AbsoluteSoundEvent, dirt::Sample>,
     sample_rate: u32,
     paths: &[PathBuf],
     sev: &SoundEvent,

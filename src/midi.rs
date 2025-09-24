@@ -132,10 +132,9 @@ impl Pluguzu {
     }
 
     fn send_sound_event(&mut self, ev: &Event, sev: &SoundEvent) {
-        let samples_library = self.samples_library.read().expect("Samples read lock");
-        match samples_library.get(sev) {
+        match self.samples_library.get(sev) {
             Some(samples) => {
-                let mut sound = crate::dirt::Sound::new(48000).expect("Valid new_sound");
+                let mut sound = crate::dirt::Sound::new(self.sample_rate).expect("Valid new_sound");
                 if let Some(value) = ev.value.as_ref() {
                     for (k, v) in value.iter() {
                         if let Some(val) = v.as_f64() {
@@ -152,7 +151,7 @@ impl Pluguzu {
                 let frame_offset = self.midi.event_offset(ev.span.start) as f64;
                 let sample_time = 1. / (self.dirt.sr as f64);
                 let when = self.now + sample_time * frame_offset;
-                sound.play(when, self.cps, samples)
+                sound.play(when, self.cps, &samples)
             }
             None => {
                 pwarn!("Sample not ready! {:?}", sev);

@@ -26,7 +26,7 @@ use std::ops::DerefMut;
 use std::path::PathBuf;
 use std::sync::atomic::Ordering;
 use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU8, AtomicUsize};
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Arc, Mutex};
 
 use crate::config::Config;
 use crate::events::{Event, EventKind};
@@ -124,8 +124,7 @@ pub struct Pluguzu {
 
     /// Samples
     dirt: dirt::Dirt,
-    // TODO: replace this RwLock<> with evmap to avoid locking the process callback when loading samples
-    samples_library: Arc<RwLock<crate::samples::SampleLibrary>>,
+    samples_library: Arc<crate::samples::SampleLibrary>,
 
     /// The info needed to send midi events.
     midi: ProcessMidi,
@@ -146,6 +145,8 @@ pub struct Pluguzu {
     background_state: Arc<BackgroundState>,
 
     skip_first: bool,
+
+    sample_rate: u32,
 }
 
 impl Default for Pluguzu {
@@ -168,7 +169,7 @@ impl Default for Pluguzu {
             }),
 
             dirt: dirt::Dirt::new(8),
-            samples_library: Arc::new(RwLock::new(crate::samples::SampleLibrary::new(samples_dir))),
+            samples_library: Arc::new(crate::samples::SampleLibrary::new(samples_dir)),
 
             note_offs: HashMap::with_capacity(255),
 
@@ -191,6 +192,7 @@ impl Default for Pluguzu {
                 evlocs_pos: AtomicUsize::new(0),
             }),
             skip_first: false,
+            sample_rate: 44100,
         }
     }
 }
@@ -324,7 +326,8 @@ impl Plugin for Pluguzu {
         context.execute(PluguzuTask::Parse(ParseTask::NoRender));
         let sr = buffer_config.sample_rate as u32;
         self.dirt.set_sample_rate(sr);
-        self.samples_library.write().expect("lock").sample_rate = sr;
+        self.sample_rate = sr;
+        self.samples_library.set_sample_rate(sr);
         true
     }
 
@@ -471,18 +474,17 @@ impl Plugin for Pluguzu {
             let load_missing_samples = |events: &[Event]| {
                 let mut missing = HashSet::new();
                 missing.clear();
-                let mut lib = samples_library.write().expect("lock");
                 // Collect unknown samples
                 for ev in events.iter() {
                     if let EventKind::EventSound(sev) = &ev.kind
-                        && !lib.has_sample(sev)
+                        && !samples_library.has_sample(sev)
                     {
                         missing.insert(sev.clone());
                     }
                 }
                 // Dispatch background task to load missing samples
                 for sev in missing.drain() {
-                    if let Err(e) = lib.load(&sev) {
+                    if let Err(e) = samples_library.load(&sev) {
                         nih_warn!("Couldn't load sample {}: {}", sev.name, e);
                     }
                 }
