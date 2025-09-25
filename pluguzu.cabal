@@ -23,8 +23,8 @@ foreign-library pluguzu
     -- other-modules:
     -- other-extensions:
     build-depends:    base, pluguzu, bytestring
-    hs-source-dirs:   .
-    c-sources:        PluguzuWrapper.c
+    hs-source-dirs:   haskell-ffi
+    c-sources:        haskell-ffi/PluguzuWrapper.c
     ghc-options:      -threaded
     default-language: GHC2021
 
