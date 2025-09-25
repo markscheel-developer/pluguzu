@@ -6,6 +6,7 @@
 
 mod config;
 mod debug;
+mod default_presets;
 mod dirt;
 mod events;
 pub mod haskell;
@@ -20,7 +21,7 @@ pub(crate) use debug::{debug, info, pwarn};
 use arc_swap::ArcSwap;
 use atomic_float::AtomicF64;
 use nih_plug::prelude::*;
-use nih_plug_egui::{egui, EguiState};
+use nih_plug_egui::{EguiState, egui};
 use std::collections::{HashMap, HashSet};
 use std::ops::DerefMut;
 use std::path::PathBuf;
@@ -101,8 +102,8 @@ pub struct Pluguzu {
     /// The Haskell runtime and background buffer
     haskell_state: Arc<HaskellState>,
 
-    /// User config
-    _config: Arc<Config>,
+    /// User preset
+    user_presets_file: Arc<PathBuf>,
 
     /// Initial file when running standalone
     initial_file: Arc<Mutex<Option<String>>>,
@@ -149,7 +150,7 @@ impl Default for Pluguzu {
         Self {
             params: Arc::new(PluguzuParams::default()),
             haskell_state: Arc::new(HaskellState::default()),
-            _config: Arc::new(config),
+            user_presets_file: Arc::new(config.path("presets.md")),
             initial_file: Arc::new(Mutex::new(None)),
             hosted_in_daw: Arc::new(AtomicBool::new(true)),
             events: None,

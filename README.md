@@ -124,10 +124,10 @@ Implemented:
 - [x] Highlight event locations.
 - [x] Integrate the dirt sampler.
 - [x] Loading code through the command line and file menu.
+- [x] Support user-defined presets, e.g. in ~/.config/pluguzu/presets.md.
 
 Next:
 
-- [ ] Support user-defined presets, e.g. in ~/.config/pluguzu/presets.md.
 - [ ] Improve error reporting to the UI.
 - [ ] Package the plugin dependencies (e.g. the libpluguzu.so and libHSrts) so that it works out of the box.
 - [ ] Add pattern visualizations, e.g. a pianoroll in the background.

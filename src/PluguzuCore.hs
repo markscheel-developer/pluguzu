@@ -226,19 +226,16 @@ readPresets fp = parsePresets "" "" . lines <$> readFile fp
 renderPresetData :: IO ()
 renderPresetData = do
     presets <- readPresets "pluguzu-presets.md"
-    writeFile "src/presets.rs" $ unlines $ renderHeader presets
+    writeFile "src/default_presets.rs" $ unlines $ renderHeader presets
   where
     renderHeader presets =
         [ "// Pluguzu presets"
         , ""
-        , "pub struct UzuProgram {"
-        , "  pub name: &'static str,"
-        , "  pub code: &'static str,"
-        , "  pub tags: Vec<&'static str>,"
-        , "}"
+        , "use crate::presets::UzuProgram;"
         , ""
         , "pub fn presets() -> Vec<UzuProgram> {"
-        , "  vec![" ++ unlines (map mkProgram presets) ++ "]"
+        , "  vec!["
+        , unlines (map mkProgram presets) ++ "  ]"
         , "}"
         ]
-    mkProgram preset = "  UzuProgram {name: " ++ show preset.name ++ ", code: " ++ show preset.code ++ ", tags: vec![" ++ show preset.category ++ "]},"
+    mkProgram preset = "      UzuProgram {name: " ++ show preset.name ++ ".into(), code: " ++ show preset.code ++ ".into(), tags: vec![" ++ show preset.category ++ ".into()]},"

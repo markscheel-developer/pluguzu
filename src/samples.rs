@@ -3,7 +3,7 @@
 
 //! This modules defines a library of samples
 
-use dashmap::{mapref::one::Ref, DashMap};
+use dashmap::{DashMap, mapref::one::Ref};
 use smol_str::SmolStr;
 use std::io::Result;
 use std::path::PathBuf;

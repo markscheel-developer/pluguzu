@@ -13,14 +13,16 @@ use nih_plug_egui::{
 
 use std::collections::BTreeMap;
 use std::ops::{Deref, DerefMut};
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::{Arc, Mutex};
 
 use egui::{Color32, Shape, Stroke, StrokeKind};
 
 use crate::events::LocEvent;
+use crate::highlights;
+use crate::presets::{add_preset, load_default_presets, load_user_presets, Presets, PresetsTags};
 use crate::syntax::tidal;
-use crate::{highlights, presets};
 use crate::{BackgroundState, ParseTask, Pluguzu, PluguzuTask};
 
 const VERT_SPACE: f32 = 3.;
@@ -33,7 +35,8 @@ enum UIView {
 struct PresetState {
     cat: usize,
     selected: usize,
-    presets: Presets,
+    presets: PresetsTags,
+    user_presets: Presets,
 }
 
 struct EditorState {
@@ -48,6 +51,7 @@ struct EditorState {
 
     update: Option<PluguzuTask>,
     picked_path: Option<String>,
+    user_presets_file: Arc<PathBuf>,
 }
 
 struct UIState {
@@ -75,7 +79,8 @@ impl Pluguzu {
             preset: PresetState {
                 cat: 0,
                 selected: 0,
-                presets: load_presets(),
+                presets: load_default_presets(),
+                user_presets: vec![],
             },
             editor: EditorState {
                 code: self.params.code.clone(),
@@ -86,6 +91,7 @@ impl Pluguzu {
                 unsaved: false,
                 update: None,
                 picked_path: None,
+                user_presets_file: self.user_presets_file.clone(),
             },
             font_size: self.params.font_size.clone(),
             background_state: self.background_state.clone(),
@@ -136,7 +142,11 @@ impl Pluguzu {
                                             || state.editor.picked_path.is_some());
                                     let file_menu = if dirty { "File*" } else { "File" };
                                     ui.menu_button(file_menu, |ui| {
-                                        state.editor.file_menu(ui, &mut state.view)
+                                        state.editor.file_menu(
+                                            ui,
+                                            &mut state.view,
+                                            &mut state.preset.user_presets,
+                                        )
                                     });
                                     state.editor.render_status(ui, &dsp_state);
                                 });
@@ -215,28 +225,15 @@ impl UIState {
     }
 }
 
-type Presets = Vec<(String, Vec<Arc<presets::UzuProgram>>)>;
-
-fn load_presets() -> Presets {
-    let presets = presets::presets();
-    let mut map = indexmap::IndexMap::with_capacity(presets.len());
-    for preset in presets {
-        let preset = Arc::new(preset);
-        for tag in &preset.tags {
-            map.entry(tag.to_string())
-                .or_insert_with(Vec::new)
-                .push(preset.clone())
-        }
-    }
-    map.into_iter().collect()
-}
-
 impl PresetState {
     fn show(&mut self, ui: &mut egui::Ui, font_size: f32) -> Option<Option<String>> {
         // Tag selector
         let prev_cat = self.cat;
         let cat = &mut self.cat;
         ui.horizontal(|ui| {
+            if !self.user_presets.is_empty() {
+                ui.selectable_value(cat, usize::MAX, "User");
+            }
             for (pos, (tag, _)) in self.presets.iter().enumerate() {
                 ui.selectable_value(cat, pos, tag);
             }
@@ -249,52 +246,56 @@ impl PresetState {
         // Preset selector
         let sel = &mut self.selected;
         let mut result = None;
-        if let Some((_, presets)) = self.presets.get(*cat) {
-            let line_height = font_size + VERT_SPACE;
-            let avail_height = ui.available_height() - line_height * 2.0 + 10.;
-            egui::ScrollArea::vertical()
-                .auto_shrink(false)
-                .max_height(avail_height)
-                .show(ui, |ui| {
-                    egui::Grid::new("my_grid")
-                        .num_columns(2)
-                        .spacing([6.0, 4.0])
-                        .striped(true)
-                        .show(ui, |ui| {
-                            for (pos, preset) in presets.iter().enumerate() {
-                                ui.selectable_value(sel, pos, preset.name);
-                                ui.label(format!("{}", preset.code.len()));
-                                ui.end_row();
-                            }
-                        });
-                    if let Some(preset) = presets.get(*sel)
-                        && ui.input(|i| i.key_pressed(egui::Key::Enter))
-                    {
-                        result = Some(Some(preset.code.to_string()));
-                    }
-                    if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
-                        result = Some(None);
-                    }
-                    if ui.input(|i| i.key_pressed(egui::Key::ArrowUp)) {
-                        *sel = sel.saturating_sub(1)
-                    }
-                    if ui.input(|i| i.key_pressed(egui::Key::ArrowDown)) {
-                        *sel = sel.saturating_add(1)
-                    }
-                });
-            ui.horizontal(|ui| {
+        let presets = if *cat == usize::MAX {
+            &self.user_presets
+        } else if let Some((_, presets)) = self.presets.get(*cat) {
+            presets
+        } else {
+            &vec![]
+        };
+        let line_height = font_size + VERT_SPACE;
+        let avail_height = ui.available_height() - line_height * 2.0 + 10.;
+        egui::ScrollArea::vertical()
+            .auto_shrink(false)
+            .max_height(avail_height)
+            .show(ui, |ui| {
+                egui::Grid::new("my_grid")
+                    .num_columns(2)
+                    .spacing([6.0, 4.0])
+                    .striped(true)
+                    .show(ui, |ui| {
+                        for (pos, preset) in presets.iter().enumerate() {
+                            ui.selectable_value(sel, pos, &preset.name);
+                            ui.label(format!("{}", preset.code.len()));
+                            ui.end_row();
+                        }
+                    });
                 if let Some(preset) = presets.get(*sel)
-                    && ui.button("Load").clicked()
+                    && ui.input(|i| i.key_pressed(egui::Key::Enter))
                 {
-                    result = Some(Some(preset.code.to_string()))
-                };
-                if ui.button("Cancel").clicked() {
-                    result = Some(None)
-                };
+                    result = Some(Some(preset.code.to_string()));
+                }
+                if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+                    result = Some(None);
+                }
+                if ui.input(|i| i.key_pressed(egui::Key::ArrowUp)) {
+                    *sel = sel.saturating_sub(1)
+                }
+                if ui.input(|i| i.key_pressed(egui::Key::ArrowDown)) {
+                    *sel = sel.saturating_add(1)
+                }
             });
-        } else if ui.button("Oops").clicked() {
-            result = Some(None)
-        }
+        ui.horizontal(|ui| {
+            if let Some(preset) = presets.get(*sel)
+                && ui.button("Load").clicked()
+            {
+                result = Some(Some(preset.code.to_string()))
+            };
+            if ui.button("Cancel").clicked() {
+                result = Some(None)
+            };
+        });
+
         result
     }
 }
@@ -355,7 +356,7 @@ impl EditorState {
         }
         output
     }
-    fn file_menu(&mut self, ui: &mut egui::Ui, view: &mut UIView) {
+    fn file_menu(&mut self, ui: &mut egui::Ui, view: &mut UIView, up: &mut Presets) {
         if ui.button("New").clicked() {
             self.set_code("".to_string());
             self.picked_path = None;
@@ -385,7 +386,15 @@ impl EditorState {
             self.picked_path = Some(path.display().to_string());
             self.update = Some(PluguzuTask::SaveCode(path))
         }
+        if ui.button("Save as preset").clicked() {
+            self.unsaved = false;
+            self.picked_path = None;
+            let code = self.code.lock().unwrap();
+            let new_preset = add_preset(&self.user_presets_file, &code);
+            up.push(new_preset);
+        }
         if ui.button("Load Preset").clicked() {
+            *up = load_user_presets(&self.user_presets_file);
             *view = UIView::Preset
         }
     }

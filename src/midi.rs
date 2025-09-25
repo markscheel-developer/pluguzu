@@ -194,7 +194,8 @@ impl Pluguzu {
             } else if ev.span.stop > 0. && ev.span.stop <= stop_fraction {
                 pwarn!(
                     "{start_fraction:.4} Missed event start, but it still make sense to send it now... {:.4}..{:.4} < {stop_fraction:.4}",
-                    ev.span.start, ev.span.stop
+                    ev.span.start,
+                    ev.span.stop
                 );
                 self.send_tidal_event(ev, context);
             } else if start_fraction > ev.span.start {
