@@ -31,7 +31,7 @@ use std::sync::{Arc, Mutex};
 use crate::config::Config;
 use crate::events::{Event, EventKind};
 use crate::haskell::{BackgroundBuffer, HaskellState};
-use crate::midi::{FutureNoteOff, ProcessMidi};
+use crate::midi::{FutureNoteOff, ProcessAudio, ProcessMidi};
 
 /// Info from the engine for the UI status bar
 struct PluguzuDSP {
@@ -120,12 +120,7 @@ pub struct Pluguzu {
 
     /// The info needed to send midi events.
     midi: ProcessMidi,
-    /// The cycle per second, for dirt.
-    cps: f32,
-    /// The current beat position.
-    now: f64,
-    /// The sample rate.
-    sample_rate: u32,
+    audio: ProcessAudio,
 
     /// Keep track of the current playing bar so that code update are queued to the next bar.
     current_bar: Arc<AtomicI32>,
@@ -146,6 +141,9 @@ pub struct Pluguzu {
 
 impl Default for Pluguzu {
     fn default() -> Self {
+        #[cfg(not(feature = "debug"))]
+        nih_plug::log::set_max_level(nih_plug::log::LevelFilter::Info);
+
         let config = Config::new();
         let samples_dir = config.path("samples");
         Self {
@@ -173,8 +171,11 @@ impl Default for Pluguzu {
                 end: 0.,
                 frames_per_fraction: 0.,
             },
-            cps: 0.,
-            now: 0.,
+            audio: ProcessAudio {
+                cps: 0.,
+                now: 0.,
+                sample_rate: 44100,
+            },
 
             current_bar: Arc::new(AtomicI32::new(0)),
 
@@ -187,7 +188,6 @@ impl Default for Pluguzu {
                 evlocs_pos: AtomicUsize::new(0),
             }),
             skip_first: false,
-            sample_rate: 44100,
         }
     }
 }
@@ -307,8 +307,6 @@ impl Plugin for Pluguzu {
         buffer_config: &BufferConfig,
         context: &mut impl InitContext<Self>,
     ) -> bool {
-        #[cfg(not(feature = "debug"))]
-        nih_plug::log::set_max_level(nih_plug::log::LevelFilter::Info);
         // Load file
         if context.plugin_api() == PluginApi::Standalone {
             self.hosted_in_daw.store(false, Ordering::Relaxed);
@@ -330,7 +328,7 @@ impl Plugin for Pluguzu {
         // Setup sample-rate
         let sr = buffer_config.sample_rate as u32;
         self.dirt.set_sample_rate(sr);
-        self.sample_rate = sr;
+        self.audio.sample_rate = sr;
         self.samples_library.set_sample_rate(sr);
 
         true
@@ -355,8 +353,6 @@ impl Plugin for Pluguzu {
             //    01:31:45 [WARN] pluguzu: 722.1653333333334: 722 is out of sync 3885..3889, rendering the event synchronously...
             //    722: Rendering 3889
             //    722: Rendering 726
-            // The issue is simply the highlights not being displayed correctly. See the related
-            // comments in the PluguzuTask::Render handler below.
             //
             // For now, this is a ugly hack:)
             self.skip_first = false;
@@ -367,8 +363,8 @@ impl Plugin for Pluguzu {
         let frames_usize = buffer.samples();
         let transport = context.transport();
         let playing = transport.playing;
-        self.now = transport.pos_beats().expect("beat");
-        let pos = self.now / 4.0;
+        self.audio.now = transport.pos_beats().expect("beat");
+        let pos = self.audio.now / 4.0;
         let cur_bar = pos.floor() as i32;
         self.current_bar.store(cur_bar, Ordering::Relaxed);
 
@@ -400,6 +396,13 @@ impl Plugin for Pluguzu {
         let run_fraction = run_time / bar_length;
         let frames_per_fraction = frames / run_fraction;
 
+        if pos < self.midi.start {
+            // Transport jump back in time, let's reset the buffer position to replay past event.
+            self.events_pos = 0;
+            // Reset the highlights position too
+            self.background_state.evlocs_pos.store(0, Ordering::Relaxed);
+        }
+
         // Store the midi offset stuff
         self.midi.start = pos;
         self.midi.end = pos + run_fraction;
@@ -410,9 +413,9 @@ impl Plugin for Pluguzu {
 
         // Store timing offset for dirt
         let cps = (beat_per_min / 60. / sig_numerator) as f32;
-        if cps != self.cps {
+        if cps != self.audio.cps {
             debug!("CPS changed to {}", cps);
-            self.cps = cps;
+            self.audio.cps = cps;
         }
 
         // Send any previously registered note-off.
@@ -450,7 +453,7 @@ impl Plugin for Pluguzu {
 
         // Play dirt
         self.dirt
-            .playback(self.now, frames_usize, buffer.as_slice());
+            .playback(self.audio.now, frames_usize, buffer.as_slice());
 
         // Update status for the UI
         self.dsp_state.playing.store(playing, Ordering::Relaxed);
@@ -496,6 +499,14 @@ impl Plugin for Pluguzu {
                 }
             };
 
+            let update_state = |start: i32, events: Arc<Vec<Event>>, in_place: bool| {
+                {
+                    let mut state = haskell_state.buffer.lock();
+                    state.update(start, events.clone(), in_place);
+                }
+                load_missing_samples(&events)
+            };
+
             let do_parse = |parse_task| {
                 let code = code.lock().expect("lock");
                 // println!("Parsing {}", code);
@@ -512,11 +523,7 @@ impl Plugin for Pluguzu {
                         "{current_bar} parsed and rendered {start}..{} (in place: {in_place})",
                         start + BUFFER_LEN
                     );
-                    haskell_state
-                        .buffer
-                        .lock()
-                        .update(start, events.clone(), in_place);
-                    load_missing_samples(&events)
+                    update_state(start, events, in_place)
                 };
                 if !is_err {
                     match parse_task {
@@ -547,11 +554,7 @@ impl Plugin for Pluguzu {
                     let events = haskell_state.rts.lock().render(start, start + BUFFER_LEN);
 
                     // Then lock the process callback to store the new events.
-                    haskell_state
-                        .buffer
-                        .lock()
-                        .update(start, events.clone(), false);
-                    load_missing_samples(&events)
+                    update_state(start, events, false)
                 }
                 PluguzuTask::SaveCode(path) => {
                     let code = code.lock().expect("lock");

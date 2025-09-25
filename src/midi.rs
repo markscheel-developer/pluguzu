@@ -62,6 +62,15 @@ impl ProcessMidi {
     }
 }
 
+pub struct ProcessAudio {
+    /// The cycle per second, for dirt.
+    pub cps: f32,
+    /// The current beat position.
+    pub now: f64,
+    /// The sample rate.
+    pub sample_rate: u32,
+}
+
 impl Pluguzu {
     pub fn send_note_offs(&mut self, context: &mut impl ProcessContext<Self>) {
         let midi = &self.midi;
@@ -134,7 +143,8 @@ impl Pluguzu {
     fn send_sound_event(&mut self, ev: &Event, sev: &SoundEvent) {
         match self.samples_library.get(sev) {
             Some(samples) => {
-                let mut sound = crate::dirt::Sound::new(self.sample_rate).expect("Valid new_sound");
+                let mut sound =
+                    crate::dirt::Sound::new(self.audio.sample_rate).expect("Valid new_sound");
                 if let Some(value) = ev.value.as_ref() {
                     for (k, v) in value.iter() {
                         if let Some(val) = v.as_f64() {
@@ -150,8 +160,8 @@ impl Pluguzu {
                 );
                 let frame_offset = self.midi.event_offset(ev.span.start) as f64;
                 let sample_time = 1. / (self.dirt.sr as f64);
-                let when = self.now + sample_time * frame_offset;
-                sound.play(when, self.cps, &samples)
+                let when = self.audio.now + sample_time * frame_offset;
+                sound.play(when, self.audio.cps, &samples)
             }
             None => {
                 pwarn!("Sample not ready! {:?}", sev);
