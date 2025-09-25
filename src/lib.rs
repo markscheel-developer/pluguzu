@@ -21,7 +21,7 @@ pub(crate) use debug::{debug, info, pwarn};
 use arc_swap::ArcSwap;
 use atomic_float::AtomicF64;
 use nih_plug::prelude::*;
-use nih_plug_egui::{EguiState, egui};
+use nih_plug_egui::{egui, EguiState};
 use std::collections::{HashMap, HashSet};
 use std::ops::DerefMut;
 use std::path::PathBuf;
@@ -387,7 +387,8 @@ impl Plugin for Pluguzu {
         }
 
         // Compute current frame info
-        let pos = transport.pos_beats().expect("pos beats") / 4.0;
+        let pos = transport.pos_beats().expect("pos beats")
+            / transport.time_sig_denominator.unwrap_or(4) as f64;
         let frames = frames_usize as f64;
         let beat_per_min = transport.tempo.unwrap_or(120.);
         let beat_per_sec = 60. / beat_per_min;
@@ -406,7 +407,22 @@ impl Plugin for Pluguzu {
 
         // Store the midi offset stuff
         self.midi.start = pos;
-        self.midi.end = pos + run_fraction;
+        self.midi.end = pos + run_fraction; // ((pos + run_fraction) * 1000.).ceil() / 1000.;
+
+        /*
+        // Timing debug...
+        nih_plug::util::permit_alloc(|| {
+          let prev = self.dsp_state.pos.load(Ordering::Relaxed);
+          println!(
+                    "HERE: {:.9} {:.9} : {:.9} .. {:.9}",
+                    self.midi.end - self.midi.start,
+                    self.midi.start - prev,
+                    self.midi.start,
+                    self.midi.end
+          );
+        });
+        */
+
         if frames_per_fraction != self.midi.frames_per_fraction {
             debug!("Frames per fraction changed to {}", frames_per_fraction);
             self.midi.frames_per_fraction = frames_per_fraction;
@@ -427,7 +443,7 @@ impl Plugin for Pluguzu {
         let mut events = self.events.as_ref().expect("events to exist").clone();
 
         // Send events.
-        self.send_tidal_events(self.midi.start, self.midi.end, &events, context);
+        self.send_tidal_events(&events, context);
 
         // Send events from the begining of the next-buffer.
         if self.midi.end > next_buffer as f64 {
@@ -443,7 +459,7 @@ impl Plugin for Pluguzu {
                 );
                 self.sync_events_buffer(next_buffer, buffer.deref_mut(), context);
                 events = self.events.as_ref().expect("events").clone();
-                self.send_tidal_events(self.midi.start, self.midi.end, &events, context);
+                self.send_tidal_events(&events, context);
             } else {
                 pwarn!(
                     "{pos:.4} ERROR: the next event buffer is not ready?! {next_buffer} {:?}",

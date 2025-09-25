@@ -176,31 +176,27 @@ impl Pluguzu {
         }
     }
 
-    pub fn send_tidal_events(
-        &mut self,
-        start_fraction: f64,
-        stop_fraction: f64,
-        events: &[Event],
-        context: &mut impl ProcessContext<Self>,
-    ) {
+    pub fn send_tidal_events(&mut self, events: &[Event], context: &mut impl ProcessContext<Self>) {
         while self.events_pos < events.len() {
             let ev = &events[self.events_pos];
-            if ev.span.start >= stop_fraction {
-                // This event and the following one are scheduled for later
+            if ev.span.start >= self.midi.end {
+                // This event (and the following ones) are scheduled for later
                 break;
-            } else if start_fraction <= ev.span.start && ev.span.start < stop_fraction {
+            } else if self.midi.start <= ev.span.start {
                 // The event is due for this buffer
                 self.send_tidal_event(ev, context);
-            } else if ev.span.stop > 0. && ev.span.stop <= stop_fraction {
+            } else if ev.span.stop <= self.midi.end {
                 pwarn!(
-                    "{start_fraction:.4} Missed event start, but it still make sense to send it now... {:.4}..{:.4} < {stop_fraction:.4}",
+                    "{:.7} Missed event start, but it still make sense to send it now... {:.7}..{:.7} < {:.7}",
+                    self.midi.start,
                     ev.span.start,
-                    ev.span.stop
+                    ev.span.stop,
+                    self.midi.end
                 );
                 self.send_tidal_event(ev, context);
-            } else if start_fraction > ev.span.start {
+            } else if self.midi.start > ev.span.start {
                 // That's odd, it looks like we missed an event?!
-                pwarn!("{start_fraction:.4} Skipped event {:.4}", ev.span.start);
+                pwarn!("{:.4} Skipped event {:.4}", self.midi.start, ev.span.start);
             }
 
             // Advance the event buffer position
