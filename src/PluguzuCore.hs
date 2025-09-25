@@ -131,9 +131,14 @@ compareEvent :: Event -> Event -> Ordering
 compareEvent e1 e2 = compare e1.span.start e2.span.start
 
 eventToMidi :: Pattern.Event Pattern.ValueMap -> Maybe Event
-eventToMidi ev = do
-    (kind, value) <- soundEvent <|> midiEvent
-    pure $ Event span kind (map mkLoc ev.context.contextPosition) value
+eventToMidi ev
+    | -- See Sound.Tidal.Stream.Process.
+      -- Without this, when playing 's "sax" # cutoff "1 2"'
+      -- we would send 'sax' twice.
+      Pattern.eventHasOnset ev = do
+        (kind, value) <- soundEvent <|> midiEvent
+        pure $ Event span kind (map mkLoc ev.context.contextPosition) value
+    | otherwise = Nothing
   where
     arc = Pattern.wholeOrPart ev
     start = rat2float (Pattern.start arc)
