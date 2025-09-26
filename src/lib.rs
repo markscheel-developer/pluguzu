@@ -286,7 +286,7 @@ impl Pluguzu {
             start + BUFFER_LEN
         } else if cur_bar < self.events_start_bar || cur_bar >= self.events_start_bar + BUFFER_LEN {
             // We are out of sync, need new events
-            nih_plug::util::permit_alloc(|| {
+            let updated = nih_plug::util::permit_alloc(|| {
                 pwarn!(
                     "{}: {cur_bar} is out of sync {}..{}, rendering the event synchronously... ",
                     self.midi.start,
@@ -295,13 +295,20 @@ impl Pluguzu {
                 );
                 if state.rts.is_locked() {
                     // It looks like the background thread is also performing a render...
-                    pwarn!("A background is locking the Haskell runtime?!");
+                    pwarn!("The background is locking the Haskell runtime?!");
+                    false
+                } else {
+                    let events = state.rts.lock().render(cur_bar, cur_bar + BUFFER_LEN);
+                    buffer.update(cur_bar, events, true);
+                    true
                 }
-                let events = state.rts.lock().render(cur_bar, cur_bar + BUFFER_LEN);
-                buffer.update(cur_bar, events, true);
             });
-            self.sync_events_buffer(cur_bar, buffer.deref_mut(), ctx);
-            cur_bar + BUFFER_LEN
+            if updated {
+                self.sync_events_buffer(cur_bar, buffer.deref_mut(), ctx);
+                cur_bar + BUFFER_LEN
+            } else {
+                self.events_start_bar + BUFFER_LEN
+            }
         } else {
             // We are in sync.
             self.events_start_bar + BUFFER_LEN
