@@ -449,7 +449,7 @@ impl Plugin for Pluguzu {
         self.current_bar.store(cur_bar, Ordering::Relaxed);
 
         // When not playing...
-        if !playing || transport.preroll_active.unwrap_or(false) {
+        if !playing {
             // Tell the UI
             self.dsp_state.playing.store(false, Ordering::Relaxed);
 
@@ -467,8 +467,7 @@ impl Plugin for Pluguzu {
                 frames_count,
                 TransportInfo {
                     beat_per_min: transport.tempo.unwrap_or(120.),
-                    cycle_pos: transport.pos_beats().expect("pos beats")
-                        / transport.time_sig_denominator.unwrap_or(4) as f64,
+                    cycle_pos: self.audio.now / transport.time_sig_denominator.unwrap_or(4) as f64,
                     sig_numerator: transport.time_sig_numerator.unwrap_or(4),
                 },
             );
