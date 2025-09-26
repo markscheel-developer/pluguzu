@@ -123,6 +123,7 @@ pub struct Pluguzu {
     /// The info needed to send midi events.
     midi: ProcessMidi,
     audio: ProcessAudio,
+    last_timing_warning: u8,
 
     /// Keep track of the current playing bar so that code update are queued to the next bar.
     current_bar: Arc<AtomicI32>,
@@ -191,6 +192,7 @@ impl Default for Pluguzu {
                 evlocs_pos: AtomicUsize::new(0),
             }),
             skip_first: false,
+            last_timing_warning: 0,
         }
     }
 }
@@ -334,14 +336,16 @@ impl Pluguzu {
             self.background_state.evlocs_pos.store(0, Ordering::Relaxed);
         }
 
-        if info.cycle_pos > self.midi.end {
+        if self.last_timing_warning == 0 && info.cycle_pos > self.midi.end {
             pwarn!(
                 "There is a gap with the last callback: {} > {}, gap {}",
                 info.cycle_pos,
                 self.midi.end,
-                self.midi.end - info.cycle_pos
-            )
+                info.cycle_pos - self.midi.end
+            );
+            self.last_timing_warning = u8::MAX;
         }
+        self.last_timing_warning = self.last_timing_warning.saturating_sub(1);
 
         // Timing debug...
         /*
