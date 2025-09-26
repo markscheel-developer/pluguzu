@@ -151,7 +151,13 @@ impl Pluguzu {
                                             &mut state.preset.user_presets,
                                         )
                                     });
-                                    state.editor.render_status(ui, &dsp_state);
+                                    let mut synced = dsp_state.synced.load(Ordering::Relaxed);
+                                    ui.menu_button("Clock", |ui| {
+                                        if ui.checkbox(&mut synced, "Sync").clicked() {
+                                            dsp_state.synced.store(synced, Ordering::Relaxed)
+                                        }
+                                    });
+                                    state.editor.render_status(ui, synced, &dsp_state);
                                 });
 
                                 // Code editor
@@ -401,14 +407,24 @@ impl EditorState {
             *view = UIView::Preset
         }
     }
-    fn render_status(&mut self, ui: &mut egui::Ui, dsp_state: &crate::PluguzuDSP) {
+    fn render_status(&mut self, ui: &mut egui::Ui, synced: bool, dsp_state: &crate::PluguzuDSP) {
         let playing = dsp_state.playing.load(Ordering::Relaxed);
-        let status = if playing { ">>=" } else { "|-|" };
+        if synced {
+            let status = if playing { ">>=" } else { "|-|" };
+            ui.label(status);
+        } else {
+            let status = if playing { "STOP" } else { "PLAY" };
+            if ui.button(status).clicked() {
+                dsp_state.playing.store(!playing, Ordering::Relaxed);
+            }
+            let mut bpm = dsp_state.bpm.load(Ordering::Relaxed);
+            if ui.add(egui::DragValue::new(&mut bpm).speed(0.1)).changed() {
+                dsp_state.bpm.store(bpm, Ordering::Relaxed);
+            }
+        }
         let next = dsp_state.next.load(Ordering::Relaxed);
         let remaining = dsp_state.remaining.load(Ordering::Relaxed);
-        ui.label(RichText::new(format!(
-            "{status} {next} | {remaining} events"
-        )));
+        ui.label(RichText::new(format!(" {next} | {remaining} events")));
         if self.updated && ui.button("Play").on_hover_text(PLAY_TIP).clicked() {
             self.update = Some(PluguzuTask::Parse(ParseTask::InPlace));
         }

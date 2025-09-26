@@ -19,7 +19,7 @@ mod ui;
 pub(crate) use debug::{debug, info, pwarn};
 
 use arc_swap::ArcSwap;
-use atomic_float::AtomicF64;
+use atomic_float::{AtomicF32, AtomicF64};
 use nih_plug::prelude::*;
 use nih_plug_egui::{egui, EguiState};
 use std::collections::{HashMap, HashSet};
@@ -44,7 +44,10 @@ struct PluguzuDSP {
     remaining: AtomicUsize,
     /// The current start fraction for event highlights
     pos: AtomicF64,
+    /// Are we synced to an external clock?
     synced: AtomicBool,
+    /// The BPM when not synced.
+    bpm: AtomicF32,
 }
 
 /// The params that can be saved/loaded
@@ -140,6 +143,9 @@ pub struct Pluguzu {
 
     /// Detect the first process callback, to work around a silly bug in nih-plug.
     skip_first: bool,
+
+    /// Local time when not sync.
+    local_transport: Option<f64>,
 }
 
 impl Default for Pluguzu {
@@ -163,6 +169,7 @@ impl Default for Pluguzu {
                 remaining: AtomicUsize::new(0),
                 pos: AtomicF64::new(0.),
                 synced: AtomicBool::new(true),
+                bpm: AtomicF32::new(120.),
             }),
 
             dirt: dirt::Dirt::new(8),
@@ -193,6 +200,7 @@ impl Default for Pluguzu {
             }),
             skip_first: false,
             last_timing_warning: 0,
+            local_transport: None,
         }
     }
 }
@@ -214,9 +222,28 @@ pub enum PluguzuTask {
 const BUFFER_LEN: i32 = 4;
 
 struct TransportInfo {
+    /// Whether the transport is running.
+    playing: bool,
+    /// The position in seconds.
+    now: f64,
+    /// The position in cycle fraction.
     cycle_pos: f64,
-    beat_per_min: f64,
-    sig_numerator: i32,
+    /// The length of a cycle in seconds. This is used to know when the current buffer ends.
+    cycle_length: f64,
+    /// The cps, for dirt.
+    cycle_per_sec: f32,
+}
+
+impl TransportInfo {
+    fn new(playing: bool, now: f64, tempo: f64, sig_numerator: f64) -> TransportInfo {
+        TransportInfo {
+            playing,
+            now,
+            cycle_pos: now / 60.0 * tempo / sig_numerator,
+            cycle_length: 60. / tempo * sig_numerator,
+            cycle_per_sec: (tempo / 60. / sig_numerator) as f32,
+        }
+    }
 }
 
 impl Pluguzu {
@@ -318,14 +345,11 @@ impl Pluguzu {
         }
     }
 
-    fn compute_timing(&mut self, frames: usize, info: TransportInfo) {
+    fn compute_timing(&mut self, frames: usize, info: &TransportInfo) {
         // Compute current frame info
         let frames = frames as f64;
-        let beat_per_sec = 60. / info.beat_per_min;
-        let sig_numerator = info.sig_numerator as f64;
-        let bar_length = beat_per_sec * sig_numerator;
-        let run_time = frames / (self.audio.sample_rate as f64);
-        let run_fraction = run_time / bar_length;
+        let run_time = frames / self.dirt.sr;
+        let run_fraction = run_time / info.cycle_length;
         let frames_per_fraction = frames / run_fraction;
 
         // Sanity checks
@@ -372,10 +396,9 @@ impl Pluguzu {
         }
 
         // Store timing offset for dirt
-        let cps = (info.beat_per_min / 60. / sig_numerator) as f32;
-        if cps != self.audio.cps {
-            debug!("CPS changed to {}", cps);
-            self.audio.cps = cps;
+        if info.cycle_per_sec != self.audio.cps {
+            debug!("CPS changed to {}", info.cycle_per_sec);
+            self.audio.cps = info.cycle_per_sec;
         }
     }
 }
@@ -425,7 +448,15 @@ impl Plugin for Pluguzu {
             context.send_event(event)
         }
 
+        let transport = context.transport();
+
         if self.skip_first {
+            // Use local transport if not playing and standalone
+            if !transport.playing && !self.hosted_in_daw.load(Ordering::Relaxed) {
+                self.dsp_state.synced.store(false, Ordering::Relaxed);
+                self.dsp_state.playing.store(true, Ordering::Relaxed);
+            }
+
             // Sometime, in standalone mode, the very first callback happens at the wrong time.
             // Here is how it looks in debug:
             //    CPS changed to 0.5
@@ -439,19 +470,52 @@ impl Plugin for Pluguzu {
             return ProcessStatus::KeepAlive;
         }
 
+        let synced = if self.dsp_state.synced.load(Ordering::Relaxed) {
+            // When synced, remove the local transport
+            self.local_transport = None;
+            true
+        } else {
+            // Otherwise make sure a local transport is defined.
+            if self.local_transport.is_none() {
+                self.local_transport = Some(0.)
+            }
+            false
+        };
+
         // Lookup transport and read the current bar.
         let frames_count = buffer.samples();
-        let transport = context.transport();
-        let playing = transport.playing;
-        self.audio.now = transport.pos_seconds().expect("beat");
-        let pos = self.audio.now / 4.0;
+        let transport_info = if let Some(local_transport) = self.local_transport.as_mut() {
+            let playing = self.dsp_state.playing.load(Ordering::Relaxed);
+            let now = if playing {
+                let now = *local_transport;
+                // Advance the local transport at a fixed increment, based on the buffer size and the sample rate.
+                *local_transport += frames_count as f64 / self.dirt.sr;
+                now
+            } else {
+                0.
+            };
+            // Lookup the BPM, can be set through the UI.
+            let tempo = self.dsp_state.bpm.load(Ordering::Relaxed) as f64;
+            TransportInfo::new(playing, now, tempo, 4.)
+        } else {
+            // Lookup external transport info.
+            let now = transport.pos_seconds().expect("position");
+            let tempo = transport.tempo.unwrap_or(120.);
+            let sig_numerator = transport.time_sig_numerator.unwrap_or(4) as f64;
+            TransportInfo::new(transport.playing, now, tempo, sig_numerator)
+        };
+
+        self.audio.now = transport_info.now;
+        let pos = transport_info.cycle_pos;
         let cur_bar = pos.floor() as i32;
         self.current_bar.store(cur_bar, Ordering::Relaxed);
 
         // When not playing...
-        if !playing {
+        if !transport_info.playing {
             // Tell the UI
-            self.dsp_state.playing.store(false, Ordering::Relaxed);
+            if !synced {
+                self.dsp_state.playing.store(false, Ordering::Relaxed);
+            }
 
             // Reset event position.
             self.events_pos = 0;
@@ -462,16 +526,7 @@ impl Plugin for Pluguzu {
             // return ProcessStatus::KeepAlive;
         }
 
-        if self.dsp_state.synced.load(Ordering::Relaxed) {
-            self.compute_timing(
-                frames_count,
-                TransportInfo {
-                    beat_per_min: transport.tempo.unwrap_or(120.),
-                    cycle_pos: self.audio.now / transport.time_sig_denominator.unwrap_or(4) as f64,
-                    sig_numerator: transport.time_sig_numerator.unwrap_or(4),
-                },
-            );
-        }
+        self.compute_timing(frames_count, &transport_info);
 
         // Send any previously registered note-off.
         self.send_note_offs(context);
@@ -511,7 +566,11 @@ impl Plugin for Pluguzu {
             .playback(self.audio.now, frames_count, buffer.as_slice());
 
         // Update status for the UI
-        self.dsp_state.playing.store(playing, Ordering::Relaxed);
+        if synced {
+            self.dsp_state
+                .playing
+                .store(transport_info.playing, Ordering::Relaxed);
+        }
         let next = next_buffer - cur_bar;
         self.dsp_state.next.store(next, Ordering::Relaxed);
         let remaining = events.len() - self.events_pos;
