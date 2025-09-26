@@ -43,7 +43,7 @@ struct EditorState {
     code: Arc<Mutex<String>>,
     font_size: f32,
 
-    highlights: BTreeMap<LocEvent, f64>,
+    highlights: BTreeMap<LocEvent, u64>,
 
     focused: bool,
     updated: bool,
@@ -52,6 +52,8 @@ struct EditorState {
     update: Option<PluguzuTask>,
     picked_path: Option<String>,
     user_presets_file: Arc<PathBuf>,
+
+    monotonic_time: u64,
 }
 
 struct UIState {
@@ -92,6 +94,7 @@ impl Pluguzu {
                 update: None,
                 picked_path: None,
                 user_presets_file: self.user_presets_file.clone(),
+                monotonic_time: 0,
             },
             font_size: self.params.font_size.clone(),
             background_state: self.background_state.clone(),
@@ -426,8 +429,9 @@ impl EditorState {
         let dsp_state_pos = dsp_state.pos.load(Ordering::Relaxed);
 
         // Remove old highlights
+        let hl_age = 60;
         self.highlights
-            .retain(|_, when| dsp_state_pos - *when < 0.5);
+            .retain(|_, when| self.monotonic_time - *when < hl_age);
 
         // Add new highlights
         if dsp_state.playing.load(Ordering::Relaxed) {
@@ -443,7 +447,7 @@ impl EditorState {
 
                 for loc in &event.locs {
                     // This doesn't replace existing highlights to avoid fast blinkin
-                    self.highlights.entry(*loc).or_insert(start);
+                    self.highlights.entry(*loc).or_insert(self.monotonic_time);
                 }
                 evlocs_pos += 1;
             }
@@ -462,7 +466,10 @@ impl EditorState {
         }
 
         let shapes = self.highlights.iter().map(|(el, when)| {
-            let alpha = (egui::lerp(1.0..=0.3, (dsp_state_pos - when) / 0.5) * 255.) as u8;
+            let alpha = (egui::lerp(
+                1.0..=0.3,
+                (self.monotonic_time - when) as f32 / hl_age as f32,
+            ) * 255.) as u8;
             Shape::rect_stroke(
                 ep.highlight_rect(el.col, el.row, el.len),
                 5.,
@@ -474,6 +481,11 @@ impl EditorState {
             )
         });
         painter.extend(shapes);
+        let (new_time, overflow) = self.monotonic_time.overflowing_add(1);
+        if overflow {
+            self.highlights.clear();
+        };
+        self.monotonic_time = new_time;
     }
 }
 

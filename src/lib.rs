@@ -446,11 +446,8 @@ impl Plugin for Pluguzu {
 
         // When not playing...
         if !playing || transport.preroll_active.unwrap_or(false) {
-            {
-                self.dsp_state.playing.store(false, Ordering::Relaxed);
-                // Advance the time for the highlights
-                self.dsp_state.pos.fetch_add(0.2, Ordering::Relaxed);
-            }
+            // Tell the UI
+            self.dsp_state.playing.store(false, Ordering::Relaxed);
 
             // Reset event position.
             self.events_pos = 0;
