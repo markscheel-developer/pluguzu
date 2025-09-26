@@ -44,6 +44,7 @@ struct PluguzuDSP {
     remaining: AtomicUsize,
     /// The current start fraction for event highlights
     pos: AtomicF64,
+    synced: AtomicBool,
 }
 
 /// The params that can be saved/loaded
@@ -160,6 +161,7 @@ impl Default for Pluguzu {
                 next: AtomicI32::new(0),
                 remaining: AtomicUsize::new(0),
                 pos: AtomicF64::new(0.),
+                synced: AtomicBool::new(true),
             }),
 
             dirt: dirt::Dirt::new(8),
@@ -208,6 +210,12 @@ pub enum PluguzuTask {
 }
 
 const BUFFER_LEN: i32 = 4;
+
+struct TransportInfo {
+    cycle_pos: f64,
+    beat_per_min: f64,
+    sig_numerator: i32,
+}
 
 impl Pluguzu {
     // Setup the process callback buffer.
@@ -299,6 +307,65 @@ impl Pluguzu {
             self.events_start_bar + BUFFER_LEN
         }
     }
+
+    fn compute_timing(&mut self, frames: usize, info: TransportInfo) {
+        // Compute current frame info
+        let frames = frames as f64;
+        let beat_per_sec = 60. / info.beat_per_min;
+        let sig_numerator = info.sig_numerator as f64;
+        let bar_length = beat_per_sec * sig_numerator;
+        let run_time = frames / (self.audio.sample_rate as f64);
+        let run_fraction = run_time / bar_length;
+        let frames_per_fraction = frames / run_fraction;
+
+        // Sanity checks
+        if info.cycle_pos <= self.midi.start {
+            // Transport jump back in time, let's reset the buffer position to replay past event.
+            self.events_pos = 0;
+            // Reset the highlights position too
+            self.background_state.evlocs_pos.store(0, Ordering::Relaxed);
+        }
+
+        if info.cycle_pos > self.midi.end {
+            pwarn!(
+                "There is a gap with the last callback: {} > {}, gap {}",
+                info.cycle_pos,
+                self.midi.end,
+                self.midi.end - info.cycle_pos
+            )
+        }
+
+        // Timing debug...
+        /*
+        nih_plug::util::permit_alloc(|| {
+            println!(
+                "HERE: {} {}..{}, length {run_fraction}",
+                info.sycle_pos,
+                self.midi.end,
+                pos + run_fraction,
+            )
+        });
+        */
+        // Add a tiny padding to the end, because sometime the frame don't line-up perfectly.
+        // Uncomment the line above to observe that behavior.
+        let padding = 0.0000000001;
+
+        // Store the midi offset stuff
+        self.midi.start = info.cycle_pos;
+        self.midi.end = info.cycle_pos + run_fraction + padding;
+
+        if frames_per_fraction != self.midi.frames_per_fraction {
+            debug!("Frames per fraction changed to {}", frames_per_fraction);
+            self.midi.frames_per_fraction = frames_per_fraction;
+        }
+
+        // Store timing offset for dirt
+        let cps = (info.beat_per_min / 60. / sig_numerator) as f32;
+        if cps != self.audio.cps {
+            debug!("CPS changed to {}", cps);
+            self.audio.cps = cps;
+        }
+    }
 }
 
 impl Plugin for Pluguzu {
@@ -361,7 +428,7 @@ impl Plugin for Pluguzu {
         }
 
         // Lookup transport and read the current bar.
-        let frames_usize = buffer.samples();
+        let frames_count = buffer.samples();
         let transport = context.transport();
         let playing = transport.playing;
         self.audio.now = transport.pos_beats().expect("beat");
@@ -386,53 +453,16 @@ impl Plugin for Pluguzu {
             // return ProcessStatus::KeepAlive;
         }
 
-        // Compute current frame info
-        let pos = transport.pos_beats().expect("pos beats")
-            / transport.time_sig_denominator.unwrap_or(4) as f64;
-        let frames = frames_usize as f64;
-        let beat_per_min = transport.tempo.unwrap_or(120.);
-        let beat_per_sec = 60. / beat_per_min;
-        let sig_numerator = transport.time_sig_numerator.unwrap_or(4) as f64;
-        let bar_length = beat_per_sec * sig_numerator;
-        let run_time = frames / (transport.sample_rate as f64);
-        let run_fraction = run_time / bar_length;
-        let frames_per_fraction = frames / run_fraction;
-
-        if pos < self.midi.start {
-            // Transport jump back in time, let's reset the buffer position to replay past event.
-            self.events_pos = 0;
-            // Reset the highlights position too
-            self.background_state.evlocs_pos.store(0, Ordering::Relaxed);
-        }
-
-        // Store the midi offset stuff
-        self.midi.start = pos;
-        self.midi.end = pos + run_fraction; // ((pos + run_fraction) * 1000.).ceil() / 1000.;
-
-        /*
-        // Timing debug...
-        nih_plug::util::permit_alloc(|| {
-          let prev = self.dsp_state.pos.load(Ordering::Relaxed);
-          println!(
-                    "HERE: {:.9} {:.9} : {:.9} .. {:.9}",
-                    self.midi.end - self.midi.start,
-                    self.midi.start - prev,
-                    self.midi.start,
-                    self.midi.end
-          );
-        });
-        */
-
-        if frames_per_fraction != self.midi.frames_per_fraction {
-            debug!("Frames per fraction changed to {}", frames_per_fraction);
-            self.midi.frames_per_fraction = frames_per_fraction;
-        }
-
-        // Store timing offset for dirt
-        let cps = (beat_per_min / 60. / sig_numerator) as f32;
-        if cps != self.audio.cps {
-            debug!("CPS changed to {}", cps);
-            self.audio.cps = cps;
+        if self.dsp_state.synced.load(Ordering::Relaxed) {
+            self.compute_timing(
+                frames_count,
+                TransportInfo {
+                    beat_per_min: transport.tempo.unwrap_or(120.),
+                    cycle_pos: transport.pos_beats().expect("pos beats")
+                        / transport.time_sig_denominator.unwrap_or(4) as f64,
+                    sig_numerator: transport.time_sig_numerator.unwrap_or(4),
+                },
+            );
         }
 
         // Send any previously registered note-off.
@@ -470,7 +500,7 @@ impl Plugin for Pluguzu {
 
         // Play dirt
         self.dirt
-            .playback(self.audio.now, frames_usize, buffer.as_slice());
+            .playback(self.audio.now, frames_count, buffer.as_slice());
 
         // Update status for the UI
         self.dsp_state.playing.store(playing, Ordering::Relaxed);
