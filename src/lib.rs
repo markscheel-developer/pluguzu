@@ -114,7 +114,7 @@ pub struct Pluguzu {
     dsp_state: Arc<PluguzuDSP>,
 
     /// The pending note-offs.
-    note_offs: HashMap<u8, FutureNoteOff>,
+    note_offs: HashMap<(u8, u8), FutureNoteOff>,
 
     /// Samples
     dirt: dirt::Dirt,
@@ -167,7 +167,7 @@ impl Default for Pluguzu {
             dirt: dirt::Dirt::new(8),
             samples_library: Arc::new(crate::samples::SampleLibrary::new(samples_dir)),
 
-            note_offs: HashMap::with_capacity(255),
+            note_offs: HashMap::with_capacity(255 * 16),
 
             midi: ProcessMidi {
                 start: 0.,

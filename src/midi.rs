@@ -74,7 +74,7 @@ pub struct ProcessAudio {
 impl Pluguzu {
     pub fn send_note_offs(&mut self, context: &mut impl ProcessContext<Self>) {
         let midi = &self.midi;
-        self.note_offs.retain(|note, ev| {
+        self.note_offs.retain(|(note, _), ev| {
             if ev.when >= midi.start && ev.when < midi.end {
                 midi.send_note_off(*note, ev, context);
                 false
@@ -85,7 +85,7 @@ impl Pluguzu {
     }
 
     pub fn send_all_note_offs(&mut self, context: &mut impl ProcessContext<Self>) {
-        self.note_offs.retain(|note, ev| {
+        self.note_offs.retain(|(note, _), ev| {
             self.midi.do_send_note_off(0, *note, ev, context);
             false
         });
@@ -123,7 +123,7 @@ impl Pluguzu {
                     } else {
                         // Schedule the note-off for later
                         let prev = self.note_offs.insert(
-                            note,
+                            (note, channel),
                             FutureNoteOff {
                                 when: span.stop,
                                 channel,
