@@ -185,7 +185,7 @@ impl Pluguzu {
             } else if self.midi.start <= ev.span.start {
                 // The event is due for this buffer
                 self.send_tidal_event(ev, context);
-            } else if ev.span.stop <= self.midi.end {
+            } else if ev.span.stop >= self.midi.end {
                 pwarn!(
                     "{:.7} Missed event start, but it still make sense to send it now... {:.7}..{:.7} < {:.7}",
                     self.midi.start,
