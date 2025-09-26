@@ -235,6 +235,7 @@ impl Pluguzu {
                 std::mem::drop(stale);
             })
         }
+        let buffer_start = buffer.bar_start.unwrap_or(start);
         // Store the previous events back in the buffer so that they will be freed by the background task
         buffer.stale = self.events.take();
         // Borrow the new events.
@@ -245,7 +246,7 @@ impl Pluguzu {
         buffer.bar_start = None;
 
         // When the buffer is updated in-place, then we advance the buffer pos to skip past events
-        if buffer.in_place {
+        if buffer.in_place || start > buffer_start {
             debug!("Skipping event due to forced in-place update...");
             while self.events_pos < events.len() {
                 let ev = &events[self.events_pos];
