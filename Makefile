@@ -39,9 +39,10 @@ build-rust:
 	@mv target/bundled/pluguzu* bin/
 
 haskell-lib:
-	@cabal build
+	@cabal build -O2
 	@mkdir -p bin
-	@find $(PWD)/dist-newstyle/ \( -name libpluguzu.so  -or -name Pluguzu_stub.h \) -exec ln -sf {} bin/ \;
+	@ln -sf $(shell dirname $(shell cabal -O2 list-bin flib:pluguzu))/pluguzu-tmp/Pluguzu_stub.h bin
+	@ln -sf $(shell cabal -O2 list-bin flib:pluguzu) bin
 	@ln -sf $(shell ghc-pkg field rts include-dirs --simple-output) bin/rts-header
 
 run-debug:
