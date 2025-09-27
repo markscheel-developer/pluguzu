@@ -162,7 +162,7 @@ impl Pluguzu {
 
                                 // Code editor
                                 let error = state.background_state.error.lock().expect("lock");
-                                let status_line = if error.is_some() { 1 } else { 0 };
+                                let status_line = if error.is_some() { 2 } else { 0 };
                                 let output = state.editor.code_editor(ui, status_line);
                                 state.editor.render_highlights(
                                     ui,
