@@ -56,9 +56,6 @@ import Sound.Tidal.Time qualified as Time
 rat2float :: Rational -> Double
 rat2float = realToFrac
 
-midiNote :: Pattern.Note -> Word8
-midiNote (Pattern.Note n) = round $ n + 72
-
 mkArc :: Rational -> Rational -> Time.Arc
 mkArc start stop = Time.Arc start stop
 
@@ -114,13 +111,13 @@ encodeEvents :: [Event] -> BS.ByteString
 encodeEvents = LBS.toStrict . Aeson.encode
 
 patternToEvents :: Pattern.ControlPattern -> Time.Arc -> [Event]
-patternToEvents pat arc = sortBy compareEvent $ mapMaybe eventToMidi $ Pattern.queryArc pat arc
+patternToEvents pat arc = sortBy compareEvent $ mapMaybe evmapToEvent $ Pattern.queryArc pat arc
 
 compareEvent :: Event -> Event -> Ordering
 compareEvent e1 e2 = compare e1.span.start e2.span.start
 
-eventToMidi :: Pattern.Event Pattern.ValueMap -> Maybe Event
-eventToMidi ev
+evmapToEvent :: Pattern.Event Pattern.ValueMap -> Maybe Event
+evmapToEvent ev
     | -- See Sound.Tidal.Stream.Process.
       -- Without this, when playing 's "sax" # cutoff "1 2"'
       -- we would send 'sax' twice.
@@ -157,12 +154,13 @@ eventToCC ev = do
 
 eventToNote :: Pattern.Event Pattern.ValueMap -> Maybe (Word8, Word8)
 eventToNote ev = do
-    note <- midiNote <$> noteEvent
-    pure (note, v)
+    note <- ((+) 72 . round . Pattern.unNote <$> noteEvent) <|> (round . Pattern.unNote <$> midiNoteEvent)
+    pure (note, velocity)
   where
-    noteEvent = Pattern.getN =<< (Map.lookup "n" ev.value <|> Map.lookup "note" ev.value <|> Map.lookup "midinote" ev.value)
+    noteEvent = Pattern.getN =<< (Map.lookup "n" ev.value <|> Map.lookup "note" ev.value)
+    midiNoteEvent = Pattern.getN =<< Map.lookup "midinote" ev.value
 
-    v = fromIntegral $ max 0 $ min 127 $ round $ fromMaybe 100 mVelocity
+    velocity = fromIntegral $ max 0 $ min 127 $ round $ fromMaybe 100 mVelocity
     mVelocity :: Maybe Double
     mVelocity = getF "velocity" <|> (ampToVel <$> getF "amp") <|> (gainToVel <$> getF "gain")
     getF name = Map.lookup name ev.value >>= Pattern.getF
