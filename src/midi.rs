@@ -65,7 +65,7 @@ impl ProcessMidi {
 pub struct ProcessAudio {
     /// The cycle per second, for dirt.
     pub cps: f32,
-    /// The current beat position.
+    /// The current time position in second.
     pub now: f64,
     /// The sample rate.
     pub sample_rate: u32,

@@ -443,7 +443,7 @@ impl Plugin for Pluguzu {
         let frames_count = buffer.samples();
         let transport = context.transport();
         let playing = transport.playing;
-        self.audio.now = transport.pos_beats().expect("beat");
+        self.audio.now = transport.pos_seconds().expect("beat");
         let pos = self.audio.now / 4.0;
         let cur_bar = pos.floor() as i32;
         self.current_bar.store(cur_bar, Ordering::Relaxed);
