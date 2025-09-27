@@ -79,7 +79,7 @@ pluguzuRender pState startArc endArc pSize = handle catchException $ do
     let start = fromInteger (toInteger startArc)
     let end = fromInteger (toInteger endArc)
     let arc = PluguzuCore.mkArc start end
-    let evs = PluguzuCore.filterDup $ PluguzuCore.patternToEvents pat arc
+    let evs = PluguzuCore.patternToEvents pat arc
     let bs = PluguzuCore.encodeEvents evs
     writeIORef state.events bs
     let BS.BS ptr sz = bs

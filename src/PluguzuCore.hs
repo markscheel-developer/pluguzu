@@ -10,7 +10,6 @@ module PluguzuCore (
     patternToEvents,
     mkArc,
     Event (..),
-    filterDup,
     encodeEvents,
 
     -- * re-export
@@ -113,16 +112,6 @@ instance ToJSON Event where
 
 encodeEvents :: [Event] -> BS.ByteString
 encodeEvents = LBS.toStrict . Aeson.encode
-
-filterDup :: [Event] -> [Event]
-filterDup [] = []
-filterDup (x : xs) = x : filterDup (dropDup xs)
-  where
-    dropDup [] = []
-    dropDup rest@(y : ys)
-        | y.span.start > x.span.start = rest
-        | EventMidi ym <- y.kind, EventMidi xm <- x.kind, ym.data0 == xm.data0, xm.data1 == xm.data1 = dropDup ys
-        | otherwise = y : dropDup ys
 
 patternToEvents :: Pattern.ControlPattern -> Time.Arc -> [Event]
 patternToEvents pat arc = sortBy compareEvent $ mapMaybe eventToMidi $ Pattern.queryArc pat arc
