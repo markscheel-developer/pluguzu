@@ -189,6 +189,8 @@ impl Sound {
             "hold" => self.0.hold = v,
             "release" => self.0.release = v,
             "orbit" => self.0.orbit = (v.round() as i32).min(MAX_ORBIT),
+            "vib" => self.0.vib = v,
+            "vibmod" => self.0.vibmod = v,
             _ => {}
         }
     }

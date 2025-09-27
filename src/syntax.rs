@@ -42,7 +42,7 @@ pub fn tidal() -> Syntax {
             "fastspread", "spreadChoose", "spreadr", "stitch", "striateBy", "off", "plyWith", "inside", "outside",
             "every", "plyWith", "chunk", "sometimesBy", "someCyclesBy", "plyWith", "juxBy", "fix", "unfix", "foldEvery",
             "within", "fit", "pickF", "weave", "weaveWith", "selectF", "lindenmayer", "rangex", "stutter", "euclidFull",
-            "stut", "echo", "stutWith", "echoWith", "whenmod", "contrast"
+            "stut", "echo", "stutWith", "echoWith", "whenmod", "contrast", "vib", "vibmod"
         ]),
         types: BTreeSet::from([]),
         special: BTreeSet::from([]),

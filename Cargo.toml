@@ -27,7 +27,7 @@ serde_json = "1.0.145"
 sndfile = "0.1.1"
 samplerate = "0.2.4"
 # The audio engine
-dirt-sys = { git = "https://codeberg.org/TristanCacqueray/dirt-sys.git", rev = "392072792cd78fe69cbb409292fb9fa65c36e982" }
+dirt-sys = { git = "https://codeberg.org/TristanCacqueray/dirt-sys.git", rev = "fd038969ec13297d5760a8a97446e3f0711deaf1" }
 # dirt-sys = { path = "../dirt-sys" }
 # Helper to show file picker.
 rfd = "0.15.4"

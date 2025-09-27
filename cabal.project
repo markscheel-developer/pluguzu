@@ -3,6 +3,6 @@ source-repository-package
     type: git
     location: https://codeberg.org/TristanCacqueray/tidal/
     -- Fetch https://codeberg.org/uzu/tidal/pulls/1225
-    tag: 0b3d35d9fa749ae95fe6de55c299bf995fe3786b
-    subdir: tidal-parse
+    tag: 2a93cbe54322b7cb6a30a55935f87ad608ff4bd0
+    subdir: tidal-parse tidal-core
 packages: .
