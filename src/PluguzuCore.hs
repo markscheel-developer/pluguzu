@@ -135,7 +135,7 @@ eventToMidi ev
     span = EventSpan start stop_
     mkLoc :: ((Int, Int), (Int, Int)) -> EventLoc
     mkLoc ((col, row), (end, _)) = EventLoc col (row - 1) (end - col)
-    chan = (+ 1) $ round $ max 0 $ min 15 $ fromMaybe 0 $ Pattern.getF =<< Map.lookup "midichan" ev.value
+    chan = (-) 1 $ round $ max 1 $ min 16 $ fromMaybe 1 $ Pattern.getF =<< Map.lookup "midichan" ev.value
     noteToMidi (pitch, velocity) = MidiEvent (0x90 .|. chan) pitch velocity
     ccToMidi (ccn, ccv) = MidiEvent (0xb0 .|. chan) ccn ccv
     midiEvent = do
