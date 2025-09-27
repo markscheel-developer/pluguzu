@@ -515,6 +515,8 @@ impl Plugin for Pluguzu {
             // Tell the UI
             if synced {
                 self.dsp_state.playing.store(false, Ordering::Relaxed);
+            } else if let Some(lt) = self.local_transport.as_mut() {
+                *lt = 0.;
             }
 
             // Reset event position.
