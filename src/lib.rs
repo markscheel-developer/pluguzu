@@ -407,7 +407,7 @@ impl Plugin for Pluguzu {
 
         // Setup sample-rate
         let sr = buffer_config.sample_rate as u32;
-        self.dirt.set_sample_rate(sr);
+        self.dirt.set_sample_rate(buffer_config.sample_rate.into());
         self.audio.sample_rate = sr;
         self.samples_library.set_sample_rate(sr);
 

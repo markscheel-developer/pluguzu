@@ -159,7 +159,7 @@ impl Pluguzu {
                     ev.span.start, sev.name
                 );
                 let frame_offset = self.midi.event_offset(ev.span.start) as f64;
-                let sample_time = 1. / (self.dirt.sr as f64);
+                let sample_time = 1. / self.dirt.sr;
                 let when = self.audio.now + sample_time * frame_offset;
                 sound.play(when, self.audio.cps, &samples)
             }

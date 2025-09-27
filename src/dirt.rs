@@ -5,7 +5,7 @@
 use std::ffi::c_int;
 
 pub struct Dirt {
-    pub sr: u32,
+    pub sr: f64,
 }
 
 impl Dirt {
@@ -18,16 +18,15 @@ impl Dirt {
                 false,
             );
         }
-        Dirt { sr: 44100 }
+        Dirt { sr: 44100. }
     }
-    pub fn set_sample_rate(&mut self, sr: u32) {
-        unsafe { dirt_sys::set_samplerate(sr as c_int) };
+    pub fn set_sample_rate(&mut self, sr: f64) {
+        unsafe { dirt_sys::set_samplerate(sr.round() as c_int) };
         self.sr = sr;
     }
 
     pub fn playback(&self, mut now: f64, len: usize, samples: &mut [&mut [f32]]) {
-        let sample_rate = self.sr as f64;
-        let sample_time = 1. / sample_rate;
+        let sample_time = 1. / self.sr;
         for pos in 0..len {
             let left: *mut f32 = samples[0].as_mut_ptr();
             let right: *mut f32 = samples[1].as_mut_ptr();
