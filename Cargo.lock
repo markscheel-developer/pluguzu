@@ -1036,7 +1036,7 @@ dependencies = [
 [[package]]
 name = "dirt-sys"
 version = "0.1.0"
-source = "git+https://codeberg.org/TristanCacqueray/dirt-sys.git?rev=d5bc39268e92bced3f4fd51da1e4ec31c3e0067f#d5bc39268e92bced3f4fd51da1e4ec31c3e0067f"
+source = "git+https://codeberg.org/TristanCacqueray/dirt-sys.git?rev=392072792cd78fe69cbb409292fb9fa65c36e982#392072792cd78fe69cbb409292fb9fa65c36e982"
 dependencies = [
  "cc",
 ]

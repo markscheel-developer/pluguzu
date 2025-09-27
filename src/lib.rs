@@ -522,6 +522,8 @@ impl Plugin for Pluguzu {
             self.background_state.evlocs_pos.store(0, Ordering::Relaxed);
 
             self.send_all_note_offs(context);
+
+            self.dirt.stop();
             return ProcessStatus::Normal;
             // return ProcessStatus::KeepAlive;
         }
