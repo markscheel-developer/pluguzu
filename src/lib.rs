@@ -279,7 +279,7 @@ impl Pluguzu {
             debug!("Skipping event due to forced in-place update...");
             while self.events_pos < events.len() {
                 let ev = &events[self.events_pos];
-                if ev.span.start >= self.midi.end {
+                if ev.span.start >= self.midi.start {
                     break;
                 }
                 self.events_pos += 1;
