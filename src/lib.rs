@@ -513,7 +513,7 @@ impl Plugin for Pluguzu {
         // When not playing...
         if !transport_info.playing {
             // Tell the UI
-            if !synced {
+            if synced {
                 self.dsp_state.playing.store(false, Ordering::Relaxed);
             }
 
