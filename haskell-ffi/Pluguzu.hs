@@ -57,7 +57,7 @@ pluguzuParse pState cStr = do
             cerr <- Foreign.C.newCString ("Error: " <> displayException e)
             writeError state.error (Just cerr)
     -- putStrLn (PluguzuCore.deltaMini str)
-    handle catchException $ case PluguzuCore.parseTidal (PluguzuCore.deltaMini str) of
+    handle catchException $ case PluguzuCore.parseTidal str of
         Left err -> do
             cerr <- Foreign.C.newCString err
             writeError state.error (Just cerr)

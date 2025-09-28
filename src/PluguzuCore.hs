@@ -14,7 +14,6 @@ module PluguzuCore (
 
     -- * re-export
     Pattern.ControlPattern,
-    Pattern.deltaMini,
     Time.Arc (..),
     Parse.parseTidal,
 

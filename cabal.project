@@ -1,8 +1,8 @@
--- We need a source-repository, see: https://codeberg.org/uzu/tidal/issues/1224
+-- Fetch my integration branch to pulled in additions and fixes to tidal-parse
+-- In particular: https://codeberg.org/uzu/tidal/pulls/1231
 source-repository-package
     type: git
     location: https://codeberg.org/TristanCacqueray/tidal/
-    -- Fetch https://codeberg.org/uzu/tidal/pulls/1225
-    tag: 2a93cbe54322b7cb6a30a55935f87ad608ff4bd0
-    subdir: tidal-parse tidal-core
+    tag: e34fa5fa93e40226b831d13d7ab3dec76bc99fbe
+    subdir: tidal-parse
 packages: .
