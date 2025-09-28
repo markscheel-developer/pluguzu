@@ -143,9 +143,6 @@ pub struct Pluguzu {
 
     /// Detect the first process callback, to work around a silly bug in nih-plug.
     skip_first: bool,
-
-    /// Local time when not sync.
-    local_transport: Option<f64>,
 }
 
 impl Default for Pluguzu {
@@ -200,7 +197,6 @@ impl Default for Pluguzu {
             }),
             skip_first: false,
             last_timing_warning: 0,
-            local_transport: None,
         }
     }
 }
@@ -245,6 +241,9 @@ impl TransportInfo {
         }
     }
 }
+
+// Add a tiny padding to the end, because sometime the frame don't line-up perfectly.
+const BUFFER_END_PADDING: f64 = 0.0000000001;
 
 impl Pluguzu {
     // Setup the process callback buffer.
@@ -382,13 +381,11 @@ impl Pluguzu {
             )
         });
         */
-        // Add a tiny padding to the end, because sometime the frame don't line-up perfectly.
-        // Uncomment the line above to observe that behavior.
-        let padding = 0.0000000001;
+        // Uncomment the line above to observe the padding behavior.
 
         // Store the midi offset stuff
         self.midi.start = info.cycle_pos;
-        self.midi.end = info.cycle_pos + run_fraction + padding;
+        self.midi.end = info.cycle_pos + run_fraction + BUFFER_END_PADDING;
 
         if frames_per_fraction != self.midi.frames_per_fraction {
             debug!("Frames per fraction changed to {}", frames_per_fraction);
@@ -470,33 +467,23 @@ impl Plugin for Pluguzu {
             return ProcessStatus::KeepAlive;
         }
 
-        let synced = if self.dsp_state.synced.load(Ordering::Relaxed) {
-            // When synced, remove the local transport
-            self.local_transport = None;
-            true
-        } else {
-            // Otherwise make sure a local transport is defined.
-            if self.local_transport.is_none() {
-                self.local_transport = Some(0.)
-            }
-            false
-        };
+        let synced = self.dsp_state.synced.load(Ordering::Relaxed);
 
         // Lookup transport and read the current bar.
         let frames_count = buffer.samples();
-        let transport_info = if let Some(local_transport) = self.local_transport.as_mut() {
+        let transport_info = if !synced {
             let playing = self.dsp_state.playing.load(Ordering::Relaxed);
-            let now = if playing {
-                let now = *local_transport;
-                // Advance the local transport at a fixed increment, based on the buffer size and the sample rate.
-                *local_transport += frames_count as f64 / self.dirt.sr;
-                now
-            } else {
-                0.
-            };
-            // Lookup the BPM, can be set through the UI.
             let tempo = self.dsp_state.bpm.load(Ordering::Relaxed) as f64;
-            TransportInfo::new(playing, now, tempo, 4.)
+            if playing {
+                let mut info = TransportInfo::new(true, 0.0, tempo, 4.);
+                // Advance the time based on the previous calculation
+                info.cycle_pos = (self.midi.end - BUFFER_END_PADDING).max(0.);
+                info.now = self.audio.now + frames_count as f64 / self.dirt.sr;
+                info
+            } else {
+                self.midi.end = 0.;
+                TransportInfo::new(false, 0.0, tempo, 4.)
+            }
         } else {
             // Lookup external transport info.
             let now = transport.pos_seconds().expect("position");
@@ -515,8 +502,6 @@ impl Plugin for Pluguzu {
             // Tell the UI
             if synced {
                 self.dsp_state.playing.store(false, Ordering::Relaxed);
-            } else if let Some(lt) = self.local_transport.as_mut() {
-                *lt = 0.;
             }
 
             // Reset event position.
