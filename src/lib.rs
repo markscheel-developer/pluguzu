@@ -475,10 +475,12 @@ impl Plugin for Pluguzu {
             let playing = self.dsp_state.playing.load(Ordering::Relaxed);
             let tempo = self.dsp_state.bpm.load(Ordering::Relaxed) as f64;
             if playing {
-                let mut info = TransportInfo::new(true, 0.0, tempo, 4.);
-                // Advance the time based on the previous calculation
+                // Advance the time by a fixed amount.
+                let now = self.audio.now + frames_count as f64 / self.dirt.sr;
+                let mut info = TransportInfo::new(true, now, tempo, 4.);
+                // Advance the cycle pos based on the previous calculation
+                // to ensure the time goes forward, in case the BPM is changed.
                 info.cycle_pos = (self.midi.end - BUFFER_END_PADDING).max(0.);
-                info.now = self.audio.now + frames_count as f64 / self.dirt.sr;
                 info
             } else {
                 self.midi.end = 0.;
