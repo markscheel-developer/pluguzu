@@ -125,6 +125,7 @@ Implemented:
 - [x] Integrate the dirt sampler.
 - [x] Loading code through the command line and file menu.
 - [x] Support user-defined presets, e.g. in ~/.config/pluguzu/presets.md.
+- [x] Add standalone transport, e.g. without sync to an external clock.
 
 Next:
 
@@ -134,5 +135,4 @@ Next:
 
 Future idea:
 
-- [ ] Add standalone transport, e.g. without sync to an external clock.
 - [ ] Support other Uzu languages like Mondo.
