@@ -432,7 +432,7 @@ dependencies = [
 [[package]]
 name = "baseview"
 version = "0.1.0"
-source = "git+https://github.com/RustAudio/baseview.git?rev=3724a00c970a9cd10a3494fa3c37bca66d631bb7#3724a00c970a9cd10a3494fa3c37bca66d631bb7"
+source = "git+https://github.com/blepfx/baseview.git?rev=042f0c6cbc4a8befdd152f61128a2bd83d7bae12#042f0c6cbc4a8befdd152f61128a2bd83d7bae12"
 dependencies = [
  "cocoa",
  "core-foundation",
@@ -1120,9 +1120,9 @@ dependencies = [
 [[package]]
 name = "egui-baseview"
 version = "0.6.0"
-source = "git+https://github.com/BillyDM/egui-baseview.git?rev=b6bcb51312bf9b2b710753475f7efb4cfe39ddef#b6bcb51312bf9b2b710753475f7efb4cfe39ddef"
+source = "git+https://codeberg.org/BillyDM/egui-baseview.git?rev=319311be815ddfa192400c161afb49c56ba560c1#319311be815ddfa192400c161afb49c56ba560c1"
 dependencies = [
- "baseview 0.1.0 (git+https://github.com/RustAudio/baseview.git?rev=3724a00c970a9cd10a3494fa3c37bca66d631bb7)",
+ "baseview 0.1.0 (git+https://github.com/blepfx/baseview.git?rev=042f0c6cbc4a8befdd152f61128a2bd83d7bae12)",
  "copypasta",
  "egui",
  "egui_glow",
@@ -1975,7 +1975,7 @@ dependencies = [
 [[package]]
 name = "nih_plug"
 version = "0.0.0"
-source = "git+https://github.com/robbert-vdh/nih-plug.git?rev=ed09eca4301f67f17d43474cd3d21ea10b639046#ed09eca4301f67f17d43474cd3d21ea10b639046"
+source = "git+https://github.com/TristanCacqueray/nih-plug.git?rev=1d5cf26b673e3c486a7b26d3fde1ed4786a8f221#1d5cf26b673e3c486a7b26d3fde1ed4786a8f221"
 dependencies = [
  "anyhow",
  "anymap3",
@@ -2012,7 +2012,7 @@ dependencies = [
 [[package]]
 name = "nih_plug_derive"
 version = "0.1.0"
-source = "git+https://github.com/robbert-vdh/nih-plug.git?rev=ed09eca4301f67f17d43474cd3d21ea10b639046#ed09eca4301f67f17d43474cd3d21ea10b639046"
+source = "git+https://github.com/TristanCacqueray/nih-plug.git?rev=1d5cf26b673e3c486a7b26d3fde1ed4786a8f221#1d5cf26b673e3c486a7b26d3fde1ed4786a8f221"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2022,9 +2022,9 @@ dependencies = [
 [[package]]
 name = "nih_plug_egui"
 version = "0.0.0"
-source = "git+https://github.com/robbert-vdh/nih-plug.git?rev=ed09eca4301f67f17d43474cd3d21ea10b639046#ed09eca4301f67f17d43474cd3d21ea10b639046"
+source = "git+https://github.com/TristanCacqueray/nih-plug.git?rev=1d5cf26b673e3c486a7b26d3fde1ed4786a8f221#1d5cf26b673e3c486a7b26d3fde1ed4786a8f221"
 dependencies = [
- "baseview 0.1.0 (git+https://github.com/RustAudio/baseview.git?rev=3724a00c970a9cd10a3494fa3c37bca66d631bb7)",
+ "baseview 0.1.0 (git+https://github.com/blepfx/baseview.git?rev=042f0c6cbc4a8befdd152f61128a2bd83d7bae12)",
  "crossbeam",
  "egui-baseview",
  "nih_plug",

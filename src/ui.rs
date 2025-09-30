@@ -199,9 +199,6 @@ impl Pluguzu {
                                 } else if output.response.changed() {
                                     state.editor.updated = true;
                                     state.editor.unsaved = true;
-                                    // TODO: sometime alt modifier get stuck after clicking, perhaps it could be manually removed to workaround this weird bug?
-                                    // egui_ctx.input(|i| println!("HERE: {:?}", i.modifiers));
-                                    // async_executor.execute_background(PluguzuTask::Parse(true))
                                 }
                             }
                         };
