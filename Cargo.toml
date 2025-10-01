@@ -8,8 +8,11 @@ authors = ["TristanCacqueray"]
 
 [dependencies]
 # The audio pluging framework
-nih_plug = { git = "https://github.com/TristanCacqueray/nih-plug.git", rev = "1d5cf26b673e3c486a7b26d3fde1ed4786a8f221", features = ["assert_process_allocs", "standalone"] }
-nih_plug_egui = { git = "https://github.com/TristanCacqueray/nih-plug.git", rev = "1d5cf26b673e3c486a7b26d3fde1ed4786a8f221" }
+nih_plug = { git = "https://github.com/TristanCacqueray/nih-plug.git", rev = "7b16c21bb2f63488aff72fc8a0ad8ef19bb3609f", features = ["assert_process_allocs", "standalone"] }
+nih_plug_egui = { git = "https://github.com/TristanCacqueray/nih-plug.git", rev = "7b16c21bb2f63488aff72fc8a0ad8ef19bb3609f" }
+# nih_plug = { path = "/srv/github.com/robbert-vdh/nih-plug/", features = ["assert_process_allocs", "standalone"] }
+# nih_plug_egui = { path = "/srv/github.com/robbert-vdh/nih-plug/nih_plug_egui" }
+
 # An egui widget for the code editor
 egui_code_editor = "0.2.17"
 # A str type to store sample names

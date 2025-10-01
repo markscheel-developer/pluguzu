@@ -132,9 +132,9 @@ dependencies = [
 
 [[package]]
 name = "anstyle"
-version = "1.0.11"
+version = "1.0.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "862ed96ca487e809f1c8e5a8447f6ee2cf102f846893800b20cebdf541fc6bbd"
+checksum = "5192cca8006f1fd4f7237516f40fa183bb07f8fbdfedaa0036de5ea9b0b45e78"
 
 [[package]]
 name = "anstyle-parse"
@@ -432,7 +432,7 @@ dependencies = [
 [[package]]
 name = "baseview"
 version = "0.1.0"
-source = "git+https://github.com/blepfx/baseview.git?rev=042f0c6cbc4a8befdd152f61128a2bd83d7bae12#042f0c6cbc4a8befdd152f61128a2bd83d7bae12"
+source = "git+https://github.com/RustAudio/baseview.git?rev=579130ecb4f9f315ae52190af42f0ea46aeaa4a2#579130ecb4f9f315ae52190af42f0ea46aeaa4a2"
 dependencies = [
  "cocoa",
  "core-foundation",
@@ -449,7 +449,7 @@ dependencies = [
 [[package]]
 name = "baseview"
 version = "0.1.0"
-source = "git+https://github.com/RustAudio/baseview.git?rev=579130ecb4f9f315ae52190af42f0ea46aeaa4a2#579130ecb4f9f315ae52190af42f0ea46aeaa4a2"
+source = "git+https://github.com/TristanCacqueray/baseview.git?rev=612480d5742d6c6bf1c386d2e3ad24f9e20f333a#612480d5742d6c6bf1c386d2e3ad24f9e20f333a"
 dependencies = [
  "cocoa",
  "core-foundation",
@@ -461,6 +461,7 @@ dependencies = [
  "winapi",
  "x11",
  "x11rb",
+ "xkbcommon",
 ]
 
 [[package]]
@@ -675,9 +676,9 @@ dependencies = [
 
 [[package]]
 name = "clap"
-version = "4.5.47"
+version = "4.5.48"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7eac00902d9d136acd712710d71823fb8ac8004ca445a89e73a41d45aa712931"
+checksum = "e2134bb3ea021b78629caa971416385309e0131b351b25e01dc16fb54e1b5fae"
 dependencies = [
  "clap_builder",
  "clap_derive",
@@ -690,9 +691,9 @@ source = "git+https://github.com/micahrj/clap-sys.git?rev=25d7f53fdb6363ad63fbd8
 
 [[package]]
 name = "clap_builder"
-version = "4.5.47"
+version = "4.5.48"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2ad9bbf750e73b5884fb8a211a9424a1906c1e156724260fdae972f31d70e1d6"
+checksum = "c2ba64afa3c0a6df7fa517765e31314e983f51dda798ffba27b988194fb65dc9"
 dependencies = [
  "anstream",
  "anstyle",
@@ -1120,9 +1121,9 @@ dependencies = [
 [[package]]
 name = "egui-baseview"
 version = "0.6.0"
-source = "git+https://codeberg.org/BillyDM/egui-baseview.git?rev=319311be815ddfa192400c161afb49c56ba560c1#319311be815ddfa192400c161afb49c56ba560c1"
+source = "git+https://codeberg.org/TristanCacqueray/egui-baseview.git?rev=7aba903da5a3d370f69fe4ad2791081a17239b03#7aba903da5a3d370f69fe4ad2791081a17239b03"
 dependencies = [
- "baseview 0.1.0 (git+https://github.com/blepfx/baseview.git?rev=042f0c6cbc4a8befdd152f61128a2bd83d7bae12)",
+ "baseview 0.1.0 (git+https://github.com/TristanCacqueray/baseview.git?rev=612480d5742d6c6bf1c386d2e3ad24f9e20f333a)",
  "copypasta",
  "egui",
  "egui_glow",
@@ -1851,6 +1852,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32a282da65faaf38286cf3be983213fcf1d2e2a58700e808f83f4ea9a4804bc0"
 
 [[package]]
+name = "memmap2"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "43a5a03cefb0d953ec0be133036f14e109412fa594edc2f77227249db66cc3ed"
+dependencies = [
+ "libc",
+]
+
+[[package]]
 name = "memoffset"
 version = "0.6.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1975,7 +1985,7 @@ dependencies = [
 [[package]]
 name = "nih_plug"
 version = "0.0.0"
-source = "git+https://github.com/TristanCacqueray/nih-plug.git?rev=1d5cf26b673e3c486a7b26d3fde1ed4786a8f221#1d5cf26b673e3c486a7b26d3fde1ed4786a8f221"
+source = "git+https://github.com/TristanCacqueray/nih-plug.git?rev=7b16c21bb2f63488aff72fc8a0ad8ef19bb3609f#7b16c21bb2f63488aff72fc8a0ad8ef19bb3609f"
 dependencies = [
  "anyhow",
  "anymap3",
@@ -2012,7 +2022,7 @@ dependencies = [
 [[package]]
 name = "nih_plug_derive"
 version = "0.1.0"
-source = "git+https://github.com/TristanCacqueray/nih-plug.git?rev=1d5cf26b673e3c486a7b26d3fde1ed4786a8f221#1d5cf26b673e3c486a7b26d3fde1ed4786a8f221"
+source = "git+https://github.com/TristanCacqueray/nih-plug.git?rev=7b16c21bb2f63488aff72fc8a0ad8ef19bb3609f#7b16c21bb2f63488aff72fc8a0ad8ef19bb3609f"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2022,9 +2032,9 @@ dependencies = [
 [[package]]
 name = "nih_plug_egui"
 version = "0.0.0"
-source = "git+https://github.com/TristanCacqueray/nih-plug.git?rev=1d5cf26b673e3c486a7b26d3fde1ed4786a8f221#1d5cf26b673e3c486a7b26d3fde1ed4786a8f221"
+source = "git+https://github.com/TristanCacqueray/nih-plug.git?rev=7b16c21bb2f63488aff72fc8a0ad8ef19bb3609f#7b16c21bb2f63488aff72fc8a0ad8ef19bb3609f"
 dependencies = [
- "baseview 0.1.0 (git+https://github.com/blepfx/baseview.git?rev=042f0c6cbc4a8befdd152f61128a2bd83d7bae12)",
+ "baseview 0.1.0 (git+https://github.com/TristanCacqueray/baseview.git?rev=612480d5742d6c6bf1c386d2e3ad24f9e20f333a)",
  "crossbeam",
  "egui-baseview",
  "nih_plug",
@@ -2793,9 +2803,9 @@ dependencies = [
 
 [[package]]
 name = "regex"
-version = "1.11.2"
+version = "1.11.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "23d7fd106d8c02486a8d64e778353d1cffe08ce79ac2e82f540c86d0facf6912"
+checksum = "8b5288124840bee7b386bc413c487869b360b2b4ec421ea56425128692f2a82c"
 dependencies = [
  "aho-corasick",
  "memchr",
@@ -2805,9 +2815,9 @@ dependencies = [
 
 [[package]]
 name = "regex-automata"
-version = "0.4.10"
+version = "0.4.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6b9458fa0bfeeac22b5ca447c63aaf45f28439a709ccd244698632f9aa6394d6"
+checksum = "833eb9ce86d40ef33cb1306d8accf7bc8ec2bfea4355cbdebb3df68b40925cad"
 dependencies = [
  "aho-corasick",
  "memchr",
@@ -4102,6 +4112,18 @@ name = "xcursor"
 version = "0.3.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bec9e4a500ca8864c5b47b8b482a73d62e4237670e5b5f1d6b9e3cae50f28f2b"
+
+[[package]]
+name = "xkbcommon"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "13867d259930edc7091a6c41b4ce6eee464328c6ff9659b7e4c668ca20d4c91e"
+dependencies = [
+ "as-raw-xcb-connection",
+ "libc",
+ "memmap2",
+ "xkeysym",
+]
 
 [[package]]
 name = "xkbcommon-dl"
