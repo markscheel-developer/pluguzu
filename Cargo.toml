@@ -8,8 +8,8 @@ authors = ["TristanCacqueray"]
 
 [dependencies]
 # The audio pluging framework
-nih_plug = { git = "https://github.com/TristanCacqueray/nih-plug.git", rev = "7b16c21bb2f63488aff72fc8a0ad8ef19bb3609f", features = ["assert_process_allocs", "standalone"] }
-nih_plug_egui = { git = "https://github.com/TristanCacqueray/nih-plug.git", rev = "7b16c21bb2f63488aff72fc8a0ad8ef19bb3609f" }
+nih_plug = { git = "https://github.com/TristanCacqueray/nih-plug.git", rev = "cede7e305b13318ad44f8157cd7f8f0d0431d7c3", features = ["assert_process_allocs", "standalone"] }
+nih_plug_egui = { git = "https://github.com/TristanCacqueray/nih-plug.git", rev = "cede7e305b13318ad44f8157cd7f8f0d0431d7c3" }
 # nih_plug = { path = "/srv/github.com/robbert-vdh/nih-plug/", features = ["assert_process_allocs", "standalone"] }
 # nih_plug_egui = { path = "/srv/github.com/robbert-vdh/nih-plug/nih_plug_egui" }
 

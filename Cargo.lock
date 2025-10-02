@@ -449,7 +449,7 @@ dependencies = [
 [[package]]
 name = "baseview"
 version = "0.1.0"
-source = "git+https://github.com/TristanCacqueray/baseview.git?rev=612480d5742d6c6bf1c386d2e3ad24f9e20f333a#612480d5742d6c6bf1c386d2e3ad24f9e20f333a"
+source = "git+https://github.com/TristanCacqueray/baseview.git?rev=999ef6e4a64515b5e981f932515d4cf02bd85e74#999ef6e4a64515b5e981f932515d4cf02bd85e74"
 dependencies = [
  "cocoa",
  "core-foundation",
@@ -1121,9 +1121,9 @@ dependencies = [
 [[package]]
 name = "egui-baseview"
 version = "0.6.0"
-source = "git+https://codeberg.org/TristanCacqueray/egui-baseview.git?rev=7aba903da5a3d370f69fe4ad2791081a17239b03#7aba903da5a3d370f69fe4ad2791081a17239b03"
+source = "git+https://codeberg.org/TristanCacqueray/egui-baseview.git?rev=1781fbf23cd915cf2f373485b5181801ac917ca4#1781fbf23cd915cf2f373485b5181801ac917ca4"
 dependencies = [
- "baseview 0.1.0 (git+https://github.com/TristanCacqueray/baseview.git?rev=612480d5742d6c6bf1c386d2e3ad24f9e20f333a)",
+ "baseview 0.1.0 (git+https://github.com/TristanCacqueray/baseview.git?rev=999ef6e4a64515b5e981f932515d4cf02bd85e74)",
  "copypasta",
  "egui",
  "egui_glow",
@@ -1985,7 +1985,7 @@ dependencies = [
 [[package]]
 name = "nih_plug"
 version = "0.0.0"
-source = "git+https://github.com/TristanCacqueray/nih-plug.git?rev=7b16c21bb2f63488aff72fc8a0ad8ef19bb3609f#7b16c21bb2f63488aff72fc8a0ad8ef19bb3609f"
+source = "git+https://github.com/TristanCacqueray/nih-plug.git?rev=cede7e305b13318ad44f8157cd7f8f0d0431d7c3#cede7e305b13318ad44f8157cd7f8f0d0431d7c3"
 dependencies = [
  "anyhow",
  "anymap3",
@@ -2022,7 +2022,7 @@ dependencies = [
 [[package]]
 name = "nih_plug_derive"
 version = "0.1.0"
-source = "git+https://github.com/TristanCacqueray/nih-plug.git?rev=7b16c21bb2f63488aff72fc8a0ad8ef19bb3609f#7b16c21bb2f63488aff72fc8a0ad8ef19bb3609f"
+source = "git+https://github.com/TristanCacqueray/nih-plug.git?rev=cede7e305b13318ad44f8157cd7f8f0d0431d7c3#cede7e305b13318ad44f8157cd7f8f0d0431d7c3"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2032,9 +2032,9 @@ dependencies = [
 [[package]]
 name = "nih_plug_egui"
 version = "0.0.0"
-source = "git+https://github.com/TristanCacqueray/nih-plug.git?rev=7b16c21bb2f63488aff72fc8a0ad8ef19bb3609f#7b16c21bb2f63488aff72fc8a0ad8ef19bb3609f"
+source = "git+https://github.com/TristanCacqueray/nih-plug.git?rev=cede7e305b13318ad44f8157cd7f8f0d0431d7c3#cede7e305b13318ad44f8157cd7f8f0d0431d7c3"
 dependencies = [
- "baseview 0.1.0 (git+https://github.com/TristanCacqueray/baseview.git?rev=612480d5742d6c6bf1c386d2e3ad24f9e20f333a)",
+ "baseview 0.1.0 (git+https://github.com/TristanCacqueray/baseview.git?rev=999ef6e4a64515b5e981f932515d4cf02bd85e74)",
  "crossbeam",
  "egui-baseview",
  "nih_plug",
