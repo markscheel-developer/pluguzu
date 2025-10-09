@@ -12,7 +12,7 @@ use nih_plug_egui::{
 };
 
 use std::collections::BTreeMap;
-use std::ops::{Deref, DerefMut};
+use std::ops::DerefMut;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::{Arc, Mutex};
@@ -326,36 +326,20 @@ impl EditorState {
             .with_syntax(tidal())
             .with_numlines(true);
 
-        let enter_update = ui.input(|i| {
-            if i.key_pressed(egui::Key::Enter) {
-                if i.modifiers.shift {
-                    Some(ParseTask::InPlace)
-                } else if i.modifiers.alt {
-                    Some(ParseTask::Next)
-                } else {
-                    None
-                }
-            } else if i.key_pressed(egui::Key::S)
-                && i.modifiers.ctrl
-                && let Some(path) = &self.picked_path
+        ui.input_mut(|i| {
+            if i.consume_key(egui::Modifiers::CTRL, egui::Key::Enter) {
+                self.update = Some(PluguzuTask::Parse(ParseTask::InPlace))
+            } else if i.consume_key(egui::Modifiers::ALT, egui::Key::Enter) {
+                self.update = Some(PluguzuTask::Parse(ParseTask::Next))
+            } else if let Some(path) = &self.picked_path
+                && i.consume_key(egui::Modifiers::CTRL, egui::Key::S)
             {
                 self.unsaved = false;
                 self.update = Some(PluguzuTask::SaveCode(path.into()));
-                None
-            } else {
-                None
             }
         });
         let mut code_data = self.code.lock().expect("lock");
-        let output = if let Some(task) = enter_update {
-            self.update = Some(PluguzuTask::Parse(task));
-
-            // Render the code editor with read-only code to avoid inserting the new-line.
-            let mut code_data: &str = code_data.deref();
-            code_editor.show(ui, &mut code_data)
-        } else {
-            code_editor.show(ui, code_data.deref_mut())
-        };
+        let output = code_editor.show(ui, code_data.deref_mut());
         if !self.focused {
             output.response.request_focus();
             self.focused = true;

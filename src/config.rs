@@ -34,7 +34,7 @@ impl Config {
 
 pub const WELCOME: &str = r#"-- Welcome to Pluguzu
 --
--- Press shift+enter to load the code in place.
+-- Press ctrl+enter to load the code in place.
 --
 -- Reference: https://tidalcycles.org/docs/reference/cycles
 -- Source: https://codeberg.org/TristanCacqueray/pluguzu
