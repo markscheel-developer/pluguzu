@@ -419,8 +419,22 @@ impl EditorState {
         if self.updated && ui.button("Play").on_hover_text(PLAY_TIP).clicked() {
             self.update = Some(PluguzuTask::Parse(ParseTask::InPlace));
         }
+
+        // Lang selector
+        let mut selected = self.lang.lock().expect("lock");
+        let before = *selected;
+        egui::ComboBox::new("lang", "")
+            .selected_text(format!("{:?}", selected))
+            .show_ui(ui, |ui| {
+                ui.selectable_value(selected.deref_mut(), UzuKind::Tidal, "tidal");
+                ui.selectable_value(selected.deref_mut(), UzuKind::Mondo, "mondo");
+            });
+
+        if *selected != before {
+            self.updated = true;
+            // Handle selection change
+        }
         if let Some(path) = self.picked_path.as_ref() {
-            ui.label("  | ");
             ui.label(file_name(path));
         }
     }
