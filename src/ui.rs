@@ -53,6 +53,7 @@ struct EditorState {
     picked_path: Option<String>,
     user_presets_file: Arc<PathBuf>,
 
+    last_eval: Option<u64>,
     monotonic_time: u64,
 }
 
@@ -94,6 +95,7 @@ impl Pluguzu {
                 update: None,
                 picked_path: None,
                 user_presets_file: self.user_presets_file.clone(),
+                last_eval: None,
                 monotonic_time: 0,
             },
             font_size: self.params.font_size.clone(),
@@ -328,8 +330,10 @@ impl EditorState {
 
         ui.input_mut(|i| {
             if i.consume_key(egui::Modifiers::CTRL, egui::Key::Enter) {
+                self.last_eval = Some(self.monotonic_time);
                 self.update = Some(PluguzuTask::Parse(ParseTask::InPlace))
             } else if i.consume_key(egui::Modifiers::ALT, egui::Key::Enter) {
+                self.last_eval = Some(self.monotonic_time);
                 self.update = Some(PluguzuTask::Parse(ParseTask::Next))
             } else if let Some(path) = &self.picked_path
                 && i.consume_key(egui::Modifiers::CTRL, egui::Key::S)
@@ -463,10 +467,7 @@ impl EditorState {
         }
 
         let shapes = self.highlights.iter().map(|(el, when)| {
-            let alpha = (egui::lerp(
-                1.0..=0.3,
-                (self.monotonic_time - when) as f32 / hl_age as f32,
-            ) * 255.) as u8;
+            let alpha = alpha_lerp(self.monotonic_time, *when, hl_age);
             Shape::rect_stroke(
                 ep.highlight_rect(el.col, el.row, el.len),
                 5.,
@@ -478,12 +479,32 @@ impl EditorState {
             )
         });
         painter.extend(shapes);
+        if let Some(last_eval) = self.last_eval
+            && self.monotonic_time.saturating_sub(last_eval) < 500
+        {
+            let alpha = alpha_lerp(self.monotonic_time, last_eval, hl_age);
+            painter.add(Shape::rect_stroke(
+                output.response.rect.expand(-0.5),
+                5.,
+                Stroke {
+                    width: 4.,
+                    color: Color32::from_rgba_unmultiplied(0x76, 0xcc, 0xce, alpha),
+                },
+                StrokeKind::Middle,
+            ));
+        } else {
+            self.last_eval.take();
+        }
         let (new_time, overflow) = self.monotonic_time.overflowing_add(1);
         if overflow {
             self.highlights.clear();
         };
         self.monotonic_time = new_time;
     }
+}
+
+fn alpha_lerp(now: u64, when: u64, age: u64) -> u8 {
+    (egui::lerp(1.0..=0.3, (now - when) as f32 / age as f32) * 255.) as u8
 }
 
 fn file_name(s: &str) -> &str {
