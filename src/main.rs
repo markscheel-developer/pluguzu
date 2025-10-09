@@ -3,16 +3,20 @@
 
 //! The command line entry point
 
-use pluguzu::haskell::HaskellRuntime;
+use pluguzu::haskell::{HaskellRuntime, UzuKind};
 
 fn main() {
     let mut args = std::env::args().collect::<Vec<_>>();
     if let Some(cmd) = args.get(1)
         && cmd == "debug"
     {
-        let pat = args.get(2).expect("a pattern");
+        let (arg, kind) = match args.get(2) {
+            Some(cmd) if cmd == "mondo" => (3, UzuKind::Mondo),
+            _ => (2, UzuKind::Tidal),
+        };
+        let pat = args.get(arg).expect("a pattern");
         let mut ps = HaskellRuntime::default();
-        if let Some(err) = ps.parse(pat) {
+        if let Some(err) = ps.parse(kind, pat) {
             println!("Parse failure: {err}");
         } else {
             let events = ps.render(0, 4);

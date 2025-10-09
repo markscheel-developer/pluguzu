@@ -48,3 +48,19 @@ pub fn tidal() -> Syntax {
         special: BTreeSet::from([]),
     }
 }
+
+pub fn mondo() -> Syntax {
+    Syntax {
+        language: "Mondo",
+        case_sensitive: true,
+        comment: "//",
+        comment_multiline: ["/*", "*/"],
+        hyperlinks: BTreeSet::from(["http"]),
+        #[rustfmt::skip]
+        keywords: BTreeSet::from(["s"
+
+        ]),
+        types: BTreeSet::from([]),
+        special: BTreeSet::from(["#", "$"]),
+    }
+}

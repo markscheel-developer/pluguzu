@@ -13,7 +13,7 @@ use crate::events::Event;
 unsafe extern "C" {
     fn pluguzu_init();
     fn pluguzuNew() -> *mut CHaskellState;
-    fn pluguzuParse(state: *mut CHaskellState, code: *const c_char);
+    fn pluguzuParse(state: *mut CHaskellState, mondo: bool, code: *const c_char);
     fn pluguzuError(state: *mut CHaskellState) -> *const c_char;
     fn pluguzuRender(state: *mut CHaskellState, start: u64, end: u64, count: &mut u64) -> *mut u8;
 }
@@ -64,11 +64,21 @@ impl Default for HaskellState {
     }
 }
 
+#[derive(serde::Serialize, serde::Deserialize, Debug, Copy, Clone)]
+pub enum UzuKind {
+    Tidal,
+    Mondo,
+}
+
 impl HaskellRuntime {
-    pub fn parse(&mut self, code: &str) -> Option<String> {
+    pub fn parse(&mut self, kind: UzuKind, code: &str) -> Option<String> {
+        let mondo = match kind {
+            UzuKind::Mondo => true,
+            _ => false,
+        };
         match std::ffi::CString::new(code) {
             Ok(code) => unsafe {
-                pluguzuParse(self.0, code.as_ptr() as *const c_char);
+                pluguzuParse(self.0, mondo, code.as_ptr() as *const c_char);
                 let c_str = pluguzuError(self.0);
                 if c_str.is_null() {
                     None

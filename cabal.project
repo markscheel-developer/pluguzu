@@ -1,8 +1,10 @@
 -- Fetch my integration branch to pulled in additions and fixes to tidal-parse
 -- In particular: https://codeberg.org/uzu/tidal/pulls/1231
+-- and https://codeberg.org/uzu/tidal/pulls/1233
 source-repository-package
     type: git
     location: https://codeberg.org/TristanCacqueray/tidal/
-    tag: e34fa5fa93e40226b831d13d7ab3dec76bc99fbe
-    subdir: tidal-parse
+    tag: 2665462180899f5078e1f771a81e729262fd9ee3
+    subdir: tidal-parse tidal-mondo
+
 packages: .

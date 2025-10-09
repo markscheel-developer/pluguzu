@@ -31,7 +31,7 @@ use std::sync::{Arc, Mutex};
 
 use crate::config::Config;
 use crate::events::{Event, EventKind};
-use crate::haskell::{BackgroundBuffer, HaskellState};
+use crate::haskell::{BackgroundBuffer, HaskellState, UzuKind};
 use crate::midi::{FutureNoteOff, ProcessAudio, ProcessMidi};
 
 /// Info from the engine for the UI status bar
@@ -61,6 +61,10 @@ pub struct PluguzuParams {
     #[persist = "code"]
     code: Arc<Mutex<String>>,
 
+    /// The uzu lang.
+    #[persist = "lang"]
+    lang: Arc<Mutex<UzuKind>>,
+
     /// The font size.
     #[persist = "font-size"]
     font_size: Arc<AtomicU8>,
@@ -75,6 +79,7 @@ impl Default for PluguzuParams {
         Self {
             editor_state: EguiState::from_size(800, 600),
             code: Arc::new(Mutex::new(crate::config::WELCOME.trim_end().into())),
+            lang: Arc::new(Mutex::new(UzuKind::Tidal)),
             font_size: Arc::new(AtomicU8::new(20)),
             version: IntParam::new(
                 "version",
@@ -400,6 +405,14 @@ impl Pluguzu {
     }
 }
 
+fn path_to_lang(path: &str) -> UzuKind {
+    if path.ends_with(".mondo") {
+        UzuKind::Mondo
+    } else {
+        UzuKind::Tidal
+    }
+}
+
 impl Plugin for Pluguzu {
     fn initialize(
         &mut self,
@@ -412,8 +425,13 @@ impl Plugin for Pluguzu {
             self.hosted_in_daw.store(false, Ordering::Relaxed);
             match std::env::args().nth(1) {
                 Some(fp) if !fp.starts_with("-") => {
-                    *self.params.code.lock().unwrap() =
-                        std::fs::read_to_string(&fp).unwrap_or_else(|_| format!("-- {fp}\n"));
+                    let lang = path_to_lang(&fp);
+                    *self.params.code.lock().unwrap() = std::fs::read_to_string(&fp)
+                        .unwrap_or_else(|_| match lang {
+                            UzuKind::Tidal => format!("-- {fp}\n"),
+                            UzuKind::Mondo => format!("// {fp}\n"),
+                        });
+                    *self.params.lang.lock().unwrap() = lang;
                     *self.initial_file.lock().unwrap() = Some(fp);
                 }
                 _ => {}
@@ -574,6 +592,7 @@ impl Plugin for Pluguzu {
 
     fn task_executor(&mut self) -> TaskExecutor<Self> {
         let code = self.params.code.clone();
+        let lang = self.params.lang.clone();
         let haskell_state = self.haskell_state.clone();
         let current_bar = self.current_bar.clone();
         let samples_library = self.samples_library.clone();
@@ -614,10 +633,11 @@ impl Plugin for Pluguzu {
 
             let do_parse = |parse_task| {
                 let code = code.lock().expect("lock");
+                let kind = *lang.lock().expect("lock");
                 // println!("Parsing {}", code);
 
                 // Perform code parse and maybe render
-                let err = haskell_state.rts.lock().parse(&code);
+                let err = haskell_state.rts.lock().parse(kind, &code);
                 let is_err = err.is_some();
                 *background_state.error.lock().expect("lock") = err;
                 let render = |start, in_place| {
@@ -674,6 +694,8 @@ impl Plugin for Pluguzu {
                         Ok(new_code) => {
                             if !new_code.is_empty() {
                                 *code.lock().expect("lock") = new_code;
+                                *lang.lock().expect("lock") =
+                                    path_to_lang(&path.display().to_string());
                                 do_parse(ParseTask::InPlace)
                             }
                         }

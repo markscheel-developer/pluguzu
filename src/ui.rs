@@ -20,9 +20,10 @@ use std::sync::{Arc, Mutex};
 use egui::{Color32, Shape, Stroke, StrokeKind};
 
 use crate::events::LocEvent;
+use crate::haskell::UzuKind;
 use crate::highlights;
 use crate::presets::{add_preset, load_default_presets, load_user_presets, Presets, PresetsTags};
-use crate::syntax::tidal;
+use crate::syntax;
 use crate::{BackgroundState, ParseTask, Pluguzu, PluguzuTask};
 
 const VERT_SPACE: f32 = 3.;
@@ -41,6 +42,7 @@ struct PresetState {
 
 struct EditorState {
     code: Arc<Mutex<String>>,
+    lang: Arc<Mutex<UzuKind>>,
     font_size: f32,
 
     highlights: BTreeMap<LocEvent, u64>,
@@ -87,6 +89,7 @@ impl Pluguzu {
             },
             editor: EditorState {
                 code: self.params.code.clone(),
+                lang: self.params.lang.clone(),
                 font_size: 0.,
                 highlights: BTreeMap::new(),
                 focused: false,
@@ -325,7 +328,10 @@ impl EditorState {
             .with_rows(avail_lines as usize)
             .with_fontsize(self.font_size)
             .with_theme(theme)
-            .with_syntax(tidal())
+            .with_syntax(match *self.lang.lock().expect("lock") {
+                UzuKind::Tidal => syntax::tidal(),
+                UzuKind::Mondo => syntax::mondo(),
+            })
             .with_numlines(true);
 
         ui.input_mut(|i| {
@@ -516,7 +522,7 @@ fn file_name(s: &str) -> &str {
 }
 
 fn file_dialog(save: bool) -> Option<std::path::PathBuf> {
-    let diag = rfd::FileDialog::new().add_filter("code", &["hs"]);
+    let diag = rfd::FileDialog::new().add_filter("code", &["hs", "mondo"]);
     if save {
         diag.save_file()
     } else {

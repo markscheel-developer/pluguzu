@@ -7,6 +7,7 @@
 -- (flip patternToEvents (mkArc 0 1)) <$> parseTidal "silence"
 
 module PluguzuCore (
+    parseUzu,
     patternToEvents,
     mkArc,
     Event (..),
@@ -43,6 +44,7 @@ import Data.Word (Word8)
 import Debug.Trace (traceShow, traceShowM)
 import GHC.Float (double2Float)
 import GHC.Generics (Generic)
+import Mondo (mondoToTidal)
 import Sound.Tidal.Parse qualified as Parse
 import Sound.Tidal.Pattern qualified as Pattern
 import Sound.Tidal.Show ()
@@ -105,6 +107,13 @@ instance ToJSON Event where
         vals = case ev.value of
             Nothing -> Aeson.Null
             Just m -> toJSON $ (fmap encodeValue) $ m
+
+parseUzu :: Bool -> String -> Either String Pattern.ControlPattern
+parseUzu mondo code
+    | mondo = case mondoToTidal code of
+        Left err -> Left (show err)
+        Right p -> Right p
+    | otherwise = Parse.parseTidal code
 
 encodeEvents :: [Event] -> BS.ByteString
 encodeEvents = LBS.toStrict . Aeson.encode

@@ -7,7 +7,8 @@ A standalone live coding text editor.
 ## Overview and scope
 
 The goal of pluguzu is to provide an easy to use environment to perform live code.
-The project presently integrates the [Tidal][tidal] code interpreter
+The project presently integrates the [Tidal][tidal] code interpreter,
+the [Mondo][mondo] evaluator,
 and the [Dirt][dirt] sampler so that it can be used out of the box
 without configuring external services.
 
@@ -22,6 +23,7 @@ Pluguzu is powered by the [nih-plug][nih-plug] audio plugin framework and the
 
 [tidal]: https://tidalcycles.org/
 [dirt]: https://codeberg.org/uzu/dirt
+[mondo]: https://codeberg.org/uzu/tidal/pulls/1233
 [nih-plug]: https://github.com/robbert-vdh/nih-plug
 [egui]: https://egui.rs
 
@@ -126,13 +128,10 @@ Implemented:
 - [x] Loading code through the command line and file menu.
 - [x] Support user-defined presets, e.g. in ~/.config/pluguzu/presets.md.
 - [x] Add standalone transport, e.g. without sync to an external clock.
+- [x] Support the mondo notation.
 
 Next:
 
 - [ ] Improve error reporting to the UI.
 - [ ] Package the plugin dependencies (e.g. the libpluguzu.so and libHSrts) so that it works out of the box.
 - [ ] Add pattern visualizations, e.g. a pianoroll in the background.
-
-Future idea:
-
-- [ ] Support other Uzu languages like Mondo.

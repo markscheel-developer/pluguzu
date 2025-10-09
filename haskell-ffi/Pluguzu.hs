@@ -21,7 +21,7 @@ import PluguzuCore qualified
 type CPluguzuState = Foreign.StablePtr PluguzuState
 
 foreign export ccall pluguzuNew :: IO CPluguzuState
-foreign export ccall pluguzuParse :: CPluguzuState -> Foreign.C.CString -> IO ()
+foreign export ccall pluguzuParse :: CPluguzuState -> Bool -> Foreign.C.CString -> IO ()
 foreign export ccall pluguzuError :: CPluguzuState -> IO Foreign.C.CString
 foreign export ccall pluguzuRender :: CPluguzuState -> Word64 -> Word64 -> Ptr Word64 -> IO (Foreign.Ptr Word8)
 
@@ -47,8 +47,8 @@ writeError ref new = do
     writeIORef ref new
 
 -- | Parse and load a tidal pattern.
-pluguzuParse :: CPluguzuState -> Foreign.C.CString -> IO ()
-pluguzuParse pState cStr = do
+pluguzuParse :: CPluguzuState -> Bool -> Foreign.C.CString -> IO ()
+pluguzuParse pState mondo cStr = do
     state <- Foreign.deRefStablePtr pState
     str <- Foreign.C.peekCString cStr
     -- The following pattern raises an error: `n "<0.>"`.
@@ -57,7 +57,7 @@ pluguzuParse pState cStr = do
             cerr <- Foreign.C.newCString ("Error: " <> displayException e)
             writeError state.error (Just cerr)
     -- putStrLn (PluguzuCore.deltaMini str)
-    handle catchException $ case PluguzuCore.parseTidal str of
+    handle catchException $ case PluguzuCore.parseUzu mondo str of
         Left err -> do
             cerr <- Foreign.C.newCString err
             writeError state.error (Just cerr)
