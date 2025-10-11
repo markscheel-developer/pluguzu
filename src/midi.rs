@@ -4,9 +4,9 @@
 //! This module defines midi (and sound) event management.
 
 use crate::{
-    debug,
+    Pluguzu, debug,
     events::{Event, EventKind, EventSpan, MidiEvent, SoundEvent},
-    pwarn, Pluguzu,
+    pwarn,
 };
 use nih_plug::{midi::NoteEvent, nih_error, prelude::ProcessContext};
 

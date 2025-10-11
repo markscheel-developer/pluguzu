@@ -21,7 +21,7 @@ pub(crate) use debug::{debug, info, pwarn};
 use arc_swap::ArcSwap;
 use atomic_float::{AtomicF32, AtomicF64};
 use nih_plug::prelude::*;
-use nih_plug_egui::{egui, EguiState};
+use nih_plug_egui::{EguiState, egui};
 use std::collections::{HashMap, HashSet};
 use std::ops::DerefMut;
 use std::path::PathBuf;
