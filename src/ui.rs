@@ -7,7 +7,7 @@ use egui_code_editor::{CodeEditor, ColorTheme};
 use nih_plug::prelude::*;
 use nih_plug_egui::{
     create_egui_editor, egui,
-    egui::{text_edit::TextEditOutput, FontId, RichText, TextStyle, Vec2},
+    egui::{FontId, RichText, TextStyle, Vec2, text_edit::TextEditOutput},
     resizable_window::ResizableWindow,
 };
 
@@ -22,7 +22,7 @@ use egui::{Color32, Shape, Stroke, StrokeKind};
 use crate::events::LocEvent;
 use crate::haskell::UzuKind;
 use crate::highlights;
-use crate::presets::{add_preset, load_default_presets, load_user_presets, Presets, PresetsTags};
+use crate::presets::{Presets, PresetsTags, add_preset, load_default_presets, load_user_presets};
 use crate::syntax;
 use crate::{BackgroundState, ParseTask, Pluguzu, PluguzuTask};
 
@@ -124,8 +124,9 @@ impl Pluguzu {
                             UIView::Preset => {
                                 if let Some(changed) = state.preset.show(ui, state.editor.font_size)
                                 {
-                                    if let Some(new_code) = changed {
+                                    if let Some((new_lang, new_code)) = changed {
                                         state.editor.set_code(new_code);
+                                        *state.editor.lang.lock().expect("lock") = new_lang;
                                         async_executor.execute_background(PluguzuTask::Parse(
                                             ParseTask::InPlace,
                                         ));
@@ -237,7 +238,7 @@ impl UIState {
 }
 
 impl PresetState {
-    fn show(&mut self, ui: &mut egui::Ui, font_size: f32) -> Option<Option<String>> {
+    fn show(&mut self, ui: &mut egui::Ui, font_size: f32) -> Option<Option<(UzuKind, String)>> {
         // Tag selector
         let prev_cat = self.cat;
         let cat = &mut self.cat;
@@ -284,7 +285,7 @@ impl PresetState {
                 if let Some(preset) = presets.get(*sel)
                     && ui.input(|i| i.key_pressed(egui::Key::Enter))
                 {
-                    result = Some(Some(preset.code.to_string()));
+                    result = Some(Some((preset.lang, preset.code.to_string())));
                 }
                 if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
                     result = Some(None);
@@ -300,7 +301,7 @@ impl PresetState {
             if let Some(preset) = presets.get(*sel)
                 && ui.button("Load").clicked()
             {
-                result = Some(Some(preset.code.to_string()))
+                result = Some(Some((preset.lang, preset.code.to_string())))
             };
             if ui.button("Cancel").clicked() {
                 result = Some(None)
@@ -390,7 +391,8 @@ impl EditorState {
             self.unsaved = false;
             self.picked_path = None;
             let code = self.code.lock().unwrap();
-            let new_preset = add_preset(&self.user_presets_file, &code);
+            let lang = self.lang.lock().unwrap();
+            let new_preset = add_preset(&self.user_presets_file, *lang, &code);
             up.push(new_preset);
         }
         if ui.button("Load Preset").clicked() {

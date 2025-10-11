@@ -202,6 +202,7 @@ encodeValue v = case v of
 data Preset = Preset
     { category :: String
     , name :: String
+    , lang :: String
     , code :: String
     }
     deriving (Show)
@@ -213,10 +214,12 @@ readPresets fp = parsePresets "" "" . lines <$> readFile fp
     parsePresets _ _ [] = []
     parsePresets _ _ (('#' : '#' : ' ' : cat) : xs) = parsePresets cat "" xs
     parsePresets cat _ (('#' : '#' : '#' : ' ' : name) : xs) = parsePresets cat name xs
-    parsePresets cat name ("```haskell" : xs) =
-        let (code, rest) = break (== "```") xs
-         in Preset cat name (unlines code) : parsePresets cat "" rest
+    parsePresets cat name ("```haskell" : xs) = addPreset cat name "Tidal" xs
+    parsePresets cat name ("```mondo" : xs) = addPreset cat name "Mondo" xs
     parsePresets cat name (_ : xs) = parsePresets cat name xs
+    addPreset cat name lang xs =
+        let (code, rest) = break (== "```") xs
+         in Preset cat name lang (unlines code) : parsePresets cat "" rest
 
 renderPresetData :: IO ()
 renderPresetData = do
@@ -227,10 +230,11 @@ renderPresetData = do
         [ "// Pluguzu presets"
         , ""
         , "use crate::presets::UzuProgram;"
+        , "use crate::haskell::UzuKind;"
         , ""
         , "pub fn presets() -> Vec<UzuProgram> {"
         , "  vec!["
         , unlines (map mkProgram presets) ++ "  ]"
         , "}"
         ]
-    mkProgram preset = "      UzuProgram {name: " ++ show preset.name ++ ".into(), code: " ++ show preset.code ++ ".into(), tags: vec![" ++ show preset.category ++ ".into()]},"
+    mkProgram preset = "      UzuProgram {name: " ++ show preset.name ++ ".into(), lang: UzuKind::" ++ preset.lang ++ ", code: " ++ show preset.code ++ ".into(), tags: vec![" ++ show preset.category ++ ".into()]},"

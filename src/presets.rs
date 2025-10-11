@@ -5,10 +5,12 @@ use std::io::Write;
 use std::sync::Arc;
 
 use crate::debug::{info, pwarn};
+use crate::haskell::UzuKind;
 
 #[derive(Debug, PartialEq)]
 pub struct UzuProgram {
     pub name: String,
+    pub lang: UzuKind,
     pub code: String,
     pub tags: Vec<SmolStr>,
 }
@@ -38,18 +40,22 @@ pub(crate) fn load_user_presets(path: &std::path::PathBuf) -> Presets {
     }
 }
 
-pub(crate) fn add_preset(path: &std::path::PathBuf, code: &str) -> Arc<UzuProgram> {
+pub(crate) fn add_preset(path: &std::path::PathBuf, lang: UzuKind, code: &str) -> Arc<UzuProgram> {
     let now = time::UtcDateTime::now();
     let format = time::format_description::parse("[year]-[month]-[day]-[hour]:[minute]:[second]")
         .expect("format");
     let name = now.format(&format).unwrap_or("N/A".to_string());
+    let lang_str = match lang {
+        UzuKind::Tidal => "haskell",
+        UzuKind::Mondo => "mondo",
+    };
     match std::fs::File::options()
         .create(true)
         .append(true)
         .open(path)
     {
         Ok(mut f) => {
-            let _ = writeln!(&mut f, "\n## {name}\n\n```haskell\n{code}\n```");
+            let _ = writeln!(&mut f, "\n## {name}\n\n```{lang_str}\n{code}\n```");
             info!("{}: Updated presets", path.display());
         }
         Err(err) => {
@@ -58,6 +64,7 @@ pub(crate) fn add_preset(path: &std::path::PathBuf, code: &str) -> Arc<UzuProgra
     }
     Arc::new(UzuProgram {
         name,
+        lang,
         code: code.to_string(),
         tags: vec![],
     })
@@ -71,7 +78,14 @@ fn parse_presets(data: &str) -> Presets {
         if let Some(pname) = line.strip_prefix("## ") {
             name = Some(pname.to_string());
         }
-        if line == "```haskell"
+        let lang = if line == "```haskell" {
+            Some(UzuKind::Tidal)
+        } else if line == "```mondo" {
+            Some(UzuKind::Mondo)
+        } else {
+            None
+        };
+        if let Some(lang) = lang
             && let Some(name) = name.take()
         {
             let mut code = vec![];
@@ -83,6 +97,7 @@ fn parse_presets(data: &str) -> Presets {
             }
             presets.push(Arc::new(UzuProgram {
                 name,
+                lang,
                 code: code.join("\n").to_string(),
                 tags: vec![],
             }))
