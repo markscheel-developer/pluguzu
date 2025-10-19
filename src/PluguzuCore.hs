@@ -191,8 +191,8 @@ encodeValue v = case v of
     Pattern.VS str -> toJSON str
     Pattern.VI i -> toJSON i
     Pattern.VF f -> toJSON f
-    Pattern.VN num -> toJSON $ show num
-    Pattern.VR r -> toJSON $ show r
+    Pattern.VN num -> toJSON $ num.unNote
+    Pattern.VR r -> toJSON r
     Pattern.VB b -> toJSON b
     Pattern.VX xs -> toJSON xs
     Pattern.VPattern pat -> toJSON $ show pat
