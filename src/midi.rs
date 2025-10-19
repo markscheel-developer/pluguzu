@@ -63,8 +63,8 @@ impl ProcessMidi {
 }
 
 pub struct ProcessAudio {
-    /// The cycle per second, for dirt.
-    pub cps: f32,
+    /// The cycle per second, for dough.
+    pub cycle_length: f64,
     /// The current time position in second.
     pub now: f64,
     /// The sample rate.
@@ -140,43 +140,62 @@ impl Pluguzu {
         }
     }
 
-    fn send_sound_event(&mut self, ev: &Event, sev: &SoundEvent) {
-        match self.samples_library.get(sev) {
-            Some(samples) => {
-                let mut sound =
-                    crate::dirt::Sound::new(self.audio.sample_rate).expect("Valid new_sound");
-                if let Some(value) = ev.value.as_ref() {
-                    for (k, v) in value.iter() {
-                        if let Some(val) = v.as_f64() {
-                            sound.apply_param(k, val as f32)
-                        } else if let Some(val) = v.as_str().and_then(|s| s.chars().nth(0)) {
-                            sound.apply_param_char(k, val)
-                        }
+    fn send_sound_event(&mut self, ev: &Event, sev: &SoundEvent, buffer: &mut [&mut [f32]]) {
+        let mut sound = crate::dirt::Sound::new();
+        if sound.default_sound(&sev.name.as_str()) {
+            sound.apply_param(
+                "duration",
+                ((ev.span.stop - ev.span.start) * self.audio.cycle_length) as f32,
+            );
+        } else {
+            match self.samples_library.get(sev) {
+                Some(samples) => {
+                    sound.file_source(&samples);
+                }
+                None => {
+                    pwarn!("Sample not ready! {:?}", sev);
+                    return;
+                }
+            }
+        }
+        if let Some(value) = ev.value.as_ref() {
+            for (k, v) in value.iter() {
+                if let Some(val) = v.as_f64() {
+                    if k == "legato" {
+                        sound.0.duration *= val as f32
+                    } else {
+                        sound.apply_param(k, val as f32)
                     }
                 }
-                debug!(
-                    "{:.4}: playing sample {} with {ev:?}",
-                    ev.span.start, sev.name
-                );
-                let frame_offset = self.midi.event_offset(ev.span.start) as f64;
-                let sample_time = 1. / self.dirt.sr;
-                let when = self.audio.now + sample_time * frame_offset;
-                sound.play(when, self.audio.cps, &samples)
             }
-            None => {
-                pwarn!("Sample not ready! {:?}", sev);
-            }
-        };
+        }
+        debug!(
+            "{:.4}: playing sample {} at {}Hz for {} with {ev:?}",
+            ev.span.start, sev.name, sound.0.freq, sound.0.duration,
+        );
+        let frame_offset = self.midi.event_offset(ev.span.start) as usize;
+        self.dirt.advance(frame_offset.saturating_sub(1), buffer);
+        sound.submit();
     }
 
-    fn send_tidal_event(&mut self, ev: &Event, context: &mut impl ProcessContext<Self>) {
+    fn send_tidal_event(
+        &mut self,
+        ev: &Event,
+        buffer: &mut [&mut [f32]],
+        context: &mut impl ProcessContext<Self>,
+    ) {
         match &ev.kind {
-            EventKind::EventSound(sev) => self.send_sound_event(ev, sev),
+            EventKind::EventSound(sev) => self.send_sound_event(ev, sev, buffer),
             EventKind::EventMidi(mev) => self.send_midi_event(&ev.span, mev, context),
         }
     }
 
-    pub fn send_tidal_events(&mut self, events: &[Event], context: &mut impl ProcessContext<Self>) {
+    pub fn send_tidal_events(
+        &mut self,
+        events: &[Event],
+        buffer: &mut [&mut [f32]],
+        context: &mut impl ProcessContext<Self>,
+    ) {
         while self.events_pos < events.len() {
             let ev = &events[self.events_pos];
             if ev.span.start >= self.midi.end {
@@ -184,7 +203,7 @@ impl Pluguzu {
                 break;
             } else if self.midi.start <= ev.span.start {
                 // The event is due for this buffer
-                self.send_tidal_event(ev, context);
+                self.send_tidal_event(ev, buffer, context);
             } else if ev.span.stop >= self.midi.end {
                 pwarn!(
                     "{:.7} Missed event start, but it still make sense to send it now... {:.7}..{:.7} < {:.7}",
@@ -193,7 +212,7 @@ impl Pluguzu {
                     ev.span.stop,
                     self.midi.end
                 );
-                self.send_tidal_event(ev, context);
+                self.send_tidal_event(ev, buffer, context);
             } else if self.midi.start > ev.span.start {
                 // That's odd, it looks like we missed an event?!
                 pwarn!("{:.4} Skipped event {:.4}", self.midi.start, ev.span.start);

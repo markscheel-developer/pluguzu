@@ -1,59 +1,53 @@
 // Copyright © 2025 Tristan de Cacqueray
 // SPDX-License-Identifier: GPL-3.0
 
-//! This module defines a high-level API for the dirt-sys binding.
+use dough_sys::Source;
 use std::ffi::c_int;
 
-pub struct Dirt {
+pub struct Dough {
     pub sr: f64,
-    running: bool,
+    pos: usize,
+    frame_count: usize,
 }
 
-impl Dirt {
-    pub fn new(polyphony: usize) -> Self {
-        unsafe {
-            dirt_sys::audio_init_base(
-                dirt_sys::Compressor::Clean,
-                false,
-                polyphony as c_int,
-                false,
-            );
-        }
-        Dirt {
-            sr: 44100.,
-            running: false,
+impl Dough {
+    pub fn new() -> Self {
+        Dough {
+            sr: 0.,
+            pos: 0,
+            frame_count: 0,
         }
     }
-    pub fn set_sample_rate(&mut self, sr: f64) {
-        unsafe { dirt_sys::set_samplerate(sr.round() as c_int) };
-        self.sr = sr;
+    pub fn init_buffer(&mut self, frame_count: usize) {
+        self.frame_count = frame_count;
+        self.pos = 0;
     }
-
-    pub fn playback(&mut self, mut now: f64, len: usize, samples: &mut [&mut [f32]]) {
-        self.running = true;
-        let sample_time = 1. / self.sr;
-        for pos in 0..len {
-            let left: *mut f32 = samples[0].as_mut_ptr();
-            let right: *mut f32 = samples[1].as_mut_ptr();
-            let mut arr = [left, right];
-            unsafe {
-                dirt_sys::dequeue_nolock(now);
-                dirt_sys::playback(arr.as_mut_ptr(), pos as c_int, now);
-            }
-            now += sample_time;
+    pub fn initialize(&mut self, sr: f64) {
+        if self.sr == 0. {
+            unsafe { dough_sys::dough_init(sr as c_int, 64, 2, 3, 0) };
+            self.sr = sr;
+        } else if self.sr != sr {
+            todo!("Sample size change is not supported!")
         }
     }
-    pub fn stop(&mut self) {
-        if self.running {
-            unsafe { dirt_sys::audio_stop() }
-            self.running = false;
+    pub fn advance(&mut self, until: usize, samples: &mut [&mut [f32]]) {
+        let max = until.min(self.frame_count);
+        for idx in self.pos..max {
+            let mut arr = [0., 0.];
+            unsafe { dough_sys::gen_sample(arr.as_mut_ptr(), 0) };
+            samples[0][idx] = arr[0];
+            samples[1][idx] = arr[1];
         }
+        self.pos = max;
+    }
+    pub fn stop(&self) {
+        unsafe { dough_sys::panic() };
     }
 }
 
 pub struct Sample {
     _samples: Vec<f32>,
-    c: dirt_sys::Sample,
+    c: dough_sys::FileSource,
 }
 
 use thiserror::Error;
@@ -85,12 +79,11 @@ impl Sample {
             &samples,
         )
         .map_err(SampleError::SampleRate)?;
-        let c = dirt_sys::Sample {
-            name: [0; 256],
-            items: samples.as_ptr(),
-            frames: samples.len() as c_int,
+        let c = dough_sys::FileSource {
+            pcm: samples.as_ptr(),
+            len: samples.len() as c_int,
             channels: snd.get_channels() as c_int,
-            onsets: std::ptr::null(),
+            pos: 0,
         };
         Ok(Sample {
             _samples: samples,
@@ -99,130 +92,84 @@ impl Sample {
     }
 }
 
-pub struct Sound(&'static mut dirt_sys::Sound, u32);
+pub struct Sound(pub(crate) dough_sys::Event);
 
-// from Dirt config.h
-const CUTOFFRATIO: f32 = 30000.0;
-const MAX_ORBIT: i32 = 15;
-
-/// Sound manage the t_sound Dirt struct.
-/// The params are applied according to the server.c play_dispatch method
 impl Sound {
-    pub fn new(sample_rate: u32) -> Option<Self> {
-        unsafe {
-            let csound = dirt_sys::new_sound_nolock();
-            if csound.is_null() {
-                None
-            } else {
-                let mut sound = Sound(&mut *csound, sample_rate);
-                sound.set_default();
-                Some(sound)
-            }
+    pub fn new() -> Self {
+        let mut ev = dough_sys::Event::default();
+        unsafe { dough_sys::reset_event(&mut ev) };
+        ev.orbit = 0;
+        Sound(ev)
+    }
+
+    pub fn submit(&mut self) {
+        unsafe { dough_sys::process_event(&self.0) };
+    }
+
+    pub fn default_sound(&mut self, sound: &str) -> bool {
+        let sound = match sound {
+            "tri" => Some(Source::TRI_OSC),
+            "sine" => Some(Source::SINE_OSC),
+            "pulse" => Some(Source::PULSE_OSC),
+            "saw" => Some(Source::SAW_OSC),
+            _ => None,
+        };
+        if let Some(sound) = sound {
+            self.0.sound = sound;
+            true
+        } else {
+            self.0.sound = Source::FILE_SRC;
+            false
         }
     }
 
-    fn filter_freq(&self, v: f32) -> f32 {
-        (v / CUTOFFRATIO) * (44100.0 / (self.1 as f32))
-    }
-
-    pub fn set_default(&mut self) {
-        self.0.active = 1;
-        self.0.gain = 1.;
-        self.0.velocity = 0.5;
-        self.0.delaytime = -1.;
-        self.0.delayfeedback = -1.;
-        self.0.speed = 1.;
-        self.0.unit = unit_num('r');
-        self.0.pan = 0.5;
-        self.0.attack = -1.;
-        self.0.release = -1.;
-        self.0.formant_vowelnum = -1;
-        // That's a bit odd, in dirt audio.c init_effects(), it seems like resonances must be set.
-        // so let's use raisonable value so that 'cutoff' works out of the box:
-        self.0.resonance = 0.1;
-        self.0.hresonance = 0.1;
-        self.0.bandq = 0.1;
-        // Similarly for delay, we need a minimum time.
-        self.0.delaytime = 0.5;
-    }
-
-    pub fn play(&mut self, start: f64, cps: f32, samples: &Sample) {
-        self.0.when = start;
-        self.0.cps = cps;
-        unsafe {
-            dirt_sys::audio_play_with_sample_nolock(self.0, &samples.c);
-        };
+    pub fn file_source(&mut self, samples: &Sample) {
+        self.0.file_source = samples.c;
     }
 
     pub fn apply_param(&mut self, name: &str, v: f32) {
         match name {
-            "begin" => self.0.start = v,
-            "end" => self.0.end = v,
+            "gate" => self.0.gate = v,
+            "duration" => self.0.duration = v,
+            "midinote" => self.0.freq = midi2freq(v),
+            "note" => self.0.freq = midi2freq(v + 72.),
             "speed" => self.0.speed = v,
-            "pan" => self.0.pan = v,
-            "velocity" => self.0.velocity = v,
-            "cutoff" => self.0.cutoff = self.filter_freq(v),
-            "resonance" => self.0.resonance = v,
-            "accelerate" => self.0.accelerate = v,
-            "shape" => {
-                self.0.shape = if v != 0. { 1 } else { 0 };
-                let shape = v.abs();
-                if shape > 0.99 {
-                    self.0.shape_k = 0.99
-                } else {
-                    self.0.shape_k = shape
-                }
-            }
-            "gain" => self.0.gain = (v / 2.).powf(4.),
-            "cut" => self.0.cutgroup = v.round() as i32,
+            "cutoff" => self.0.lpf = v,
+            "lpe" => self.0.lpe = v,
+            "lpd" => self.0.lpd = v,
+            "pw" => self.0.pw = v,
+            "resonance" => self.0.lpq = v,
+            "hcutoff" => self.0.hpf = v,
+            "hresonance" => self.0.hpq = v,
+            "bandf" => self.0.bpf = v,
+            "bandq" => self.0.bpq = v,
+            "gain" => self.0.gain = v,
+            "attack" => self.0.attack = v,
+            "decay" => self.0.decay = v,
+            "sustain" => self.0.sustain = v,
+            "release" => self.0.release = v,
             "delay" => self.0.delay = v,
             "delaytime" => self.0.delaytime = v,
             "delayfeedback" => self.0.delayfeedback = v,
-            "crush" => self.0.crush = v.round() as i32,
-            "coarse" => self.0.coarse = v.round() as i32,
-            "hcutoff" => self.0.hcutoff = self.filter_freq(v),
-            "hresonance" => self.0.hresonance = self.filter_freq(v),
-            "bandf" => self.0.bandf = v,
-            "bandq" => self.0.bandq = v,
-            "loop" => self.0.sample_loop = v.round() as i32,
-            "attack" => self.0.attack = v,
-            "hold" => self.0.hold = v,
-            "release" => self.0.release = v,
-            "orbit" => self.0.orbit = (v.round() as i32).min(MAX_ORBIT),
+            "crush" => self.0.crush = v,
+            "coarse" => self.0.coarse = v,
+            "distort" => self.0.distort = v,
+            "distortvol" => self.0.distortvol = v,
             "vib" => self.0.vib = v,
             "vibmod" => self.0.vibmod = v,
-            _ => {}
-        }
-    }
-    pub fn apply_param_char(&mut self, name: &str, c: char) {
-        match name {
-            "vowel" => {
-                self.0.formant_vowelnum = match c {
-                    'a' | 'A' => 0,
-                    'e' | 'E' => 1,
-                    'i' | 'I' => 2,
-                    'o' | 'O' => 3,
-                    'u' | 'U' => 4,
-                    _ => -1,
-                }
-            }
-            "unit" => {
-                self.0.unit = unit_num(match c {
-                    'r' | 'R' => 'r',
-                    's' | 'S' => 's',
-                    'c' | 'C' => 'c',
-                    _ => 'r',
-                })
-            }
+            "pan" => self.0.pan = v,
             _ => {}
         }
     }
 }
 
-fn unit_num(c: char) -> i8 {
-    u8::try_from(c).unwrap_or(0) as i8
+fn midi2freq(midi: f32) -> f32 {
+    2.0_f32.powf((midi - 69.0) / 12.0) * 440.0
 }
+
+pub const SOUNDS: &'static [&'static str] = &[
+    "sine", "triangle", "tri", "saw", "pulse", "white", "pink", "brown",
+];
 
 unsafe impl Send for Sample {}
 unsafe impl Sync for Sample {}
-unsafe impl Send for Sound {}

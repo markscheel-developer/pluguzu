@@ -125,7 +125,7 @@ pub struct Pluguzu {
     note_offs: HashMap<(u8, u8), FutureNoteOff>,
 
     /// Samples
-    dirt: dirt::Dirt,
+    dirt: crate::dirt::Dough,
     samples_library: Arc<crate::samples::SampleLibrary>,
 
     /// The info needed to send midi events.
@@ -175,7 +175,7 @@ impl Default for Pluguzu {
                 bpm: AtomicF32::new(120.),
             }),
 
-            dirt: dirt::Dirt::new(8),
+            dirt: dirt::Dough::new(),
             samples_library: Arc::new(crate::samples::SampleLibrary::new(samples_dir)),
 
             note_offs: HashMap::with_capacity(255 * 16),
@@ -186,7 +186,7 @@ impl Default for Pluguzu {
                 frames_per_fraction: 0.,
             },
             audio: ProcessAudio {
-                cps: 0.,
+                cycle_length: 0.,
                 now: 0.,
                 sample_rate: 44100,
             },
@@ -233,8 +233,6 @@ struct TransportInfo {
     cycle_pos: f64,
     /// The length of a cycle in seconds. This is used to know when the current buffer ends.
     cycle_length: f64,
-    /// The cps, for dirt.
-    cycle_per_sec: f32,
 }
 
 impl TransportInfo {
@@ -244,7 +242,6 @@ impl TransportInfo {
             now,
             cycle_pos: now / 60.0 * tempo / sig_numerator,
             cycle_length: 60. / tempo * sig_numerator,
-            cycle_per_sec: (tempo / 60. / sig_numerator) as f32,
         }
     }
 }
@@ -311,7 +308,7 @@ impl Pluguzu {
     // Make sure the events buffer is synchronized, return the end bar of the current buffer.
     fn ensure_events_buffer(&mut self, cur_bar: i32, ctx: &impl ProcessContext<Self>) -> i32 {
         let state = self.haskell_state.clone();
-        let mut buffer = state.buffer.lock();
+        let mut buffer = nih_plug::util::permit_alloc(|| state.buffer.lock());
         if let Some(start) = buffer.bar_start
             && cur_bar >= start
             && cur_bar < start + BUFFER_LEN
@@ -400,9 +397,9 @@ impl Pluguzu {
         }
 
         // Store timing offset for dirt
-        if info.cycle_per_sec != self.audio.cps {
-            debug!("CPS changed to {}", info.cycle_per_sec);
-            self.audio.cps = info.cycle_per_sec;
+        if info.cycle_length != self.audio.cycle_length {
+            debug!("Cycle length changed to {}", info.cycle_length);
+            self.audio.cycle_length = info.cycle_length;
         }
     }
 }
@@ -447,7 +444,7 @@ impl Plugin for Pluguzu {
 
         // Setup sample-rate
         let sr = buffer_config.sample_rate as u32;
-        self.dirt.set_sample_rate(buffer_config.sample_rate.into());
+        self.dirt.initialize(sr.into());
         self.audio.sample_rate = sr;
         self.samples_library.set_sample_rate(sr);
 
@@ -559,8 +556,11 @@ impl Plugin for Pluguzu {
         let next_buffer = self.ensure_events_buffer(cur_bar, context);
         let mut events = self.events.as_ref().expect("events to exist").clone();
 
+        self.dirt.init_buffer(frames_count);
+        let buffer_slice = buffer.as_slice();
+
         // Send events.
-        self.send_tidal_events(&events, context);
+        self.send_tidal_events(&events, buffer_slice, context);
 
         // Send events from the begining of the next-buffer.
         if self.midi.end > next_buffer as f64 {
@@ -577,7 +577,7 @@ impl Plugin for Pluguzu {
                 self.overlapped = Some(next_buffer);
                 self.sync_events_buffer(next_buffer, buffer.deref_mut(), context);
                 events = self.events.as_ref().expect("events").clone();
-                self.send_tidal_events(&events, context);
+                self.send_tidal_events(&events, buffer_slice, context);
             } else {
                 pwarn!(
                     "{pos:.4} ERROR: the next event buffer is not ready?! {next_buffer} {:?}",
@@ -586,9 +586,8 @@ impl Plugin for Pluguzu {
             }
         }
 
-        // Play dirt
-        self.dirt
-            .playback(self.audio.now, frames_count, buffer.as_slice());
+        // Play dough
+        self.dirt.advance(frames_count, buffer_slice);
 
         // Update status for the UI
         if synced {
@@ -623,6 +622,7 @@ impl Plugin for Pluguzu {
                 // Collect unknown samples
                 for ev in events.iter() {
                     if let EventKind::EventSound(sev) = &ev.kind
+                        && !dirt::SOUNDS.contains(&sev.name.as_str())
                         && !samples_library.has_sample(sev)
                     {
                         missing.insert(sev.clone());

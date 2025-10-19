@@ -9,7 +9,7 @@ A standalone live coding text editor.
 The goal of pluguzu is to provide an easy to use environment to perform live code.
 The project presently integrates the [Tidal][tidal] code interpreter,
 the [Mondo][mondo] evaluator,
-and the [Dirt][dirt] sampler so that it can be used out of the box
+and the [Dough][dough] synth so that it can be used out of the box
 without configuring external services.
 
 Pluguzu can be used as a regular text editor, connecting directly to the system's
@@ -22,7 +22,7 @@ Pluguzu is powered by the [nih-plug][nih-plug] audio plugin framework and the
 > Checkout the companion post: https://midirus.com/blog/haskell-foreign-library-dpf
 
 [tidal]: https://tidalcycles.org/
-[dirt]: https://codeberg.org/uzu/dirt
+[dough]: https://codeberg.org/uzu/dough
 [mondo]: https://codeberg.org/uzu/tidal/pulls/1233
 [nih-plug]: https://github.com/robbert-vdh/nih-plug
 [egui]: https://egui.rs
@@ -95,7 +95,7 @@ Here are the important files:
 - [PluguzuCore.hs](./src/PluguzuCore.hs) contains the logic to convert tidal pattern into MIDI events.
 - [Pluguzu.hs](./Pluguzu.hs) is the foreign library called by the plugin.
 - [lib.rs](./src/lib.rs) is the nih-plug implementation.
-- [dirt.rs](./src/dirt.rs) is the dirt sampler integration.
+- [dough.rs](./src/dirt.rs) is the dough sampler integration.
 - [ui.rs](./src/ui.rs) is the UI definition.
 - [pluguzu-presets.md](./pluguzu-presets.md) is the preset library.
 - [PluguzuWrapper.c](./PluguzuWrapper.c) is the C wrapper to enable calling Haskell from C.
@@ -129,6 +129,7 @@ Implemented:
 - [x] Support user-defined presets, e.g. in ~/.config/pluguzu/presets.md.
 - [x] Add standalone transport, e.g. without sync to an external clock.
 - [x] Support the mondo notation.
+- [x] Integrate the dough synth.
 
 Next:
 
