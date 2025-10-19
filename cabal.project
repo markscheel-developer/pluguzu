@@ -4,7 +4,7 @@
 source-repository-package
     type: git
     location: https://codeberg.org/TristanCacqueray/tidal/
-    tag: 2665462180899f5078e1f771a81e729262fd9ee3
+    tag: 1ea19ca98db9fff1bd47258785c4ad9096e7a361
     subdir: tidal-parse tidal-mondo
 
 packages: .
