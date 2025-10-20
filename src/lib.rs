@@ -598,9 +598,6 @@ impl Plugin for Pluguzu {
         let samples_library = self.samples_library.clone();
         let background_state = self.background_state.clone();
 
-        let params = self.params.clone();
-        let last_parse = Mutex::new(None);
-
         Box::new(move |task| {
             let current_bar = current_bar.load(Ordering::Relaxed);
 
@@ -659,18 +656,7 @@ impl Plugin for Pluguzu {
                 }
             };
             match task {
-                PluguzuTask::Parse(parse_task) => {
-                    let version = params.version.value();
-                    let mut last_parse = last_parse.lock().unwrap();
-                    if last_parse.is_none() {
-                        do_parse(parse_task);
-                    } else if let Some(last_parse) = *last_parse
-                        && (version, parse_task) != last_parse
-                    {
-                        do_parse(parse_task);
-                    }
-                    *last_parse = Some((version, parse_task));
-                }
+                PluguzuTask::Parse(parse_task) => do_parse(parse_task),
                 PluguzuTask::Render(start) => {
                     // This task happens right after the process callback got the events.
                     debug!("{current_bar}: Rendering {}", start);
