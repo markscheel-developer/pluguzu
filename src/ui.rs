@@ -467,10 +467,8 @@ impl EditorState {
                 if dsp_state_pos < start {
                     break;
                 }
-
                 for loc in &event.locs {
-                    // This doesn't replace existing highlights to avoid fast blinkin
-                    self.highlights.entry(*loc).or_insert(self.monotonic_time);
+                    self.highlights.insert(*loc, self.monotonic_time);
                 }
                 evlocs_pos += 1;
             }
@@ -504,12 +502,12 @@ impl EditorState {
         if let Some(last_eval) = self.last_eval
             && self.monotonic_time.saturating_sub(last_eval) < 500
         {
-            let alpha = alpha_lerp(self.monotonic_time, last_eval, hl_age);
+            let alpha = alpha_lerp(self.monotonic_time, last_eval, hl_age / 2);
             painter.add(Shape::rect_stroke(
                 output.response.rect.expand(-0.5),
                 5.,
                 Stroke {
-                    width: 4.,
+                    width: 9.,
                     color: Color32::from_rgba_unmultiplied(0x76, 0xcc, 0xce, alpha),
                 },
                 StrokeKind::Middle,

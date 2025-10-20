@@ -535,6 +535,8 @@ impl Plugin for Pluguzu {
             // Tell the UI
             if synced {
                 self.dsp_state.playing.store(false, Ordering::Relaxed);
+            } else {
+                self.dsp_state.pos.store(0., Ordering::Relaxed);
             }
 
             // Reset event position.
