@@ -135,6 +135,7 @@ pub struct Pluguzu {
 
     /// Keep track of the current playing bar so that code update are queued to the next bar.
     current_bar: Arc<AtomicI32>,
+    overlapped: Option<i32>,
 
     /// The current events buffer to be sent.
     events: Option<Arc<Vec<Event>>>,
@@ -191,6 +192,7 @@ impl Default for Pluguzu {
             },
 
             current_bar: Arc::new(AtomicI32::new(0)),
+            overlapped: None,
 
             events_start_bar: -1024,
             events_pos: 0,
@@ -514,7 +516,18 @@ impl Plugin for Pluguzu {
 
         self.audio.now = transport_info.now;
         let pos = transport_info.cycle_pos;
-        let cur_bar = pos.floor() as i32;
+        let cur_bar = if let Some(overlapped) = self.overlapped.take()
+            && pos.round() as i32 == overlapped
+        {
+            // When the last buffer overlapped, we might have already started playing the next bar.
+            // However, due to timing jiggles, the current post might still be on the previous bar:
+            //   83.9893 process buffer overlaps with next event buffer 84.00000000009288 > 84
+            //   83.99999999999288: 83 is out of sync 84..88, rendering the event synchronously...
+            // In that case, let's assume we are already on the next bar.
+            overlapped
+        } else {
+            pos.floor() as i32
+        };
         self.current_bar.store(cur_bar, Ordering::Relaxed);
 
         // When not playing...
@@ -559,6 +572,7 @@ impl Plugin for Pluguzu {
                     "{pos:.4} process buffer overlaps with next event buffer {} > {next_buffer}",
                     self.midi.end
                 );
+                self.overlapped = Some(next_buffer);
                 self.sync_events_buffer(next_buffer, buffer.deref_mut(), context);
                 events = self.events.as_ref().expect("events").clone();
                 self.send_tidal_events(&events, context);
