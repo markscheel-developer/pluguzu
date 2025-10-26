@@ -14,6 +14,7 @@ mod highlights;
 mod midi;
 mod presets;
 mod samples;
+mod soundmap;
 mod syntax;
 mod ui;
 pub(crate) use debug::{debug, info, pwarn};
