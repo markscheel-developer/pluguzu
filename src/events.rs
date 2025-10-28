@@ -48,9 +48,16 @@ pub enum EventKind {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(untagged)]
+pub enum EventValue {
+    String(SmolStr),
+    Num(f32),
+}
+
+#[derive(Debug, Clone, Deserialize)]
 pub struct Event {
     pub span: EventSpan,
     pub kind: EventKind,
     pub locs: Vec<LocEvent>,
-    pub value: Option<HashMap<SmolStr, serde_json::Value>>,
+    pub value: Option<HashMap<SmolStr, EventValue>>,
 }

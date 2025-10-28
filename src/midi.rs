@@ -5,7 +5,7 @@
 
 use crate::{
     Pluguzu, debug,
-    events::{Event, EventKind, EventSpan, MidiEvent, SoundEvent},
+    events::{Event, EventKind, EventSpan, EventValue, MidiEvent, SoundEvent},
     pwarn,
 };
 use nih_plug::{midi::NoteEvent, nih_error, prelude::ProcessContext};
@@ -160,11 +160,11 @@ impl Pluguzu {
         }
         if let Some(value) = ev.value.as_ref() {
             for (k, v) in value.iter() {
-                if let Some(val) = v.as_f64() {
+                if let EventValue::Num(val) = v {
                     if k == "legato" {
-                        sound.0.duration *= val as f32
+                        sound.0.duration *= *val
                     } else {
-                        sound.apply_param(k, val as f32)
+                        sound.apply_param(k, *val)
                     }
                 }
             }
