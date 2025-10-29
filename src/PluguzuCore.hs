@@ -80,7 +80,7 @@ data EventLoc = EventLoc
 instance ToJSON EventLoc where
     toJSON ev = toJSON [ev.col, ev.row, ev.end]
 
-data EventKind = EventMidi MidiEvent | EventSound String Int
+data EventKind = EventMidi MidiEvent | EventSound String Int Int
     deriving (Show)
 
 data EventSpan = EventSpan
@@ -102,7 +102,7 @@ instance ToJSON Event where
         span = toJSON [toJSON ev.span.start, toJSON ev.span.stop]
         tag = case ev.kind of
             EventMidi midi -> toJSON [toJSON midi.data0, toJSON midi.data1, toJSON midi.data2]
-            EventSound sound n -> toJSON [toJSON sound, toJSON n]
+            EventSound sound i n -> toJSON [toJSON sound, toJSON i, toJSON n]
         loc = toJSON $ map toJSON ev.locs
         vals = case ev.value of
             Nothing -> Aeson.Null
@@ -148,9 +148,10 @@ evmapToEvent ev
         pure (EventMidi mev, Nothing)
     soundEvent = do
         s <- Pattern.getS =<< Map.lookup "s" ev.value
-        let n = maybe 0 round (Pattern.getN =<< Map.lookup "n" ev.value)
+        let i = maybe 0 round (Pattern.getN =<< Map.lookup "n" ev.value)
+        let n = maybe 36 (round . (+ 72)) (Pattern.getN =<< Map.lookup "note" ev.value)
         let params = Map.filterWithKey (\k _ -> k /= "s" && k /= "n") ev.value
-        pure (EventSound s n, Just params)
+        pure (EventSound s i n, Just params)
 
 eventToCC :: Pattern.Event Pattern.ValueMap -> Maybe (Word8, Word8)
 eventToCC ev = do

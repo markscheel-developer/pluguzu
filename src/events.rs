@@ -37,7 +37,8 @@ pub struct EventSpan {
 #[derive(Debug, Clone, Deserialize, Ord, Eq, PartialOrd, PartialEq, Hash)]
 pub struct SoundEvent {
     pub name: SmolStr,
-    pub idx: i64,
+    pub idx: i32,
+    pub note: i32,
 }
 
 #[derive(Debug, Clone, Deserialize)]
