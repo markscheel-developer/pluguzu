@@ -148,7 +148,7 @@ impl Pluguzu {
                 ((ev.span.stop - ev.span.start) * self.audio.cycle_length) as f32,
             );
         } else {
-            match self.samples_library.get(sev) {
+            match self.samples_library.get(ev.bank(), sev) {
                 Some(samples) => {
                     sound.file_source(&samples);
                 }

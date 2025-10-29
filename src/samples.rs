@@ -10,112 +10,140 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicU32, Ordering};
 
 use crate::events::SoundEvent;
+use crate::soundmap::{SoundFiles, SoundMap};
 use crate::{dirt, info, pwarn};
 
 #[derive(Eq, Hash, PartialEq)]
-pub struct AbsoluteSoundEvent(SoundEvent);
+pub struct AbsoluteSoundEvent((SmolStr, SoundEvent));
 
 pub struct SampleLibrary {
-    search_path: PathBuf,
+    soundmap: SoundMap,
     sample_rate: AtomicU32,
     pub samples: DashMap<AbsoluteSoundEvent, dirt::Sample>,
-    pub samples_count: DashMap<SmolStr, Vec<PathBuf>>,
+}
+
+fn closest_note(pitches: &[(u8, Vec<PathBuf>)], sev: &SoundEvent) -> (i32, i32) {
+    let mut closest = i32::MAX;
+    let mut prev_distance = i32::MAX;
+    let mut idx = 0;
+    for (pitch, paths) in pitches {
+        let distance = (sev.note - *pitch as i32).abs();
+        if distance < (sev.note - closest).abs() {
+            closest = *pitch as i32;
+            idx = if paths.is_empty() {
+                pwarn!("Empty paths shall not be possible!");
+                0
+            } else {
+                sev.idx % paths.len() as i32
+            };
+        }
+        if distance > prev_distance {
+            break;
+        }
+        prev_distance = distance;
+    }
+    (idx, closest)
 }
 
 impl AbsoluteSoundEvent {
-    fn from_sev(sev: &SoundEvent, paths: &[PathBuf]) -> Self {
-        let idx = if paths.is_empty() {
-            pwarn!("Empty paths shall not be possible!");
-            0
-        } else {
-            sev.idx % paths.len() as i64
+    fn from_sev(bank: SmolStr, sev: &SoundEvent, sounds: &SoundFiles) -> Self {
+        let (idx, note) = match sounds {
+            SoundFiles::Sounds(paths) => {
+                let idx = if paths.is_empty() {
+                    pwarn!("Empty paths shall not be possible!");
+                    0
+                } else {
+                    sev.idx % paths.len() as i32
+                };
+                (idx, sev.note)
+            }
+            SoundFiles::Pitches(xs) => closest_note(xs, sev),
         };
-        AbsoluteSoundEvent(SoundEvent {
-            name: sev.name.clone(),
-            idx,
-        })
+        AbsoluteSoundEvent((
+            bank,
+            SoundEvent {
+                name: sev.name.clone(),
+                idx,
+                note,
+            },
+        ))
     }
 }
 
 impl SampleLibrary {
-    pub fn new(search_path: PathBuf) -> Self {
+    pub fn new(soundmap: SoundMap) -> Self {
         SampleLibrary {
-            search_path,
+            soundmap,
             sample_rate: AtomicU32::new(48000),
             samples: DashMap::new(),
-            samples_count: DashMap::new(),
         }
     }
     pub fn set_sample_rate(&self, sr: u32) {
         self.sample_rate.store(sr, Ordering::Relaxed);
     }
 
-    pub fn has_sample(&self, sev: &SoundEvent) -> bool {
-        match self.samples_count.get(&sev.name) {
+    pub fn has_sample(&self, bank: SmolStr, sev: &SoundEvent) -> bool {
+        match self.soundmap.0.get(&(bank.clone(), sev.name.clone())) {
             None => false,
-            Some(count) => {
-                let asev = AbsoluteSoundEvent::from_sev(sev, &count);
+            Some(sfs) => {
+                let asev = AbsoluteSoundEvent::from_sev(bank, sev, &sfs.1);
                 self.samples.contains_key(&asev)
             }
         }
     }
-    pub fn get(&self, sev: &SoundEvent) -> Option<Ref<'_, AbsoluteSoundEvent, dirt::Sample>> {
-        self.samples_count
-            .get(&sev.name)
-            .and_then(|paths| self.samples.get(&AbsoluteSoundEvent::from_sev(sev, &paths)))
+    pub fn get(
+        &self,
+        bank: SmolStr,
+        sev: &SoundEvent,
+    ) -> Option<Ref<'_, AbsoluteSoundEvent, dirt::Sample>> {
+        self.soundmap
+            .0
+            .get(&(bank.clone(), sev.name.clone()))
+            .and_then(|sfs| {
+                self.samples
+                    .get(&AbsoluteSoundEvent::from_sev(bank, sev, &sfs.1))
+            })
     }
-    pub fn load(&self, sev: &SoundEvent) -> Result<()> {
+
+    pub fn load(&self, bank: SmolStr, sev: &SoundEvent) -> Result<()> {
+        let (base, sfs) = self
+            .soundmap
+            .0
+            .get(&(bank.clone(), sev.name.clone()))
+            .ok_or_else(|| std::io::Error::other(format!("{} {} unknown", bank, sev.name)))?;
         let sr = self.sample_rate.load(Ordering::Relaxed);
-        if let Some(paths) = self.samples_count.get(&sev.name) {
-            load_path(&self.samples, sr, &paths, sev)?;
-        } else {
-            let mut path = self.search_path.to_path_buf();
-            path.push(&sev.name);
-            let paths = read_files(&path)
-                .map_err(|e| std::io::Error::other(format!("{}: {e}", path.display())))?;
-            let name = sev.name.clone();
-            load_path(&self.samples, sr, &paths, sev)?;
-            self.samples_count.insert(name, paths);
+        let asev = AbsoluteSoundEvent::from_sev(bank, sev, sfs);
+        let base = base.to_path_buf();
+        match sfs {
+            SoundFiles::Sounds(paths) => Ok(load_path(&self.samples, base, sr, &paths, asev)?),
+            SoundFiles::Pitches(xs) => match xs.iter().find(|k| k.0 as i32 == asev.0.1.note) {
+                Some(paths) => Ok(load_path(&self.samples, base, sr, &paths.1, asev)?),
+                None => Err(std::io::Error::other(format!(
+                    "Couldn't find pitch! {}",
+                    asev.0.1.note
+                ))),
+            },
         }
-        Ok(())
     }
 }
 
 fn load_path(
     samples: &DashMap<AbsoluteSoundEvent, dirt::Sample>,
+    mut path: PathBuf,
     sample_rate: u32,
     paths: &[PathBuf],
-    sev: &SoundEvent,
+    asev: AbsoluteSoundEvent,
 ) -> Result<()> {
     if paths.is_empty() {
         panic!("The impossible have happened, paths should be non empty");
     };
-    let asev = AbsoluteSoundEvent::from_sev(sev, paths);
-    let path = paths
-        .get(asev.0.idx.unsigned_abs() as usize)
+    let file = paths
+        .get(asev.0.1.idx.unsigned_abs() as usize)
         .expect("Absolute path!");
+    path.push(file);
     info!("Loading {:?} {:?}", path, asev.0);
     let sample = dirt::Sample::from_file(path.as_path(), sample_rate)
         .map_err(|err| std::io::Error::other(format!("{}: {err}", path.display())))?;
     samples.insert(asev, sample);
     Ok(())
-}
-
-fn read_files(path: &std::path::Path) -> Result<Vec<PathBuf>> {
-    let mut samples = Vec::new();
-    for elem in std::fs::read_dir(path)? {
-        let elem = elem?;
-        if elem.file_type()?.is_file() {
-            // TODO: filter non samples
-            samples.push(elem.path())
-        }
-    }
-    if samples.is_empty() {
-        Err(std::io::Error::other(format!(
-            "{}: no files found",
-            path.display()
-        )))
-    } else {
-        Ok(samples)
-    }
 }

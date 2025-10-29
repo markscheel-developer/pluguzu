@@ -159,6 +159,10 @@ impl Default for Pluguzu {
 
         let config = Config::new();
         let samples_dir = config.path("samples");
+        let sm = soundmap::load_soundmaps(samples_dir).unwrap_or_else(|e| {
+            pwarn!("Couldn't load sound map: {:?}", e);
+            soundmap::SoundMap(HashMap::new())
+        });
         Self {
             params: Arc::new(PluguzuParams::default()),
             haskell_state: Arc::new(HaskellState::default()),
@@ -177,7 +181,7 @@ impl Default for Pluguzu {
             }),
 
             dirt: dirt::Dough::new(),
-            samples_library: Arc::new(crate::samples::SampleLibrary::new(samples_dir)),
+            samples_library: Arc::new(crate::samples::SampleLibrary::new(sm)),
 
             note_offs: HashMap::with_capacity(255 * 16),
 
@@ -624,14 +628,14 @@ impl Plugin for Pluguzu {
                 for ev in events.iter() {
                     if let EventKind::EventSound(sev) = &ev.kind
                         && !dirt::SOUNDS.contains(&sev.name.as_str())
-                        && !samples_library.has_sample(sev)
+                        && !samples_library.has_sample(ev.bank(), sev)
                     {
-                        missing.insert(sev.clone());
+                        missing.insert((ev.bank(), sev.clone()));
                     }
                 }
                 // Dispatch background task to load missing samples
-                for sev in missing.drain() {
-                    if let Err(e) = samples_library.load(&sev) {
+                for (bank, sev) in missing.drain() {
+                    if let Err(e) = samples_library.load(bank, &sev) {
                         nih_warn!("Couldn't load sample {}: {}", sev.name, e);
                     }
                 }
