@@ -153,7 +153,7 @@ fn load_path(
     path.push(file);
     info!("Loading {:?} {:?}", path, asev.0);
     let sample = dirt::Sample::from_file(path.as_path(), freq, sample_rate)
-        .map_err(|err| std::io::Error::other(format!("{}: {err}", path.display())))?;
+        .map_err(|err| std::io::Error::other(format!("{}: {err:?}", path.display())))?;
     samples.insert(asev, sample);
     Ok(())
 }

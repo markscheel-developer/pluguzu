@@ -27,7 +27,7 @@ dirs = "6.0.0"
 serde = "1.0.225"
 serde_json = "1.0.145"
 # Audio samples utils
-sndfile = "0.1.1"
+sndfile = { git = "https://github.com/TristanCacqueray/sndfile.rs", rev = "b201b9ab060cb20af39cb489627af95cfcb31c9e" }
 samplerate = "0.2.4"
 # The audio engine
 dough-sys = { git = "https://codeberg.org/TristanCacqueray/dough-sys.git", rev = "583a135cdf02db46b026598ff532643781cd8a0a" }
