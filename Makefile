@@ -24,9 +24,9 @@ install-standalone:
 	@echo "[+] Installed STANDALONE: ~/.local/bin/pluguzu"
 
 install: install-standalone install-clap install-vst3
-	@test -e ~/.config/pluguzu/samples || { \
-		echo "[Warning] No samples found in ~/.config/pluguzu/samples, try running:" ; \
-		echo "  git clone --depth 1 https://github.com/tidalcycles/Dirt-Samples ~/.config/pluguzu/samples" ; \
+	@test -e ~/.config/pluguzu/samples/pluguzu.json || { \
+		echo "[Warning] No samples found in ~/.config/pluguzu/samples/pluguzu.json, try running:" ; \
+		echo "  git clone --depth 1 --recurse-submodules https://codeberg.org/TristanCacqueray/uzu-Samples ~/.config/pluguzu/samples" ; \
 	}
 
 render-presets:
