@@ -618,6 +618,22 @@ impl Plugin for Pluguzu {
         let samples_library = self.samples_library.clone();
         let background_state = self.background_state.clone();
 
+        let (tx, rx) = std::sync::mpsc::channel();
+        let sl = self.samples_library.clone();
+        std::thread::Builder::new()
+            .name("sample-loader".to_string())
+            .spawn(move || {
+                loop {
+                    let (bank, sev): (smol_str::SmolStr, events::SoundEvent) = rx.recv().unwrap();
+                    if !sl.has_sample(bank.clone(), &sev) {
+                        if let Err(e) = sl.load(bank, &sev) {
+                            nih_warn!("Couldn't load sample {}: {}", sev.name, e);
+                        }
+                    }
+                }
+            })
+            .expect("Sample loader thread");
+
         Box::new(move |task| {
             let current_bar = current_bar.load(Ordering::Relaxed);
 
@@ -633,10 +649,10 @@ impl Plugin for Pluguzu {
                         missing.insert((ev.bank(), sev.clone()));
                     }
                 }
-                // Dispatch background task to load missing samples
+                // Dispatch task to load missing samples
                 for (bank, sev) in missing.drain() {
-                    if let Err(e) = samples_library.load(bank, &sev) {
-                        nih_warn!("Couldn't load sample {}: {}", sev.name, e);
+                    if let Err(e) = tx.send((bank, sev)) {
+                        nih_warn!("Couldn't load sample: {}", e);
                     }
                 }
             };
