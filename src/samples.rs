@@ -115,9 +115,18 @@ impl SampleLibrary {
         let asev = AbsoluteSoundEvent::from_sev(bank, sev, sfs);
         let base = base.to_path_buf();
         match sfs {
-            SoundFiles::Sounds(paths) => Ok(load_path(&self.samples, base, sr, &paths, asev)?),
+            SoundFiles::Sounds(paths) => {
+                Ok(load_path(&self.samples, base, 65.41, sr, &paths, asev)?)
+            }
             SoundFiles::Pitches(xs) => match xs.iter().find(|k| k.0 as i32 == asev.0.1.note) {
-                Some(paths) => Ok(load_path(&self.samples, base, sr, &paths.1, asev)?),
+                Some(paths) => Ok(load_path(
+                    &self.samples,
+                    base,
+                    dirt::midi2freq(paths.0.into()),
+                    sr,
+                    &paths.1,
+                    asev,
+                )?),
                 None => Err(std::io::Error::other(format!(
                     "Couldn't find pitch! {}",
                     asev.0.1.note
@@ -130,6 +139,7 @@ impl SampleLibrary {
 fn load_path(
     samples: &DashMap<AbsoluteSoundEvent, dirt::Sample>,
     mut path: PathBuf,
+    freq: f32,
     sample_rate: u32,
     paths: &[PathBuf],
     asev: AbsoluteSoundEvent,
@@ -142,7 +152,7 @@ fn load_path(
         .expect("Absolute path!");
     path.push(file);
     info!("Loading {:?} {:?}", path, asev.0);
-    let sample = dirt::Sample::from_file(path.as_path(), sample_rate)
+    let sample = dirt::Sample::from_file(path.as_path(), freq, sample_rate)
         .map_err(|err| std::io::Error::other(format!("{}: {err}", path.display())))?;
     samples.insert(asev, sample);
     Ok(())

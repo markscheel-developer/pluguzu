@@ -30,7 +30,7 @@ serde_json = "1.0.145"
 sndfile = "0.1.1"
 samplerate = "0.2.4"
 # The audio engine
-dough-sys = { git = "https://codeberg.org/TristanCacqueray/dough-sys.git", rev = "cb04fb5fec3eada5cd9774f5bc369824be54584a" }
+dough-sys = { git = "https://codeberg.org/TristanCacqueray/dough-sys.git", rev = "583a135cdf02db46b026598ff532643781cd8a0a" }
 # dough-sys = { path = "../dough-sys" }
 # Helper to show file picker.
 rfd = "0.15.4"

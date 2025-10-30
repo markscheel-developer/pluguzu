@@ -24,7 +24,7 @@ impl Dough {
     }
     pub fn initialize(&mut self, sr: f64) {
         if self.sr == 0. {
-            unsafe { dough_sys::dough_init(sr as c_int, 64, 2, 3, 0) };
+            unsafe { dough_sys::dough_init(sr as c_int, 64, 2, 3, 0, 0) };
             self.sr = sr;
         } else if self.sr != sr {
             todo!("Sample size change is not supported!")
@@ -64,7 +64,11 @@ pub enum SampleError {
 }
 
 impl Sample {
-    pub fn from_file(path: &std::path::Path, sample_rate: u32) -> Result<Sample, SampleError> {
+    pub fn from_file(
+        path: &std::path::Path,
+        freq: f32,
+        sample_rate: u32,
+    ) -> Result<Sample, SampleError> {
         use sndfile::*;
         let mut snd = sndfile::OpenOptions::ReadOnly(ReadOptions::Auto)
             .from_path(path)
@@ -81,9 +85,10 @@ impl Sample {
         .map_err(SampleError::SampleRate)?;
         let c = dough_sys::FileSource {
             pcm: samples.as_ptr(),
-            len: samples.len() as c_int,
+            frames: (samples.len() / snd.get_channels()) as c_int,
             channels: snd.get_channels() as c_int,
-            pos: 0,
+            freq: freq,
+            pos: 0.0,
         };
         Ok(Sample {
             _samples: samples,
@@ -163,7 +168,7 @@ impl Sound {
     }
 }
 
-fn midi2freq(midi: f32) -> f32 {
+pub fn midi2freq(midi: f32) -> f32 {
     2.0_f32.powf((midi - 69.0) / 12.0) * 440.0
 }
 
