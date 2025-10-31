@@ -17,20 +17,20 @@ stack [
 ### Mondough
 
 ```mondo
-$ pN note <d'min9 <g'min7 a'sevenFlat9>> # clip .8 # release .3
-# sub (pN note 24)
-# pF vib 4 # pF vibmod .2
+$ note <d'min9 <g'min7 a'sevenFlat9>> # clip .8 # release .3
+# sub (note 24)
+# vib 4:.2
 # lpf (sine # range 500 2000 # slow 8)
-# pF lpe 1 # pF lpd .5 # pF lpq .1
+# lpe 1 # lpd .5 # lpq .1
 # s saw # gain .3
 
-$ pN note <d1 <g1 a1>> # clip .25
-# s pulse # pF pw .4
-# lpf 200 # pF lpe 3 # pF lpd .1
-# off .125 (add (pN note 12))
-# off .25 (add (pN note 24))
+$ note <d1 <g1 a1>> # clip .25
+# s pulse # pw .4
+# lpf 200 # lpe 3 # lpd .1
+# off .125 (add (note 12))
+# off .25 (add (note 24))
 # jux rev
-# pF distort 2 # pF distortvol .5
+# distort 2:.5
 # gain .3
 ```
 
