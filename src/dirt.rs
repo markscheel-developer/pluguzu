@@ -93,7 +93,7 @@ impl Sample {
             pcm: samples.as_ptr(),
             frames: (samples.len() / snd.get_channels()) as c_int,
             channels: snd.get_channels() as c_int,
-            freq: freq,
+            freq,
             pos: 0.0,
         };
         Ok(Sample {
@@ -174,7 +174,7 @@ pub fn midi2freq(midi: f32) -> f32 {
     2.0_f32.powf((midi - 69.0) / 12.0) * 440.0
 }
 
-pub const SOUNDS: &'static [&'static str] = &[
+pub const SOUNDS: &[&str] = &[
     "sine", "triangle", "tri", "saw", "pulse", "white", "pink", "brown",
 ];
 

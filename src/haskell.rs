@@ -72,10 +72,7 @@ pub enum UzuKind {
 
 impl HaskellRuntime {
     pub fn parse(&mut self, kind: UzuKind, code: &str) -> Option<String> {
-        let mondo = match kind {
-            UzuKind::Mondo => true,
-            _ => false,
-        };
+        let mondo = matches!(kind, UzuKind::Mondo);
         match std::ffi::CString::new(code) {
             Ok(code) => unsafe {
                 pluguzuParse(self.0, mondo, code.as_ptr() as *const c_char);

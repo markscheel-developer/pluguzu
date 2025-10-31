@@ -116,7 +116,7 @@ impl SampleLibrary {
         let base = base.to_path_buf();
         match sfs {
             SoundFiles::Sounds(paths) => {
-                Ok(load_path(&self.samples, base, 65.41, sr, &paths, asev)?)
+                Ok(load_path(&self.samples, base, 65.41, sr, paths, asev)?)
             }
             SoundFiles::Pitches(xs) => match xs.iter().find(|k| k.0 as i32 == asev.0.1.note) {
                 Some(paths) => Ok(load_path(

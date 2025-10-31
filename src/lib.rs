@@ -625,10 +625,10 @@ impl Plugin for Pluguzu {
             .spawn(move || {
                 loop {
                     let (bank, sev): (smol_str::SmolStr, events::SoundEvent) = rx.recv().unwrap();
-                    if !sl.has_sample(bank.clone(), &sev) {
-                        if let Err(e) = sl.load(bank, &sev) {
-                            nih_warn!("Couldn't load sample {}: {}", sev.name, e);
-                        }
+                    if !sl.has_sample(bank.clone(), &sev)
+                        && let Err(e) = sl.load(bank, &sev)
+                    {
+                        nih_warn!("Couldn't load sample {}: {}", sev.name, e);
                     }
                 }
             })

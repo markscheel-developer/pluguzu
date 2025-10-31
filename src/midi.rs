@@ -142,7 +142,7 @@ impl Pluguzu {
 
     fn send_sound_event(&mut self, ev: &Event, sev: &SoundEvent, buffer: &mut [&mut [f32]]) {
         let mut sound = crate::dirt::Sound::new();
-        if sound.default_sound(&sev.name.as_str()) {
+        if sound.default_sound(sev.name.as_str()) {
             sound.apply_param(
                 "duration",
                 ((ev.span.stop - ev.span.start) * self.audio.cycle_length) as f32,
