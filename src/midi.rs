@@ -175,7 +175,7 @@ impl Pluguzu {
         );
         let frame_offset = self.midi.event_offset(ev.span.start) as usize;
         self.dirt.advance(frame_offset.saturating_sub(1), buffer);
-        sound.submit();
+        self.dirt.process(&sound);
     }
 
     fn send_tidal_event(

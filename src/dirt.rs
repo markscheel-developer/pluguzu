@@ -8,6 +8,7 @@ pub struct Dough {
     pub sr: f64,
     pos: usize,
     frame_count: usize,
+    engine: dough_sys::Engine,
 }
 
 impl Dough {
@@ -16,6 +17,7 @@ impl Dough {
             sr: 0.,
             pos: 0,
             frame_count: 0,
+            engine: dough_sys::Engine::default(),
         }
     }
     pub fn init_buffer(&mut self, frame_count: usize) {
@@ -24,7 +26,8 @@ impl Dough {
     }
     pub fn initialize(&mut self, sr: f64) {
         if self.sr == 0. {
-            unsafe { dough_sys::dough_init(sr as c_int, 64, 2, 3, 0, 0) };
+            unsafe { dough_sys::dough_engine_init(&mut self.engine, sr as c_int, 64, 2, 3, 0, 0) };
+            unsafe { dough_sys::engine = self.engine };
             self.sr = sr;
         } else if self.sr != sr {
             todo!("Sample size change is not supported!")
@@ -34,14 +37,17 @@ impl Dough {
         let max = until.min(self.frame_count);
         for idx in self.pos..max {
             let mut arr = [0., 0.];
-            unsafe { dough_sys::gen_sample(arr.as_mut_ptr(), 0) };
+            unsafe { dough_sys::gen_engine_sample(&mut self.engine, arr.as_mut_ptr(), 0) };
             samples[0][idx] = arr[0];
             samples[1][idx] = arr[1];
         }
         self.pos = max;
     }
-    pub fn stop(&self) {
-        unsafe { dough_sys::panic() };
+    pub fn process(&mut self, sound: &Sound) {
+        unsafe { dough_sys::process_engine_event(&mut self.engine, &sound.0) };
+    }
+    pub fn stop(&mut self) {
+        unsafe { dough_sys::panic(&mut self.engine) };
     }
 }
 
@@ -105,10 +111,6 @@ impl Sound {
         unsafe { dough_sys::reset_event(&mut ev) };
         ev.orbit = 0;
         Sound(ev)
-    }
-
-    pub fn submit(&mut self) {
-        unsafe { dough_sys::process_event(&self.0) };
     }
 
     pub fn default_sound(&mut self, sound: &str) -> bool {
@@ -178,3 +180,4 @@ pub const SOUNDS: &'static [&'static str] = &[
 
 unsafe impl Send for Sample {}
 unsafe impl Sync for Sample {}
+unsafe impl Send for Dough {}

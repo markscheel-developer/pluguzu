@@ -1075,7 +1075,7 @@ dependencies = [
 [[package]]
 name = "dough-sys"
 version = "0.1.0"
-source = "git+https://codeberg.org/TristanCacqueray/dough-sys.git?rev=583a135cdf02db46b026598ff532643781cd8a0a#583a135cdf02db46b026598ff532643781cd8a0a"
+source = "git+https://codeberg.org/TristanCacqueray/dough-sys.git?rev=4ea16244cc524f060994d6b13271f6f623bb2955#4ea16244cc524f060994d6b13271f6f623bb2955"
 dependencies = [
  "cc",
 ]
