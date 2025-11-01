@@ -46,6 +46,55 @@ impl Highlighter {
     }
 }
 
+const COMMENT: Color32 = Color32::from_rgb(0x7f, 0x84, 0x90);
+
+fn num_lines_layout(ctx: &egui::Context, fontsize: f32, rows: usize) -> LayoutJob {
+    #[expect(non_local_definitions)]
+    impl egui::cache::ComputerMut<(FontSize, usize), LayoutJob> for Highlighter {
+        fn compute(&mut self, (fontsize, rows): (FontSize, usize)) -> LayoutJob {
+            let mut job = LayoutJob::default();
+            let font_id = FontId::monospace(fontsize.0);
+            let mut lines = String::with_capacity(rows * 5);
+            let width = rows.checked_ilog10().unwrap_or(0);
+            for i in 1..rows + 1 {
+                let n_width = i.checked_ilog10().unwrap_or(0);
+                for _ in 0..(width - n_width) {
+                    lines.push(' ');
+                }
+                lines.push_str(&i.to_string());
+                lines.push('\n');
+            }
+            job.append(
+                &lines[..lines.len() - 1],
+                0.,
+                TextFormat::simple(font_id.clone(), COMMENT),
+            );
+            job
+        }
+    }
+
+    ctx.memory_mut(|mem| {
+        mem.caches
+            .cache::<egui::cache::FrameCache<LayoutJob, Highlighter>>()
+            .get((FontSize(fontsize), rows))
+    })
+}
+
+fn show_numlines(ui: &mut egui::Ui, fontsize: f32, rows: usize) {
+    let mut layouter = |ui: &egui::Ui, _buf: &dyn egui::TextBuffer, _wrap_width: f32| {
+        let layout_job = num_lines_layout(ui.ctx(), fontsize, rows);
+        ui.fonts(|f| f.layout_job(layout_job))
+    };
+    let width = (rows.checked_ilog10().unwrap_or(0)) as f32 * fontsize;
+    egui::TextEdit::multiline(&mut "")
+        .interactive(false)
+        .frame(false)
+        .desired_rows(rows)
+        .desired_width(width)
+        .layouter(&mut layouter)
+        .show(ui);
+}
+
 pub fn show(
     ui: &mut egui::Ui,
     fontsize: f32,
@@ -61,18 +110,22 @@ pub fn show(
     egui::ScrollArea::vertical()
         .stick_to_bottom(true)
         .show(ui, |ui| {
-            egui::ScrollArea::horizontal()
-                .show(ui, |ui| {
-                    egui::TextEdit::multiline(code)
-                        .desired_rows(rows)
-                        .lock_focus(true)
-                        .desired_width(f32::INFINITY)
-                        .background_color(Color32::from_rgb(0x2c, 0x2e, 0x34))
-                        .frame(true)
-                        .layouter(&mut layouter)
-                        .show(ui)
-                })
-                .inner
+            ui.horizontal_top(|ui| {
+                show_numlines(ui, fontsize, rows);
+                egui::ScrollArea::horizontal()
+                    .show(ui, |ui| {
+                        egui::TextEdit::multiline(code)
+                            .desired_rows(rows)
+                            .lock_focus(true)
+                            .desired_width(f32::INFINITY)
+                            .background_color(Color32::from_rgb(0x2c, 0x2e, 0x34))
+                            .frame(true)
+                            .layouter(&mut layouter)
+                            .show(ui)
+                    })
+                    .inner
+            })
+            .inner
         })
         .inner
 }
