@@ -55,6 +55,37 @@ fn tidal() -> Syntax {
 fn mondo() -> Syntax {
     Syntax {
         comment: "//",
-        keywords: BTreeSet::from([]),
+        #[rustfmt::skip]
+        keywords: BTreeSet::from([ // grep -o "\"[a-zA-Z0-9]\+\"" /srv/codeberg.org/uzu/tidal/tidal-mondo/src/Mondo/Tidal.hs | tr '\n' ',' | sed 's/,/, /g'
+            "sound", "cc", "nrpn", "drum", "bank", "midicmd", "toArg", "unit", "vowel", "s", "randrun", "irand", "scan", "sine",
+            "square", "cosine", "rand", "perlin", "run", "saw", "tri", "arp", "trigger", "qtrigger", "qt", "ctrigger", "rtrigger",
+            "ftrigger", "mono", "splitQueries", "rev", "filterOnsets", "filterDigital", "filterAnalog", "degrade", "brak",
+            "palindrome", "stretch", "loopFirst", "arpeggiate", "arpg", "rolled", "press", "ribbon", "ghost", "off", "every",
+            "sometimes", "often", "jux", "slowSqueeze", "sparsity", "fastGap", "densityGap", "fast", "fastSqueeze", "density",
+            "slow", "steptake", "stepdrop", "trunc", "linger", "segment", "discretise", "timeLoop", "swing", "pressBy", "ply",
+            "reset", "restart", "struct", "mask", "repeatCycles", "iter", "stripe", "slowstripe", "shuffle", "scramble", "splice",
+            "euclid", "euclidInv", "slice", "chew", "accelerate", "amp", "attack", "bandf", "bandq", "begin", "binshift", "ccn",
+            "ccv", "clhatdecay", "coarse", "comb", "control", "cps", "crush", "ctlNum", "ctranspose", "cutoff", "cutoffegint",
+            "decay", "degree", "delay", "delayfeedback", "delaytime", "detune", "distort", "djf", "dry", "dur", "end", "enhance",
+            "expression", "fadeInTime", "fadeTime", "frameRate", "frames", "freeze", "freq", "from", "fshift", "fshiftnote",
+            "fshiftphase", "gain", "gate", "harmonic", "hatgrain", "hbrick", "hcutoff", "hold", "hours", "hresonance", "imag",
+            "kcutoff", "krush", "lagogo", "lbrick", "lclap", "lclaves", "lclhat", "lcrash", "legato", "clip", "leslie", "lfo",
+            "lfocutoffint", "lfodelay", "lfoint", "lfopitchint", "lfoshape", "lfosync", "lhitom", "lkick", "llotom", "lock", "loop",
+            "lophat", "lrate", "lsize", "lsnare", "metatune", "midibend", "midichan", "miditouch", "minutes", "modwheel",
+            "mtranspose", "nudge", "octaveR", "octer", "octersub", "octersubsub", "offset", "ophatdecay", "overgain", "overshape",
+            "pan", "panorient", "panspan", "pansplay", "panwidth", "partials", "phaserdepth", "phaserrate", "pitch1", "pitch2",
+            "pitch3", "polyTouch", "portamento", "progNum", "rate", "real", "release", "resonance", "ring", "ringdf", "ringf",
+            "room", "sagogo", "sclap", "sclaves", "scram", "scrash", "seconds", "semitone", "shape", "size", "slide", "smear",
+            "songPtr", "speed", "squiz", "stepsPerOctave", "stutterdepth", "stuttertime", "sustain", "sustainpedal", "timescale",
+            "timescalewin", "to", "tomdecay", "tremolodepth", "tremolorate", "triode", "tsdelay", "uid", "val", "vcfegint",
+            "vcoegint", "velocity", "voice", "waveloss", "xsdelay", "voi", "vco", "vcf", "tremr", "tremdp", "tdecay", "sz", "sus",
+            "stt", "std", "sld", "scr", "scp", "scl", "sag", "rel", "por", "pit3", "pit2", "pit1", "phasr", "phasdp", "ohdecay",
+            "lsn", "lpq", "lpf", "loh", "llt", "lht", "lfop", "lfoi", "lfoc", "lcr", "lcp", "lcl", "lch", "lbd", "lag", "hpq",
+            "hpf", "hg", "gat", "fadeOutTime", "dt", "dfb", "det", "delayt", "delayfb", "ctfg", "ctf", "chdecay", "bpq", "bpf",
+            "att", "dec", "lpf", "hpf", "vib", "vib", "vibmod", "vibmod", "distortvol", "distortvol", "pw", "pw", "lpe", "lpe",
+            "lpa", "lpa", "lpd", "lpd", "lps", "lps", "lpr", "lpr", "hpe", "hpe", "hpa", "hpa", "hpd", "hpd", "hps", "hps", "hpr",
+            "hpr", "bpe", "bpe", "bpa", "bpa", "bpd", "bpd", "bps", "bps", "bpr", "bpr", "recv", "nrpnn", "nrpnv", "channel", "cut",
+            "octave", "orbit", "midinote", "n", "note", "up", "number"
+        ]),
     }
 }

@@ -2,10 +2,10 @@
 // SPDX-License-Identifier: GPL-3.0
 
 use crate::UzuKind;
-use crate::egui;
 use crate::egui::{
     Color32, FontId, TextFormat, style::ScrollStyle, text::LayoutJob, text_edit::TextEditOutput,
 };
+use crate::{egui, syntax};
 
 #[derive(Copy, Clone)]
 struct FontSize(f32);
@@ -33,20 +33,71 @@ fn highlight(ctx: &egui::Context, fontsize: f32, lang: UzuKind, code: &str) -> L
 #[derive(Default)]
 struct Highlighter;
 impl Highlighter {
-    fn highlight(fontsize: f32, _lang: UzuKind, code: &str) -> LayoutJob {
+    fn highlight(fontsize: f32, lang: UzuKind, mut code: &str) -> LayoutJob {
         let mut job = LayoutJob::default();
         let font_id = FontId::monospace(fontsize);
-        // TODO: highlight the syntax!
-        job.append(
-            code,
-            0.,
-            TextFormat::simple(font_id.clone(), Color32::from_rgb(0xe2, 0xe2, 0xe3)),
-        );
+        let syntax: &syntax::Syntax = match lang {
+            UzuKind::Mondo => &syntax::MONDO,
+            UzuKind::Tidal => &syntax::TIDAL,
+        };
+        let scomment = TextFormat::simple(font_id.clone(), COMMENT);
+        let sspecial = TextFormat::simple(font_id.clone(), SPECIAL);
+        let sstrs = TextFormat::simple(font_id.clone(), STRS);
+        let sfg = TextFormat::simple(font_id.clone(), FG);
+        let sfunc = TextFormat::simple(font_id.clone(), FUNC);
+        // Adapted from github.com/emilk/egui/crates/egui_extras/src/syntax_highlighting.rs
+        while !code.is_empty() {
+            if code.starts_with(syntax.comment) {
+                let end = code.find('\n').unwrap_or(code.len());
+                job.append(&code[..end], 0., scomment.clone());
+                code = &code[end..];
+            } else if code.starts_with('"') {
+                let end = code[1..]
+                    .find('"')
+                    .map(|i| i + 2)
+                    .or_else(|| code.find('\n'))
+                    .unwrap_or(code.len());
+                job.append(&code[..end], 0.0, sstrs.clone());
+                code = &code[end..];
+            } else if code.starts_with('#') || code.starts_with('$') {
+                job.append(&code[..1], 0.0, sspecial.clone());
+                code = &code[1..];
+            } else if code.starts_with(|c: char| c.is_ascii_alphanumeric()) {
+                let end = code[1..]
+                    .find(|c: char| !c.is_ascii_alphanumeric())
+                    .map_or_else(|| code.len(), |i| i + 1);
+                let word = &code[..end];
+                let fmt = if syntax.keywords.contains(word) {
+                    sfunc.clone()
+                } else {
+                    sfg.clone()
+                };
+                job.append(word, 0.0, fmt);
+                code = &code[end..];
+            } else if code.starts_with(|c: char| c.is_ascii_whitespace()) {
+                let end = code[1..]
+                    .find(|c: char| !c.is_ascii_whitespace())
+                    .map_or_else(|| code.len(), |i| i + 1);
+                job.append(&code[..end], 0.0, sfg.clone());
+                code = &code[end..];
+            } else {
+                let mut it = code.char_indices();
+                it.next();
+                let end = it.next().map_or(code.len(), |(idx, _chr)| idx);
+                job.append(&code[..end], 0.0, scomment.clone());
+                code = &code[end..];
+            }
+        }
         job
     }
 }
 
-const COMMENT: Color32 = Color32::from_rgb(0x7f, 0x84, 0x90);
+const BG: Color32 = Color32::from_rgb(0x2c, 0x2e, 0x34); // bg0
+const COMMENT: Color32 = Color32::from_rgb(0x7f, 0x84, 0x90); // grey
+const SPECIAL: Color32 = Color32::from_rgb(0xf3, 0x96, 0x60); // orange
+const FUNC: Color32 = Color32::from_rgb(0x9e, 0xd0, 0x72); // green
+const STRS: Color32 = Color32::from_rgb(0xe7, 0xc6, 0x64); // yellow
+const FG: Color32 = Color32::from_rgb(0xe2, 0xe2, 0xe3);
 
 fn num_lines_layout(ctx: &egui::Context, fontsize: f32, rows: usize) -> LayoutJob {
     #[expect(non_local_definitions)]
@@ -118,7 +169,7 @@ pub fn show(
                             .desired_rows(rows)
                             .lock_focus(true)
                             .desired_width(f32::INFINITY)
-                            .background_color(Color32::from_rgb(0x2c, 0x2e, 0x34))
+                            .background_color(BG)
                             .frame(true)
                             .layouter(&mut layouter)
                             .show(ui)
