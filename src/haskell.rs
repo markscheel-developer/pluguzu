@@ -64,7 +64,7 @@ impl Default for HaskellState {
     }
 }
 
-#[derive(serde::Serialize, serde::Deserialize, Debug, Copy, Clone, PartialEq)]
+#[derive(serde::Serialize, serde::Deserialize, Debug, Copy, Clone, PartialEq, Hash)]
 pub enum UzuKind {
     Tidal,
     Mondo,

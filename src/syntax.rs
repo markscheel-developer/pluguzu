@@ -3,16 +3,21 @@
 
 //! The code syntax definition.
 
-use egui_code_editor::Syntax;
 use std::collections::BTreeSet;
 
-pub fn tidal() -> Syntax {
+pub struct Syntax {
+    pub comment: &'static str,
+    pub keywords: BTreeSet<&'static str>,
+}
+
+lazy_static::lazy_static! {
+    pub static ref TIDAL: Syntax = tidal();
+    pub static ref MONDO: Syntax = mondo();
+}
+
+fn tidal() -> Syntax {
     Syntax {
-        language: "Tidal",
-        case_sensitive: true,
         comment: "--",
-        comment_multiline: ["{-", "-}"],
-        hyperlinks: BTreeSet::from(["http"]),
         #[rustfmt::skip]
         keywords: BTreeSet::from([ // Update with grep -o "\"[a-zA-Z0-9]\+\"" /srv/codeberg.org/uzu/tidal/tidal-parse/src/Sound/Tidal/Parse.hs | tr '\n' ',' | sed 's/,/, /g'
             "True", "False", "literal", "major", "aug", "six", "sixNine", "major7", "major9", "add9", "major11",
@@ -44,20 +49,12 @@ pub fn tidal() -> Syntax {
             "within", "fit", "pickF", "weave", "weaveWith", "selectF", "lindenmayer", "rangex", "stutter", "euclidFull",
             "stut", "echo", "stutWith", "echoWith", "whenmod", "contrast", "vib", "vibmod"
         ]),
-        types: BTreeSet::from([]),
-        special: BTreeSet::from([]),
     }
 }
 
-pub fn mondo() -> Syntax {
+fn mondo() -> Syntax {
     Syntax {
-        language: "Mondo",
-        case_sensitive: true,
         comment: "//",
-        comment_multiline: ["/*", "*/"],
-        hyperlinks: BTreeSet::from(["http"]),
         keywords: BTreeSet::from([]),
-        types: BTreeSet::from([]),
-        special: BTreeSet::from(["#", "$"]),
     }
 }

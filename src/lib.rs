@@ -4,6 +4,7 @@
 //! This module is the main entry point.
 //! It defines the Pluguzu struct which is instantiated by nih-plug as a standalone app or a DAW plugin.
 
+mod code_editor;
 mod config;
 mod debug;
 mod default_presets;

@@ -3,7 +3,6 @@
 
 //! The pluguzu UI.
 
-use egui_code_editor::{CodeEditor, ColorTheme};
 use nih_plug::prelude::*;
 use nih_plug_egui::{
     create_egui_editor, egui,
@@ -23,7 +22,6 @@ use crate::events::LocEvent;
 use crate::haskell::UzuKind;
 use crate::highlights;
 use crate::presets::{Presets, PresetsTags, add_preset, load_default_presets, load_user_presets};
-use crate::syntax;
 use crate::{BackgroundState, ParseTask, Pluguzu, PluguzuTask};
 
 const VERT_SPACE: f32 = 3.;
@@ -317,23 +315,11 @@ impl EditorState {
         *self.code.lock().expect("lock") = code;
     }
     fn code_editor(&mut self, ui: &mut egui::Ui, status_line: i16) -> TextEditOutput {
-        let mut theme = ColorTheme::SONOKAI;
         if status_line > 0 {
-            theme.cursor = "#ff0000";
+            ui.style_mut().visuals.selection.stroke.color = Color32::from_rgb(0xfc, 0x5d, 0x7c);
         }
         let line_height = self.font_size + VERT_SPACE;
         let avail_lines = (ui.available_height() / line_height).floor() - status_line as f32;
-
-        let mut code_editor = CodeEditor::default()
-            .id_source("code editor")
-            .with_rows(avail_lines as usize)
-            .with_fontsize(self.font_size)
-            .with_theme(theme)
-            .with_syntax(match *self.lang.lock().expect("lock") {
-                UzuKind::Tidal => syntax::tidal(),
-                UzuKind::Mondo => syntax::mondo(),
-            })
-            .with_numlines(true);
 
         ui.input_mut(|i| {
             if i.consume_key(egui::Modifiers::CTRL, egui::Key::Enter) {
@@ -350,7 +336,13 @@ impl EditorState {
             }
         });
         let mut code_data = self.code.lock().expect("lock");
-        let output = code_editor.show(ui, code_data.deref_mut());
+        let output = crate::code_editor::show(
+            ui,
+            self.font_size,
+            *self.lang.lock().expect("lock"),
+            code_data.deref_mut(),
+            avail_lines as usize,
+        );
         if !self.focused {
             output.response.request_focus();
             self.focused = true;

@@ -13,8 +13,6 @@ nih_plug_egui = { git = "https://github.com/TristanCacqueray/nih-plug.git", rev 
 # nih_plug = { path = "/srv/github.com/robbert-vdh/nih-plug/", features = ["assert_process_allocs", "standalone"] }
 # nih_plug_egui = { path = "/srv/github.com/robbert-vdh/nih-plug/nih_plug_egui" }
 
-# An egui widget for the code editor
-egui_code_editor = "0.2.17"
 # A str type to store sample names
 smol_str = { version = "0.3.2", features = ["serde"]}
 # Util for error management
@@ -40,6 +38,7 @@ arc-swap = "1.7.1"
 dashmap = "6.1.0"
 time = "0.3.44"
 urlencoding = "2"
+lazy_static = "*"
 
 [workspace]
 members = ["xtask"]
