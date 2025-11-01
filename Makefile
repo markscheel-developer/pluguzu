@@ -41,9 +41,9 @@ build-rust:
 haskell-lib:
 	@cabal build -O2
 	@mkdir -p bin
-	@ln -sf $(shell dirname $(shell cabal -O2 list-bin flib:pluguzu))/pluguzu-tmp/Pluguzu_stub.h bin
-	@ln -sf $(shell cabal -O2 list-bin flib:pluguzu) bin
-	@ln -sf $(shell ghc-pkg field rts include-dirs --simple-output) bin/rts-header
+	# need to run cabal one more time because it output the HEAD of cabal.project source-repository-package
+	@cabal -O2 list-bin flib:pluguzu
+	@ln -sf $(shell cabal -O2 list-bin flib:pluguzu) bin/libpluguzu.so
 
 run-debug:
 	@cargo build --features debug
