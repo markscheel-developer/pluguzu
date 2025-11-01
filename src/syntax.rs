@@ -56,10 +56,7 @@ pub fn mondo() -> Syntax {
         comment: "//",
         comment_multiline: ["/*", "*/"],
         hyperlinks: BTreeSet::from(["http"]),
-        #[rustfmt::skip]
-        keywords: BTreeSet::from(["s"
-
-        ]),
+        keywords: BTreeSet::from([]),
         types: BTreeSet::from([]),
         special: BTreeSet::from(["#", "$"]),
     }
