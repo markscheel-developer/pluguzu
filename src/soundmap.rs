@@ -15,10 +15,10 @@ struct PluguzuJSON(Vec<(PathBuf, PathBuf)>);
 #[derive(Debug, Clone, Deserialize)]
 #[serde(untagged)]
 enum SoundMapRaw {
-    Base(PathBuf),
-    Sounds(Vec<PathBuf>),
-    Pitches(HashMap<SmolStr, Vec<PathBuf>>),
-    Pitch(HashMap<SmolStr, PathBuf>),
+    Base(String),
+    Sounds(Vec<String>),
+    Pitches(HashMap<SmolStr, Vec<String>>),
+    Pitch(HashMap<SmolStr, String>),
 }
 
 pub enum SoundFiles {
@@ -65,7 +65,18 @@ fn test_note_to_midi() {
     }
 }
 
-fn make_pitch_list(mut notes: HashMap<SmolStr, Vec<PathBuf>>) -> SoundFiles {
+fn decode_paths(paths: Vec<String>) -> Vec<PathBuf> {
+    let mut res = Vec::with_capacity(paths.len());
+    for path in paths {
+        match urlencoding::decode(&path) {
+            Ok(path) => res.push(PathBuf::from(path.into_owned())),
+            Err(err) => crate::pwarn!("{}: bad path encoding {}", path, err),
+        }
+    }
+    res
+}
+
+fn make_pitch_list(mut notes: HashMap<SmolStr, Vec<String>>) -> SoundFiles {
     let mut pitches: Vec<(u8, Vec<PathBuf>)> = notes
         .drain()
         .map(|(k, v)| {
@@ -74,7 +85,7 @@ fn make_pitch_list(mut notes: HashMap<SmolStr, Vec<PathBuf>>) -> SoundFiles {
                     crate::pwarn!("Unknown pitch {}", k);
                     36
                 }),
-                v,
+                decode_paths(v),
             )
         })
         .collect();
@@ -89,7 +100,7 @@ pub fn load_soundmap(fp: PathBuf, root: Arc<PathBuf>) -> Result<SoundMap, Box<dy
     for (k, v) in json.drain() {
         let v = match v {
             SoundMapRaw::Base(_fp) => None,
-            SoundMapRaw::Sounds(xs) => Some(SoundFiles::Sounds(xs)),
+            SoundMapRaw::Sounds(xs) => Some(SoundFiles::Sounds(decode_paths(xs))),
             SoundMapRaw::Pitches(kv) => Some(make_pitch_list(kv)),
             SoundMapRaw::Pitch(mut kv) => Some(make_pitch_list(
                 kv.drain().map(|(k, v)| (k, vec![v])).collect(),

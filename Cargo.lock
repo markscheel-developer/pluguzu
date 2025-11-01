@@ -2628,6 +2628,7 @@ dependencies = [
  "sndfile",
  "thiserror 2.0.16",
  "time",
+ "urlencoding",
 ]
 
 [[package]]

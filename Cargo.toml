@@ -39,6 +39,7 @@ parking_lot = "0.12.4"
 arc-swap = "1.7.1"
 dashmap = "6.1.0"
 time = "0.3.44"
+urlencoding = "2"
 
 [workspace]
 members = ["xtask"]
