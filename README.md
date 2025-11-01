@@ -47,10 +47,10 @@ Pluguzu is known to work on the following system:
 
 ```bash
 # Install Fedora/CentOS system dependencies
-sudo dnf install -y cmake alsa-lib-devel wayland-devel jack-audio-connection-kit-devel libsamplerate-devel mesa-libGL-devel libXext-devel libXrandr-devel libXfixes-devel libxkbcommon-x11-devel dbus-devel libsndfile-devel gcc gcc-c++ gmp gmp-devel make ncurses ncurses-compat-libs xz perl pkg-config git
+sudo dnf install -y cmake alsa-lib-devel wayland-devel jack-audio-connection-kit-devel pipewire-jack-audio-connection-kit-libs libsamplerate-devel mesa-libGL-devel libXext-devel libXrandr-devel libXfixes-devel libxkbcommon-x11-devel dbus-devel libsndfile-devel gcc gcc-c++ gmp gmp-devel make ncurses ncurses-compat-libs xz perl pkg-config git
 
 # Install Debian system dependencies
-sudo apt-get install -y cmake libasound2-dev libwayland-dev libjack-dev  libsamplerate0-dev libgl-dev libxext-dev libxrandr-dev libxfixes-dev libxkbcommon-x11-dev libdbus-1-dev libsndfile1-dev gcc g++ libgmp-dev libncurses-dev perl pkg-config git
+sudo apt-get install -y cmake libasound2-dev libwayland-dev libjack-dev libsamplerate0-dev libgl-dev libxext-dev libxrandr-dev libxfixes-dev libxkbcommon-x11-dev libdbus-1-dev libsndfile1-dev gcc g++ libgmp-dev libncurses-dev perl pkg-config git pipewire-jack
 
 # Install Haskell cabal
 curl --proto '=https' --tlsv1.2 -sSf https://get-ghcup.haskell.org | env BOOTSTRAP_HASKELL_GHC_VERSION=latest BOOTSTRAP_HASKELL_NONINTERACTIVE=1 sh
@@ -86,9 +86,16 @@ ldd ~/.vst3/pluguzu.vst3/Contents/x86_64-linux/pluguzu.so | grep "not found"
 - Run the standalone JACK client:
 
 ```bash
-make run-standalone
+pluguzu
 ```
 
+
+## Known issues
+
+Here are a list of known errors and how to fix them:
+
+- Failure to use the ALSA backend `'snd_pcm_hw_params_set_buffer_size' failed with error 'Invalid argument (22)'`.
+  Try running the pipewire wrapper to use JACK instead: `pw-jack pluguzu`.
 
 ## Architecture
 
