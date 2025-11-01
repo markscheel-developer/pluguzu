@@ -41,9 +41,7 @@ build-rust:
 haskell-lib:
 	@cabal build -O2
 	@mkdir -p bin
-	# need to run cabal one more time because it output the HEAD of cabal.project source-repository-package
-	@cabal -O2 list-bin flib:pluguzu
-	@ln -sf $(shell cabal -O2 list-bin flib:pluguzu) bin/libpluguzu.so
+	@ln -sf $(shell cabal -O2 list-bin flib:pluguzu | grep libpluguzu.so) bin/
 
 run-debug:
 	@cargo build --features debug

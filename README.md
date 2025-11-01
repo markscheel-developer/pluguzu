@@ -31,10 +31,11 @@ Pluguzu is powered by the [nih-plug][nih-plug] audio plugin framework and the
 
 Pluguzu is known to work on the following system:
 
-- [x] Linux x86
+- [x] Linux x86 (Arch/Debian/Fedora)
 
 … with the following host:
 
+- [x] Jack (STANDALONE)
 - [x] Carla (VST3), but the windows must not overlap to avoid lag.
 - [x] Ardour8 (VST3), select option to "allow plugin to receive keyboard events".
 - [x] REAPER (CLAP), select option to "send all keyboard input to plugin".
@@ -92,10 +93,17 @@ pluguzu
 
 ## Known issues
 
-Here are a list of known errors and how to fix them:
+Here is a list of known issues and how to fix them:
 
 - Failure to use the ALSA backend `'snd_pcm_hw_params_set_buffer_size' failed with error 'Invalid argument (22)'`.
   Try running the pipewire wrapper to use JACK instead: `pw-jack pluguzu`.
+
+- `pluguzu: error while loading shared libraries: libHStidal-parse-0.0.2`: This happens when tidal is updated through the cabal.project. Try removing the dist files and rebuild the haskell-lib:
+
+```
+rm -Rf dist-newstyle
+make haskell-lib
+```
 
 ## Architecture
 
