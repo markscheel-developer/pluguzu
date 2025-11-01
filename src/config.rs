@@ -45,7 +45,7 @@ stack [
   fast "<1 [1.5 2?]>" $ n $
     arp "<up down diverge>" "<a'm9'8 e'7sus4'8>"
     |- "<12 [12 5]>/2"
-  -- dirt demo
-, s "tok*4" # cutoff "80 100 150 500"
+  -- dough demo
+, s "bd*4" # pS "bank" "crate" # cutoff "80 100 150 500"
 ]
 "#;

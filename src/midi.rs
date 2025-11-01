@@ -141,7 +141,7 @@ impl Pluguzu {
     }
 
     fn send_sound_event(&mut self, ev: &Event, sev: &SoundEvent, buffer: &mut [&mut [f32]]) {
-        let mut sound = crate::dirt::Sound::new();
+        let mut sound = crate::dough::Sound::new();
         if sound.default_sound(sev.name.as_str()) {
             sound.apply_param(
                 "duration",
@@ -174,8 +174,8 @@ impl Pluguzu {
             ev.span.start, sev.name, sound.0.freq, sound.0.duration,
         );
         let frame_offset = self.midi.event_offset(ev.span.start) as usize;
-        self.dirt.advance(frame_offset.saturating_sub(1), buffer);
-        self.dirt.process(&sound);
+        self.dough.advance(frame_offset.saturating_sub(1), buffer);
+        self.dough.process(&sound);
     }
 
     fn send_tidal_event(

@@ -11,7 +11,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 
 use crate::events::SoundEvent;
 use crate::soundmap::{SoundFiles, SoundMap};
-use crate::{dirt, info, pwarn};
+use crate::{dough, info, pwarn};
 
 #[derive(Eq, Hash, PartialEq)]
 pub struct AbsoluteSoundEvent((SmolStr, SoundEvent));
@@ -19,7 +19,7 @@ pub struct AbsoluteSoundEvent((SmolStr, SoundEvent));
 pub struct SampleLibrary {
     soundmap: SoundMap,
     sample_rate: AtomicU32,
-    pub samples: DashMap<AbsoluteSoundEvent, dirt::Sample>,
+    pub samples: DashMap<AbsoluteSoundEvent, dough::Sample>,
 }
 
 fn closest_note(pitches: &[(u8, Vec<PathBuf>)], sev: &SoundEvent) -> (i32, i32) {
@@ -95,7 +95,7 @@ impl SampleLibrary {
         &self,
         bank: SmolStr,
         sev: &SoundEvent,
-    ) -> Option<Ref<'_, AbsoluteSoundEvent, dirt::Sample>> {
+    ) -> Option<Ref<'_, AbsoluteSoundEvent, dough::Sample>> {
         self.soundmap
             .0
             .get(&(bank.clone(), sev.name.clone()))
@@ -122,7 +122,7 @@ impl SampleLibrary {
                 Some(paths) => Ok(load_path(
                     &self.samples,
                     base,
-                    dirt::midi2freq(paths.0.into()),
+                    dough::midi2freq(paths.0.into()),
                     sr,
                     &paths.1,
                     asev,
@@ -137,7 +137,7 @@ impl SampleLibrary {
 }
 
 fn load_path(
-    samples: &DashMap<AbsoluteSoundEvent, dirt::Sample>,
+    samples: &DashMap<AbsoluteSoundEvent, dough::Sample>,
     mut path: PathBuf,
     freq: f32,
     sample_rate: u32,
@@ -152,7 +152,7 @@ fn load_path(
         .expect("Absolute path!");
     path.push(file);
     info!("Loading {:?} {:?}", path, asev.0);
-    let sample = dirt::Sample::from_file(path.as_path(), freq, sample_rate)
+    let sample = dough::Sample::from_file(path.as_path(), freq, sample_rate)
         .map_err(|err| std::io::Error::other(format!("{}: {err:?}", path.display())))?;
     samples.insert(asev, sample);
     Ok(())

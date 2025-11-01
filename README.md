@@ -112,7 +112,7 @@ Here are the important files:
 - [PluguzuCore.hs](./src/PluguzuCore.hs) contains the logic to convert tidal pattern into MIDI events.
 - [Pluguzu.hs](./Pluguzu.hs) is the foreign library called by the plugin.
 - [lib.rs](./src/lib.rs) is the nih-plug implementation.
-- [dough.rs](./src/dirt.rs) is the dough sampler integration.
+- [dough.rs](./src/dough.rs) is the dough sampler integration.
 - [ui.rs](./src/ui.rs) is the UI definition.
 - [pluguzu-presets.md](./pluguzu-presets.md) is the preset library.
 - [PluguzuWrapper.c](./PluguzuWrapper.c) is the C wrapper to enable calling Haskell from C.

@@ -7,7 +7,7 @@
 mod config;
 mod debug;
 mod default_presets;
-mod dirt;
+mod dough;
 mod events;
 pub mod haskell;
 mod highlights;
@@ -126,7 +126,7 @@ pub struct Pluguzu {
     note_offs: HashMap<(u8, u8), FutureNoteOff>,
 
     /// Samples
-    dirt: crate::dirt::Dough,
+    dough: crate::dough::Dough,
     samples_library: Arc<crate::samples::SampleLibrary>,
 
     /// The info needed to send midi events.
@@ -180,7 +180,7 @@ impl Default for Pluguzu {
                 bpm: AtomicF32::new(120.),
             }),
 
-            dirt: dirt::Dough::new(),
+            dough: dough::Dough::new(),
             samples_library: Arc::new(crate::samples::SampleLibrary::new(sm)),
 
             note_offs: HashMap::with_capacity(255 * 16),
@@ -356,7 +356,7 @@ impl Pluguzu {
     fn compute_timing(&mut self, frames: usize, info: &TransportInfo) {
         // Compute current frame info
         let frames = frames as f64;
-        let run_time = frames / self.dirt.sr;
+        let run_time = frames / self.dough.sr;
         let run_fraction = run_time / info.cycle_length;
         let frames_per_fraction = frames / run_fraction;
 
@@ -401,7 +401,7 @@ impl Pluguzu {
             self.midi.frames_per_fraction = frames_per_fraction;
         }
 
-        // Store timing offset for dirt
+        // Store timing offset for dough
         if info.cycle_length != self.audio.cycle_length {
             debug!("Cycle length changed to {}", info.cycle_length);
             self.audio.cycle_length = info.cycle_length;
@@ -449,7 +449,7 @@ impl Plugin for Pluguzu {
 
         // Setup sample-rate
         let sr = buffer_config.sample_rate as u32;
-        self.dirt.initialize(sr.into());
+        self.dough.initialize(sr.into());
         self.audio.sample_rate = sr;
         self.samples_library.set_sample_rate(sr);
 
@@ -498,7 +498,7 @@ impl Plugin for Pluguzu {
             let tempo = self.dsp_state.bpm.load(Ordering::Relaxed) as f64;
             if playing {
                 // Advance the time by a fixed amount.
-                let now = self.audio.now + frames_count as f64 / self.dirt.sr;
+                let now = self.audio.now + frames_count as f64 / self.dough.sr;
                 let mut info = TransportInfo::new(true, now, tempo, 4.);
                 // Advance the cycle pos based on the previous calculation
                 // to ensure the time goes forward, in case the BPM is changed.
@@ -547,7 +547,7 @@ impl Plugin for Pluguzu {
 
             self.send_all_note_offs(context);
 
-            self.dirt.stop();
+            self.dough.stop();
             return ProcessStatus::Normal;
             // return ProcessStatus::KeepAlive;
         }
@@ -561,7 +561,7 @@ impl Plugin for Pluguzu {
         let next_buffer = self.ensure_events_buffer(cur_bar, context);
         let mut events = self.events.as_ref().expect("events to exist").clone();
 
-        self.dirt.init_buffer(frames_count);
+        self.dough.init_buffer(frames_count);
         let buffer_slice = buffer.as_slice();
 
         // Send events.
@@ -592,7 +592,7 @@ impl Plugin for Pluguzu {
         }
 
         // Play dough
-        self.dirt.advance(frames_count, buffer_slice);
+        self.dough.advance(frames_count, buffer_slice);
 
         // Update status for the UI
         if synced {
@@ -643,7 +643,7 @@ impl Plugin for Pluguzu {
                 // Collect unknown samples
                 for ev in events.iter() {
                     if let EventKind::EventSound(sev) = &ev.kind
-                        && !dirt::SOUNDS.contains(&sev.name.as_str())
+                        && !dough::SOUNDS.contains(&sev.name.as_str())
                         && !samples_library.has_sample(ev.bank(), sev)
                     {
                         missing.insert((ev.bank(), sev.clone()));
