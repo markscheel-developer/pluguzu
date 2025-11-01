@@ -85,7 +85,7 @@ impl Sample {
             snd.get_samplerate() as u32,
             sample_rate,
             snd.get_channels(),
-            samplerate::converter_type::ConverterType::SincBestQuality,
+            samplerate::converter_type::ConverterType::SincFastest,
             &samples,
         )
         .map_err(SampleError::SampleRate)?;
