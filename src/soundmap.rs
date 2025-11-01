@@ -40,18 +40,18 @@ fn note_to_midi(name: &str) -> Option<u8> {
     name.chars().last().and_then(|n| {
         n.to_digit(10).and_then(|octave| {
             match &name[0..name.len() - 1] {
-                "C" => Some(0),
-                "C#" | "Cs" => Some(1),
-                "D" => Some(2),
-                "D#" | "Ds" => Some(3),
-                "E" => Some(4),
-                "F" => Some(5),
-                "F#" | "Fs" => Some(6),
-                "G" => Some(7),
-                "G#" | "Gs" => Some(8),
-                "A" => Some(9),
-                "A#" | "As" => Some(10),
-                "B" => Some(11),
+                "C" | "c" => Some(0),
+                "C#" | "Cs" | "c#" | "cs" => Some(1),
+                "D" | "d" => Some(2),
+                "D#" | "Ds" | "d#" | "ds" => Some(3),
+                "E" | "e" => Some(4),
+                "F" | "f" => Some(5),
+                "F#" | "Fs" | "f#" | "fs" => Some(6),
+                "G" | "g" => Some(7),
+                "G#" | "Gs" | "g#" | "gs" => Some(8),
+                "A" | "a" => Some(9),
+                "A#" | "As" | "a#" | "as" => Some(10),
+                "B" | "b" => Some(11),
                 _ => None,
             }
             .map(|key| (octave * 12 + key + 12) as u8)
