@@ -28,7 +28,7 @@ serde_json = "1.0.145"
 sndfile = { git = "https://github.com/TristanCacqueray/sndfile.rs", rev = "b201b9ab060cb20af39cb489627af95cfcb31c9e" }
 samplerate = "0.2.4"
 # The audio engine
-dough-sys = { git = "https://codeberg.org/TristanCacqueray/dough-sys.git", rev = "4ea16244cc524f060994d6b13271f6f623bb2955" }
+dough-sys = { git = "https://codeberg.org/TristanCacqueray/dough-sys.git", rev = "27bb682b739f4ffd9f7e5bebe081d7af2c367427" }
 # dough-sys = { path = "../dough-sys" }
 # Helper to show file picker.
 rfd = "0.15.4"

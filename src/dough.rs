@@ -37,7 +37,7 @@ impl Dough {
         let max = until.min(self.frame_count);
         for idx in self.pos..max {
             let mut arr = [0., 0.];
-            unsafe { dough_sys::gen_engine_sample(&mut self.engine, arr.as_mut_ptr(), 0) };
+            unsafe { dough_sys::gen_sample(&mut self.engine, arr.as_mut_ptr(), 0) };
             samples[0][idx] = arr[0];
             samples[1][idx] = arr[1];
         }
