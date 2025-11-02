@@ -17,7 +17,7 @@ stack [
 ### Mondough
 
 ```mondo
-$ note <"d'min9" <"g'min7" "a'sevenFlat9">>
+$ note <d'min9 <g'min7 a'sevenFlat9>>
 # clip .8 # release .3
 # sub (note 24)
 # vib 4:.2
