@@ -142,12 +142,11 @@ impl Pluguzu {
 
     fn send_sound_event(&mut self, ev: &Event, sev: &SoundEvent, buffer: &mut [&mut [f32]]) {
         let mut sound = crate::dough::Sound::new();
-        if sound.default_sound(sev.name.as_str()) {
-            sound.apply_param(
-                "duration",
-                ((ev.span.stop - ev.span.start) * self.audio.cycle_length) as f32,
-            );
-        } else {
+        sound.apply_param(
+            "duration",
+            ((ev.span.stop - ev.span.start) * self.audio.cycle_length) as f32,
+        );
+        if !sound.default_sound(sev.name.as_str()) {
             match self.samples_library.get(ev.bank(), sev) {
                 Some(samples) => {
                     sound.file_source(&samples);
