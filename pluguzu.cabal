@@ -29,7 +29,7 @@ foreign-library pluguzu
     default-language: GHC2021
 
 library
-    build-depends:    base, containers, aeson, bytestring, tidal-core >= 1.10.1, tidal-parse, tidal-mondo
+    build-depends:    base, containers, parsec, aeson, bytestring, tidal-core >= 1.10.1, tidal-parse, tidal-mondo
                   -- , tidal, tidal-link
     exposed-modules:  PluguzuCore
     hs-source-dirs:   src

@@ -17,7 +17,7 @@ fn main() {
         let pat = args.get(arg).expect("a pattern");
         let mut ps = HaskellRuntime::default();
         if let Some(err) = ps.parse(kind, pat) {
-            println!("Parse failure: {err}");
+            println!("Parse failure: {err:?}");
         } else {
             let events = ps.render(0, 4);
             for (nr, ev) in events.iter().enumerate() {

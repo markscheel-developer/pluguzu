@@ -7,7 +7,6 @@ import Control.Exception (SomeException, displayException, handle)
 import Data.ByteString qualified as BS
 import Data.ByteString.Internal qualified as BS
 import Data.IORef
-import Data.Maybe (fromMaybe)
 import Data.Word (Word64, Word8)
 import Foreign (Ptr)
 import Foreign qualified
@@ -22,11 +21,13 @@ type CPluguzuState = Foreign.StablePtr PluguzuState
 
 foreign export ccall pluguzuNew :: IO CPluguzuState
 foreign export ccall pluguzuParse :: CPluguzuState -> Bool -> Foreign.C.CString -> IO ()
-foreign export ccall pluguzuError :: CPluguzuState -> IO Foreign.C.CString
+foreign export ccall pluguzuError :: CPluguzuState -> Ptr Word64 -> Ptr Word64 -> IO Foreign.C.CString
 foreign export ccall pluguzuRender :: CPluguzuState -> Word64 -> Word64 -> Ptr Word64 -> IO (Foreign.Ptr Word8)
 
+type Error = (CString, (Word64, Word64))
+
 data PluguzuState = PluguzuState
-    { error :: IORef (Maybe CString)
+    { error :: IORef (Maybe Error)
     -- ^ The last parse error.
     , pat :: IORef PluguzuCore.ControlPattern
     -- ^ The current pattern
@@ -40,10 +41,10 @@ pluguzuNew = do
     state <- PluguzuState <$> newIORef Nothing <*> newIORef mempty <*> newIORef mempty
     Foreign.newStablePtr state
 
-writeError :: IORef (Maybe CString) -> Maybe CString -> IO ()
+writeError :: IORef (Maybe Error) -> Maybe Error -> IO ()
 writeError ref new = do
     mPrev <- readIORef ref
-    mapM_ Foreign.free mPrev
+    mapM_ (Foreign.free . fst) mPrev
     writeIORef ref new
 
 -- | Parse and load a tidal pattern.
@@ -55,22 +56,27 @@ pluguzuParse pState mondo cStr = do
     -- TODO: report the bug upstream: Can't happen, feet are pre-processed.
     let catchException = \(e :: SomeException) -> do
             cerr <- Foreign.C.newCString ("Error: " <> displayException e)
-            writeError state.error (Just cerr)
+            writeError state.error (Just (cerr, (0, 0)))
     -- putStrLn (PluguzuCore.deltaMini str)
     handle catchException $ case PluguzuCore.parseUzu mondo str of
-        Left err -> do
+        Left (err, row, col) -> do
             cerr <- Foreign.C.newCString err
-            writeError state.error (Just cerr)
+            writeError state.error (Just (cerr, (fromIntegral row, fromIntegral col)))
         Right pat -> do
             writeIORef state.pat $! pat
             writeError state.error Nothing
 
 -- | Get parse error, return NULL when Nothing.
-pluguzuError :: CPluguzuState -> IO Foreign.C.CString
-pluguzuError pState = do
+pluguzuError :: CPluguzuState -> Ptr Word64 -> Ptr Word64 -> IO Foreign.C.CString
+pluguzuError pState pRow pCol = do
     state <- Foreign.deRefStablePtr pState
     mError <- readIORef state.error
-    pure $ fromMaybe Foreign.nullPtr mError
+    case mError of
+        Nothing -> pure Foreign.nullPtr
+        Just (cstr, (row, col)) -> do
+            Foreign.poke pRow row
+            Foreign.poke pCol col
+            pure cstr
 
 pluguzuRender :: CPluguzuState -> Word64 -> Word64 -> Ptr Word64 -> IO (Foreign.Ptr Word8)
 pluguzuRender pState startArc endArc pSize = handle catchException $ do

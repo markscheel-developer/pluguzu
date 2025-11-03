@@ -173,6 +173,7 @@ impl Pluguzu {
                                     &dsp_state,
                                     &state.background_state,
                                     &output,
+                                    status_line > 0,
                                 );
 
                                 // Bottom-bar
@@ -438,6 +439,7 @@ impl EditorState {
         dsp_state: &crate::PluguzuDSP,
         background_state: &BackgroundState,
         output: &TextEditOutput,
+        with_error: bool,
     ) {
         let painter = ui.painter_at(output.response.rect);
         let ep = highlights::EditorPixels::new(output.galley_pos, &output.galley);
@@ -476,6 +478,24 @@ impl EditorState {
                     }
                 },
             );
+        }
+
+        // Draw error
+        if with_error {
+            let row = background_state.error_row.load(Ordering::SeqCst);
+            let col = background_state.error_col.load(Ordering::SeqCst);
+            if row > 0 && col > 0 {
+                let shape = Shape::rect_stroke(
+                    ep.highlight_rect(col - 1, row - 1, 0),
+                    5.,
+                    Stroke {
+                        width: 2.,
+                        color: Color32::from_rgb(0xff, 0x30, 0x30),
+                    },
+                    StrokeKind::Middle,
+                );
+                painter.add(shape);
+            }
         }
 
         let shapes = self.highlights.iter().map(|(el, when)| {

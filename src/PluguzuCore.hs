@@ -49,6 +49,8 @@ import Sound.Tidal.Parse qualified as Parse
 import Sound.Tidal.Pattern qualified as Pattern
 import Sound.Tidal.Show ()
 import Sound.Tidal.Time qualified as Time
+import Text.Parsec.Error qualified as P
+import Text.Parsec.Pos qualified as P
 
 -- import Sound.Tidal.Clock qualified as Clock
 -- import Sound.Tidal.Link qualified as Link
@@ -108,12 +110,29 @@ instance ToJSON Event where
             Nothing -> Aeson.Null
             Just m -> toJSON $ (fmap encodeValue) $ m
 
-parseUzu :: Bool -> String -> Either String Pattern.ControlPattern
+parseUzu :: Bool -> String -> Either (String, Int, Int) Pattern.ControlPattern
 parseUzu mondo code
     | mondo = case mondoToTidal code of
-        Left err -> Left (show err)
+        Left err ->
+            let pos = P.errorPos err
+                message =
+                    fmtError . P.showErrorMessages "or" "unknown parse error" "expecting" "unexpected" "end of input" $
+                        P.errorMessages err
+             in Left (message, P.sourceLine pos, P.sourceColumn pos)
         Right p -> Right p
-    | otherwise = Parse.parseTidal code
+    | otherwise = case Parse.parseTidal code of
+        Left s -> case reads s of
+            (line, ':' : rest) : _ | (col, ' ' : msg) : _ <- reads rest -> Left (fmtError msg, line, col)
+            _ -> Left (fmtError s, 0, 0)
+        Right p -> Right p
+
+fmtError :: String -> String
+fmtError ('\n' : xs) = fmtError xs
+fmtError xs = go xs
+  where
+    go [] = []
+    go ('\n' : rest) = ' ' : '|' : ' ' : go rest
+    go (x : rest) = x : go rest
 
 encodeEvents :: [Event] -> BS.ByteString
 encodeEvents = LBS.toStrict . Aeson.encode

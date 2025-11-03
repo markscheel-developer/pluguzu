@@ -100,6 +100,8 @@ impl Default for PluguzuParams {
 struct BackgroundState {
     /// The current code parsing error.
     error: Mutex<Option<String>>,
+    error_row: AtomicUsize,
+    error_col: AtomicUsize,
     /// The event location for highlights.
     evlocs: ArcSwap<Vec<Event>>,
     /// The last event location position.
@@ -205,6 +207,8 @@ impl Default for Pluguzu {
 
             background_state: Arc::new(BackgroundState {
                 error: Mutex::new(None),
+                error_row: AtomicUsize::new(0),
+                error_col: AtomicUsize::new(0),
                 evlocs: ArcSwap::from_pointee(Vec::new()),
                 evlocs_pos: AtomicUsize::new(0),
             }),
@@ -673,8 +677,15 @@ impl Plugin for Pluguzu {
 
                 // Perform code parse and maybe render
                 let err = haskell_state.rts.lock().parse(kind, &code);
-                let is_err = err.is_some();
-                *background_state.error.lock().expect("lock") = err;
+                let is_err = match err {
+                    Some((_, row, col)) => {
+                        background_state.error_row.store(row, Ordering::SeqCst);
+                        background_state.error_col.store(col, Ordering::SeqCst);
+                        true
+                    }
+                    None => false,
+                };
+                *background_state.error.lock().expect("lock") = err.map(|(err, _, _)| err);
                 let render = |start, in_place| {
                     let events = haskell_state.rts.lock().render(start, start + BUFFER_LEN);
 

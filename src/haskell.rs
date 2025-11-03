@@ -14,7 +14,7 @@ unsafe extern "C" {
     fn pluguzu_init();
     fn pluguzuNew() -> *mut CHaskellState;
     fn pluguzuParse(state: *mut CHaskellState, mondo: bool, code: *const c_char);
-    fn pluguzuError(state: *mut CHaskellState) -> *const c_char;
+    fn pluguzuError(state: *mut CHaskellState, row: &mut u64, col: &mut u64) -> *const c_char;
     fn pluguzuRender(state: *mut CHaskellState, start: u64, end: u64, count: &mut u64) -> *mut u8;
 }
 
@@ -71,20 +71,24 @@ pub enum UzuKind {
 }
 
 impl HaskellRuntime {
-    pub fn parse(&mut self, kind: UzuKind, code: &str) -> Option<String> {
+    pub fn parse(&mut self, kind: UzuKind, code: &str) -> Option<(String, usize, usize)> {
         let mondo = matches!(kind, UzuKind::Mondo);
         match std::ffi::CString::new(code) {
             Ok(code) => unsafe {
                 pluguzuParse(self.0, mondo, code.as_ptr() as *const c_char);
-                let c_str = pluguzuError(self.0);
+                let mut row = 0;
+                let mut col = 0;
+                let c_str = pluguzuError(self.0, &mut row, &mut col);
                 if c_str.is_null() {
                     None
                 } else {
-                    Some(
+                    Some((
                         std::ffi::CStr::from_ptr(c_str)
                             .to_string_lossy()
                             .into_owned(),
-                    )
+                        row as usize,
+                        col as usize,
+                    ))
                 }
             },
             Err(e) => {

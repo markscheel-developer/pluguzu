@@ -147,9 +147,12 @@ Implemented:
 - [x] Add standalone transport, e.g. without sync to an external clock.
 - [x] Support the mondo notation.
 - [x] Integrate the dough synth.
+- [x] Improve error reporting to the UI.
 
 Next:
 
-- [ ] Improve error reporting to the UI.
-- [ ] Package the plugin dependencies (e.g. the libpluguzu.so and libHSrts) so that it works out of the box.
 - [ ] Add pattern visualizations, e.g. a pianoroll in the background.
+
+Future:
+
+- [ ] Package the plugin dependencies (e.g. the libpluguzu.so and libHSrts) so that it works out of the box.
