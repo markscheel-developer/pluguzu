@@ -16,10 +16,13 @@ use crate::{dough, info, pwarn};
 #[derive(Eq, Hash, PartialEq)]
 pub struct AbsoluteSoundEvent((SmolStr, SoundEvent));
 
+static GL_SAMPLES: std::sync::OnceLock<DashMap<AbsoluteSoundEvent, dough::Sample>> =
+    std::sync::OnceLock::new();
+
 pub struct SampleLibrary {
     soundmap: SoundMap,
     sample_rate: AtomicU32,
-    pub samples: DashMap<AbsoluteSoundEvent, dough::Sample>,
+    pub samples: &'static DashMap<AbsoluteSoundEvent, dough::Sample>,
 }
 
 fn closest_note(pitches: &[(u8, Vec<PathBuf>)], sev: &SoundEvent) -> (i32, i32) {
@@ -75,7 +78,7 @@ impl SampleLibrary {
         SampleLibrary {
             soundmap,
             sample_rate: AtomicU32::new(48000),
-            samples: DashMap::new(),
+            samples: GL_SAMPLES.get_or_init(|| DashMap::new()),
         }
     }
     pub fn set_sample_rate(&self, sr: u32) {
