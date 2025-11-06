@@ -256,8 +256,8 @@ impl TransportInfo {
     }
 }
 
-// Add a tiny padding to the end, because sometime the frame don't line-up perfectly.
-const BUFFER_END_PADDING: f64 = 0.0000000001;
+// Tolerate a tiny bit of timing gap because sometime the frame don't line-up perfectly.
+const TIMING_THRESHOLD: f64 = 0.000000001;
 
 impl Pluguzu {
     // Setup the process callback buffer.
@@ -373,7 +373,7 @@ impl Pluguzu {
             self.background_state.evlocs_pos.store(0, Ordering::Relaxed);
         }
 
-        if self.last_timing_warning == 0 && info.cycle_pos > self.midi.end {
+        if self.last_timing_warning == 0 && info.cycle_pos > self.midi.end + TIMING_THRESHOLD {
             pwarn!(
                 "There is a gap with the last callback: {} > {}, gap {}",
                 info.cycle_pos,
@@ -381,6 +381,9 @@ impl Pluguzu {
                 info.cycle_pos - self.midi.end
             );
             self.last_timing_warning = u8::MAX;
+            self.midi.start = info.cycle_pos;
+        } else {
+            self.midi.start = self.midi.end;
         }
         self.last_timing_warning = self.last_timing_warning.saturating_sub(1);
 
@@ -398,8 +401,7 @@ impl Pluguzu {
         // Uncomment the line above to observe the padding behavior.
 
         // Store the midi offset stuff
-        self.midi.start = info.cycle_pos;
-        self.midi.end = info.cycle_pos + run_fraction + BUFFER_END_PADDING;
+        self.midi.end = info.cycle_pos + run_fraction;
 
         if frames_per_fraction != self.midi.frames_per_fraction {
             debug!("Frames per fraction changed to {}", frames_per_fraction);
@@ -507,7 +509,7 @@ impl Plugin for Pluguzu {
                 let mut info = TransportInfo::new(true, now, tempo, 4.);
                 // Advance the cycle pos based on the previous calculation
                 // to ensure the time goes forward, in case the BPM is changed.
-                info.cycle_pos = (self.midi.end - BUFFER_END_PADDING).max(0.);
+                info.cycle_pos = self.midi.end;
                 info
             } else {
                 self.midi.end = 0.;
