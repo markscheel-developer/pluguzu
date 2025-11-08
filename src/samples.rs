@@ -78,7 +78,7 @@ impl SampleLibrary {
         SampleLibrary {
             soundmap,
             sample_rate: AtomicU32::new(48000),
-            samples: GL_SAMPLES.get_or_init(|| DashMap::new()),
+            samples: GL_SAMPLES.get_or_init(DashMap::new),
         }
     }
     pub fn set_sample_rate(&self, sr: u32) {
@@ -118,12 +118,10 @@ impl SampleLibrary {
         let asev = AbsoluteSoundEvent::from_sev(bank, sev, sfs);
         let base = base.to_path_buf();
         match sfs {
-            SoundFiles::Sounds(paths) => {
-                Ok(load_path(&self.samples, base, 65.41, sr, paths, asev)?)
-            }
+            SoundFiles::Sounds(paths) => Ok(load_path(self.samples, base, 65.41, sr, paths, asev)?),
             SoundFiles::Pitches(xs) => match xs.iter().find(|k| k.0 as i32 == asev.0.1.note) {
                 Some(paths) => Ok(load_path(
-                    &self.samples,
+                    self.samples,
                     base,
                     dough::midi2freq(paths.0.into()),
                     sr,
