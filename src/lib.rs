@@ -373,14 +373,16 @@ impl Pluguzu {
             self.background_state.evlocs_pos.store(0, Ordering::Relaxed);
         }
 
-        if self.last_timing_warning == 0 && info.cycle_pos > self.midi.end + TIMING_THRESHOLD {
-            pwarn!(
-                "There is a gap with the last callback: {} > {}, gap {}",
-                info.cycle_pos,
-                self.midi.end,
-                info.cycle_pos - self.midi.end
-            );
-            self.last_timing_warning = u8::MAX;
+        if info.cycle_pos > self.midi.end + TIMING_THRESHOLD {
+            if self.last_timing_warning == 0 {
+                pwarn!(
+                    "There is a gap with the last callback: {} > {}, gap {}",
+                    info.cycle_pos,
+                    self.midi.end,
+                    info.cycle_pos - self.midi.end
+                );
+                self.last_timing_warning = u8::MAX;
+            }
             self.midi.start = info.cycle_pos;
         } else {
             self.midi.start = self.midi.end;
