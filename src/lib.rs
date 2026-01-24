@@ -17,6 +17,8 @@ mod presets;
 mod samples;
 mod soundmap;
 mod syntax;
+mod transport;
+pub mod transport_debug;
 mod ui;
 pub(crate) use debug::{debug, info, pwarn};
 
@@ -28,28 +30,70 @@ use std::collections::{HashMap, HashSet};
 use std::ops::DerefMut;
 use std::path::PathBuf;
 use std::sync::atomic::Ordering;
-use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU8, AtomicUsize};
+use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU32, AtomicUsize};
 use std::sync::{Arc, Mutex};
 
 use crate::config::Config;
 use crate::events::{Event, EventKind};
 use crate::haskell::{BackgroundBuffer, HaskellState, UzuKind};
-use crate::midi::{FutureNoteOff, ProcessAudio, ProcessMidi};
+use crate::midi::FutureNoteOff;
+use crate::transport::{CycleArc, CycleRange, CycleTransport};
 
 /// Info from the engine for the UI status bar
-struct PluguzuDSP {
+struct TransportState {
     /// Is the transport playing?
     playing: AtomicBool,
-    /// When is the next events buffer starting.
-    next: AtomicI32,
     /// Count down of the remaining bar until the next events buffer start.
     remaining: AtomicUsize,
-    /// The current start fraction for event highlights
-    pos: AtomicF64,
+    /// The current end fraction for event highlights
+    end: AtomicF64,
     /// Are we synced to an external clock?
     synced: AtomicBool,
     /// The BPM when not synced.
     bpm: AtomicF32,
+}
+
+struct PluguzuTransport {
+    cycle_transport: CycleTransport,
+    range: CycleRange,
+    state: Arc<TransportState>,
+}
+
+impl PluguzuTransport {
+    fn update(&mut self, frames_count: i64, transport: &nih_plug::prelude::Transport) -> bool {
+        let synced = self.state.synced.load(Ordering::Relaxed);
+
+        let playing = if synced {
+            if let Some(range) = self
+                .cycle_transport
+                .update_transport(frames_count, transport)
+            {
+                self.state
+                    .playing
+                    .store(transport.playing, Ordering::Relaxed);
+                self.range = range;
+            } else {
+                pwarn!("Invalid transport?!");
+            }
+            transport.playing
+        } else {
+            let playing = self.state.playing.load(Ordering::Relaxed);
+            let tempo = self.state.bpm.load(Ordering::Relaxed) as f64;
+            self.range = self.cycle_transport.update_local(
+                playing,
+                frames_count,
+                self.range.arc.end * 4.,
+                tempo,
+                4,
+            );
+            if !playing {
+                self.range.arc.end = 0.;
+            }
+            playing
+        };
+        self.state.end.store(self.range.arc.end, Ordering::Relaxed);
+        playing
+    }
 }
 
 /// The params that can be saved/loaded
@@ -67,6 +111,10 @@ pub struct PluguzuParams {
     #[persist = "lang"]
     lang: Arc<Mutex<UzuKind>>,
 
+    /// The pattern length
+    #[persist = "length"]
+    length: Arc<AtomicU32>,
+
     /// The font size.
     #[persist = "font-size"]
     font_size: Arc<AtomicU8>,
@@ -82,6 +130,7 @@ impl Default for PluguzuParams {
             editor_state: EguiState::from_size(800, 600),
             code: Arc::new(Mutex::new(crate::config::WELCOME.trim_end().into())),
             lang: Arc::new(Mutex::new(UzuKind::Tidal)),
+            length: Arc::new(AtomicU32::new(4)),
             font_size: Arc::new(AtomicU8::new(20)),
             version: IntParam::new(
                 "version",
@@ -112,6 +161,9 @@ pub struct Pluguzu {
     /// The params saved to the DAW.
     params: Arc<PluguzuParams>,
 
+    /// The internal transport
+    transport: PluguzuTransport,
+
     /// The Haskell runtime and background buffer
     haskell_state: Arc<HaskellState>,
 
@@ -122,9 +174,6 @@ pub struct Pluguzu {
     initial_file: Arc<Mutex<Option<String>>>,
     hosted_in_daw: Arc<AtomicBool>,
 
-    /// The info shared to the UI.
-    dsp_state: Arc<PluguzuDSP>,
-
     /// The pending note-offs.
     note_offs: HashMap<(u8, u8), FutureNoteOff>,
 
@@ -132,27 +181,13 @@ pub struct Pluguzu {
     dough: crate::dough::Dough,
     samples_library: Arc<crate::samples::SampleLibrary>,
 
-    /// The info needed to send midi events.
-    midi: ProcessMidi,
-    audio: ProcessAudio,
-    last_timing_warning: u8,
-
-    /// Keep track of the current playing bar so that code update are queued to the next bar.
-    current_bar: Arc<AtomicI32>,
-    overlapped: Option<i32>,
-
     /// The current events buffer to be sent.
     events: Option<Arc<Vec<Event>>>,
     /// The current events buffer position, e.g. the index of the last event submitted.
     events_pos: usize,
-    /// The current event buffers starting bar, e.g. when it was last synchronized.
-    events_start_bar: i32,
 
     /// The state shared between the UI and the background task executor.
     background_state: Arc<BackgroundState>,
-
-    /// Detect the first process callback, to work around a silly bug in nih-plug.
-    skip_first: bool,
 }
 
 impl Default for Pluguzu {
@@ -168,42 +203,33 @@ impl Default for Pluguzu {
         });
         Self {
             params: Arc::new(PluguzuParams::default()),
+            transport: PluguzuTransport {
+                cycle_transport: CycleTransport::default(),
+                range: CycleRange {
+                    jumped: true,
+                    frames_per_cycle: 0.,
+                    cycle_length_secs: 0.,
+                    arc: CycleArc { start: 0., end: 0. },
+                },
+                state: Arc::new(TransportState {
+                    playing: AtomicBool::new(false),
+                    remaining: AtomicUsize::new(0),
+                    end: AtomicF64::new(0.),
+                    synced: AtomicBool::new(true),
+                    bpm: AtomicF32::new(120.),
+                }),
+            },
             haskell_state: Arc::new(HaskellState::default()),
             user_presets_file: Arc::new(config.path("presets.md")),
             initial_file: Arc::new(Mutex::new(None)),
             hosted_in_daw: Arc::new(AtomicBool::new(true)),
             events: None,
-
-            dsp_state: Arc::new(PluguzuDSP {
-                playing: AtomicBool::new(false),
-                next: AtomicI32::new(0),
-                remaining: AtomicUsize::new(0),
-                pos: AtomicF64::new(0.),
-                synced: AtomicBool::new(true),
-                bpm: AtomicF32::new(120.),
-            }),
+            events_pos: 0,
 
             dough: dough::Dough::new(),
             samples_library: Arc::new(crate::samples::SampleLibrary::new(sm)),
 
             note_offs: HashMap::with_capacity(255 * 16),
-
-            midi: ProcessMidi {
-                start: 0.,
-                end: 0.,
-                frames_per_fraction: 0.,
-            },
-            audio: ProcessAudio {
-                cycle_length: 0.,
-                now: 0.,
-                sample_rate: 44100,
-            },
-
-            current_bar: Arc::new(AtomicI32::new(0)),
-            overlapped: None,
-
-            events_start_bar: -1024,
-            events_pos: 0,
 
             background_state: Arc::new(BackgroundState {
                 error: Mutex::new(None),
@@ -212,62 +238,22 @@ impl Default for Pluguzu {
                 evlocs: ArcSwap::from_pointee(Vec::new()),
                 evlocs_pos: AtomicUsize::new(0),
             }),
-            skip_first: false,
-            last_timing_warning: 0,
         }
     }
 }
 
-#[derive(Copy, Clone, PartialEq)]
-pub enum ParseTask {
-    InPlace,
-    Next,
-    NoRender,
-}
-
 pub enum PluguzuTask {
-    Parse(ParseTask),
-    Render(i32),
+    Update,
     LoadCode(PathBuf),
     SaveCode(PathBuf),
 }
 
-const BUFFER_LEN: i32 = 4;
-
-struct TransportInfo {
-    /// Whether the transport is running.
-    playing: bool,
-    /// The position in seconds.
-    now: f64,
-    /// The position in cycle fraction.
-    cycle_pos: f64,
-    /// The length of a cycle in seconds. This is used to know when the current buffer ends.
-    cycle_length: f64,
-}
-
-impl TransportInfo {
-    fn new(playing: bool, now: f64, tempo: f64, sig_numerator: f64) -> TransportInfo {
-        TransportInfo {
-            playing,
-            now,
-            cycle_pos: now / 60.0 * tempo / sig_numerator,
-            cycle_length: 60. / tempo * sig_numerator,
-        }
-    }
-}
-
-// Tolerate a tiny bit of timing gap because sometime the frame don't line-up perfectly.
-const TIMING_THRESHOLD: f64 = 0.000000001;
-
 impl Pluguzu {
+    fn get_cycle_count(&self) -> f64 {
+        self.params.length.load(Ordering::Relaxed) as f64
+    }
     // Setup the process callback buffer.
-    fn sync_events_buffer(
-        &mut self,
-        // The starting bar position of the buffer
-        start: i32,
-        buffer: &mut BackgroundBuffer,
-        ctx: &impl ProcessContext<Self>,
-    ) {
+    fn sync_events_buffer(&mut self, buffer: &mut BackgroundBuffer) {
         // Here is the tricky part.
         // We must not de-allocate the events buffer in the audio callback.
         if let Some(stale) = buffer.stale.take() {
@@ -277,27 +263,11 @@ impl Pluguzu {
                 std::mem::drop(stale);
             })
         }
-        let buffer_start = buffer.bar_start.unwrap_or(start);
+
         // Store the previous events back in the buffer so that they will be freed by the background task
         buffer.stale = self.events.take();
         // Borrow the new events.
         let events = buffer.events.clone();
-        self.events_pos = 0;
-        self.events_start_bar = start;
-        // Mark the background buffer as used.
-        buffer.bar_start = None;
-
-        // When the buffer is updated in-place, then we advance the buffer pos to skip past events
-        if buffer.in_place || start > buffer_start {
-            debug!("Skipping event due to forced in-place update...");
-            while self.events_pos < events.len() {
-                let ev = &events[self.events_pos];
-                if ev.span.start >= self.midi.start {
-                    break;
-                }
-                self.events_pos += 1;
-            }
-        }
 
         // Share the events with the UI
         if self.events.is_none() {
@@ -306,114 +276,43 @@ impl Pluguzu {
         } else {
             self.background_state.evlocs.store(events.clone())
         }
-        self.background_state.evlocs_pos.store(0, Ordering::Relaxed);
+        self.background_state
+            .evlocs_pos
+            .store(self.events_pos, Ordering::Relaxed);
+
+        // Update the events position
+        self.find_next_event(&events);
 
         // Keep a copy of the events for the process callback
         self.events = Some(events);
-
-        // Request for next batch to be rendered.
-        ctx.execute_background(PluguzuTask::Render(start + BUFFER_LEN))
     }
 
-    // Make sure the events buffer is synchronized, return the end bar of the current buffer.
-    fn ensure_events_buffer(&mut self, cur_bar: i32, ctx: &impl ProcessContext<Self>) -> i32 {
-        let state = self.haskell_state.clone();
-        let mut buffer = nih_plug::util::permit_alloc(|| state.buffer.lock());
-        if let Some(start) = buffer.bar_start
-            && cur_bar >= start
-            && cur_bar < start + BUFFER_LEN
-        {
-            // New events are already available.
-            debug!("{}: Copying buffer data from {}", self.midi.start, start);
-            self.sync_events_buffer(start, buffer.deref_mut(), ctx);
-            start + BUFFER_LEN
-        } else if cur_bar < self.events_start_bar || cur_bar >= self.events_start_bar + BUFFER_LEN {
-            // We are out of sync, need new events
-            let updated = nih_plug::util::permit_alloc(|| {
-                pwarn!(
-                    "{}: {cur_bar} is out of sync {}..{}, rendering the event synchronously... ",
-                    self.midi.start,
-                    self.events_start_bar,
-                    self.events_start_bar + BUFFER_LEN
-                );
-                if state.rts.is_locked() {
-                    // It looks like the background thread is also performing a render...
-                    pwarn!("The background is locking the Haskell runtime?!");
-                    false
-                } else {
-                    let events = state.rts.lock().render(cur_bar, cur_bar + BUFFER_LEN);
-                    buffer.update(cur_bar, events, true);
-                    true
-                }
-            });
-            if updated {
-                self.sync_events_buffer(cur_bar, buffer.deref_mut(), ctx);
-                cur_bar + BUFFER_LEN
-            } else {
-                self.events_start_bar + BUFFER_LEN
-            }
-        } else {
-            // We are in sync.
-            self.events_start_bar + BUFFER_LEN
+    fn ensure_events_buffer(&mut self) {
+        // Copy the buffer from the haskell thread if needed
+        if self.haskell_state.updated.load(Ordering::Relaxed) {
+            let state = self.haskell_state.clone();
+            let mut buffer = nih_plug::util::permit_alloc(|| state.buffer.lock());
+            self.sync_events_buffer(buffer.deref_mut());
+            self.haskell_state.updated.store(false, Ordering::Relaxed);
         }
     }
 
-    fn compute_timing(&mut self, frames: usize, info: &TransportInfo) {
-        // Compute current frame info
-        let frames = frames as f64;
-        let run_time = frames / self.dough.sr;
-        let run_fraction = run_time / info.cycle_length;
-        let frames_per_fraction = frames / run_fraction;
-
-        // Sanity checks
-        if info.cycle_pos <= self.midi.start {
-            // Transport jump back in time, let's reset the buffer position to replay past event.
-            self.events_pos = 0;
-            // Reset the highlights position too
-            self.background_state.evlocs_pos.store(0, Ordering::Relaxed);
-        }
-
-        if info.cycle_pos > self.midi.end + TIMING_THRESHOLD {
-            if self.last_timing_warning == 0 {
-                pwarn!(
-                    "There is a gap with the last callback: {} > {}, gap {}",
-                    info.cycle_pos,
-                    self.midi.end,
-                    info.cycle_pos - self.midi.end
-                );
-                self.last_timing_warning = u8::MAX;
-            }
-            self.midi.start = info.cycle_pos;
+    fn find_next_event(&mut self, events: &[Event]) {
+        let start = self.transport.range.arc.start % self.get_cycle_count();
+        let pos = events.iter().position(|ev| ev.span.start >= start);
+        debug!(
+            "{:.4}: catching up event pos {}/{}",
+            start,
+            pos.unwrap_or(usize::MAX),
+            events.len()
+        );
+        if let Some(pos) = pos {
+            self.events_pos = pos;
+            self.background_state
+                .evlocs_pos
+                .store(self.events_pos, Ordering::Relaxed);
         } else {
-            self.midi.start = self.midi.end;
-        }
-        self.last_timing_warning = self.last_timing_warning.saturating_sub(1);
-
-        // Timing debug...
-        /*
-        nih_plug::util::permit_alloc(|| {
-            println!(
-                "HERE: {} {}..{}, length {run_fraction}",
-                info.sycle_pos,
-                self.midi.end,
-                pos + run_fraction,
-            )
-        });
-        */
-        // Uncomment the line above to observe the padding behavior.
-
-        // Store the midi offset stuff
-        self.midi.end = info.cycle_pos + run_fraction;
-
-        if frames_per_fraction != self.midi.frames_per_fraction {
-            debug!("Frames per fraction changed to {}", frames_per_fraction);
-            self.midi.frames_per_fraction = frames_per_fraction;
-        }
-
-        // Store timing offset for dough
-        if info.cycle_length != self.audio.cycle_length {
-            debug!("Cycle length changed to {}", info.cycle_length);
-            self.audio.cycle_length = info.cycle_length;
+            pwarn!("No next event found?!")
         }
     }
 }
@@ -433,8 +332,9 @@ impl Plugin for Pluguzu {
         buffer_config: &BufferConfig,
         context: &mut impl InitContext<Self>,
     ) -> bool {
-        // Load file
+        // Load file on standalone start
         if context.plugin_api() == PluginApi::Standalone {
+            self.transport.state.synced.store(false, Ordering::Relaxed);
             self.hosted_in_daw.store(false, Ordering::Relaxed);
             match std::env::args().nth(1) {
                 Some(fp) if !fp.starts_with("-") => {
@@ -449,19 +349,16 @@ impl Plugin for Pluguzu {
                 }
                 _ => {}
             }
-
-            self.skip_first = true;
         }
 
         // Parse the initial code
-        context.execute(PluguzuTask::Parse(ParseTask::NoRender));
+        context.execute(PluguzuTask::Update);
 
         // Setup sample-rate
         let sr = buffer_config.sample_rate as u32;
         self.dough.initialize(sr.into());
-        self.audio.sample_rate = sr;
         self.samples_library.set_sample_rate(sr);
-
+        self.transport.cycle_transport.sample_rate = sr as f64;
         true
     }
 
@@ -476,144 +373,41 @@ impl Plugin for Pluguzu {
             context.send_event(event)
         }
 
-        let transport = context.transport();
-
-        if self.skip_first {
-            // Use local transport if not playing and standalone
-            if !transport.playing && !self.hosted_in_daw.load(Ordering::Relaxed) {
-                self.dsp_state.synced.store(false, Ordering::Relaxed);
-                self.dsp_state.playing.store(true, Ordering::Relaxed);
-            }
-
-            // Sometime, in standalone mode, the very first callback happens at the wrong time.
-            // Here is how it looks in debug:
-            //    CPS changed to 0.5
-            //    01:31:45 [WARN] pluguzu: 3885.173333333333: 3885 is out of sync -1024..-1020, rendering the event synchronously...
-            //    01:31:45 [WARN] pluguzu: 722.1653333333334: 722 is out of sync 3885..3889, rendering the event synchronously...
-            //    722: Rendering 3889
-            //    722: Rendering 726
-            //
-            // For now, this is a ugly hack:)
-            self.skip_first = false;
-            return ProcessStatus::KeepAlive;
-        }
-
-        let synced = self.dsp_state.synced.load(Ordering::Relaxed);
-
-        // Lookup transport and read the current bar.
+        // Update transport timings
+        let nih_transport = context.transport();
         let frames_count = buffer.samples();
-        let transport_info = if !synced {
-            let playing = self.dsp_state.playing.load(Ordering::Relaxed);
-            let tempo = self.dsp_state.bpm.load(Ordering::Relaxed) as f64;
-            if playing {
-                // Advance the time by a fixed amount.
-                let now = self.audio.now + frames_count as f64 / self.dough.sr;
-                let mut info = TransportInfo::new(true, now, tempo, 4.);
-                // Advance the cycle pos based on the previous calculation
-                // to ensure the time goes forward, in case the BPM is changed.
-                info.cycle_pos = self.midi.end;
-                info
-            } else {
-                self.midi.end = 0.;
-                TransportInfo::new(false, 0.0, tempo, 4.)
-            }
-        } else {
-            // Lookup external transport info.
-            let now = transport.pos_seconds().expect("position");
-            let tempo = transport.tempo.unwrap_or(120.);
-            let sig_numerator = transport.time_sig_numerator.unwrap_or(4) as f64;
-            TransportInfo::new(transport.playing, now, tempo, sig_numerator)
-        };
-
-        self.audio.now = transport_info.now;
-        let pos = transport_info.cycle_pos;
-        let cur_bar = if let Some(overlapped) = self.overlapped.take()
-            && pos.round() as i32 == overlapped
-        {
-            // When the last buffer overlapped, we might have already started playing the next bar.
-            // However, due to timing jiggles, the current post might still be on the previous bar:
-            //   83.9893 process buffer overlaps with next event buffer 84.00000000009288 > 84
-            //   83.99999999999288: 83 is out of sync 84..88, rendering the event synchronously...
-            // In that case, let's assume we are already on the next bar.
-            overlapped
-        } else {
-            pos.floor() as i32
-        };
-        self.current_bar.store(cur_bar, Ordering::Relaxed);
+        let running = self.transport.update(frames_count as i64, nih_transport);
 
         // When not playing...
-        if !transport_info.playing {
-            // Tell the UI
-            if synced {
-                self.dsp_state.playing.store(false, Ordering::Relaxed);
-            } else {
-                self.dsp_state.pos.store(0., Ordering::Relaxed);
-            }
-
-            // Reset event position.
-            self.events_pos = 0;
-            self.background_state.evlocs_pos.store(0, Ordering::Relaxed);
-
+        if !running {
             self.send_all_note_offs(context);
-
             self.dough.stop();
             return ProcessStatus::Normal;
             // return ProcessStatus::KeepAlive;
         }
 
-        self.compute_timing(frames_count, &transport_info);
-
         // Send any previously registered note-off.
         self.send_note_offs(context);
 
         // Ensure the events buffer is ready
-        let next_buffer = self.ensure_events_buffer(cur_bar, context);
-        let mut events = self.events.as_ref().expect("events to exist").clone();
-
-        self.dough.init_buffer(frames_count);
-        let buffer_slice = buffer.as_slice();
-
-        // Send events.
-        self.send_tidal_events(&events, buffer_slice, context);
-
-        // Send events from the begining of the next-buffer.
-        if self.midi.end > next_buffer as f64 {
-            // try to resync buffer, e.g.: when the current run overlap with the next chunk
-            let state = self.haskell_state.clone();
-            let mut buffer = state.buffer.lock();
-            if let Some(start) = buffer.bar_start
-                && next_buffer >= start
-            {
-                debug!(
-                    "{pos:.4} process buffer overlaps with next event buffer {} > {next_buffer}",
-                    self.midi.end
-                );
-                self.overlapped = Some(next_buffer);
-                self.sync_events_buffer(next_buffer, buffer.deref_mut(), context);
-                events = self.events.as_ref().expect("events").clone();
-                self.send_tidal_events(&events, buffer_slice, context);
-            } else {
-                pwarn!(
-                    "{pos:.4} ERROR: the next event buffer is not ready?! {next_buffer} {:?}",
-                    42
-                );
+        self.ensure_events_buffer();
+        let evs = self.events.as_ref().map(|c| c.clone());
+        if let Some(events) = evs {
+            if self.transport.range.jumped {
+                self.dough.stop();
+                self.send_all_note_offs(context);
+                self.find_next_event(&events)
             }
-        }
 
-        // Play dough
-        self.dough.advance(frames_count, buffer_slice);
+            self.dough.init_buffer(frames_count);
+            let buffer_slice = buffer.as_slice();
 
-        // Update status for the UI
-        if synced {
-            self.dsp_state
-                .playing
-                .store(transport_info.playing, Ordering::Relaxed);
+            // Send events.
+            self.send_tidal_events(&events, buffer_slice, context);
+
+            // Play dough
+            self.dough.advance(frames_count, buffer_slice);
         }
-        let next = next_buffer - cur_bar;
-        self.dsp_state.next.store(next, Ordering::Relaxed);
-        let remaining = events.len() - self.events_pos;
-        self.dsp_state.remaining.store(remaining, Ordering::Relaxed);
-        self.dsp_state.pos.store(self.midi.start, Ordering::Relaxed);
         ProcessStatus::KeepAlive
     }
 
@@ -622,8 +416,8 @@ impl Plugin for Pluguzu {
     fn task_executor(&mut self) -> TaskExecutor<Self> {
         let code = self.params.code.clone();
         let lang = self.params.lang.clone();
+        let cycle_count = self.params.length.clone();
         let haskell_state = self.haskell_state.clone();
-        let current_bar = self.current_bar.clone();
         let samples_library = self.samples_library.clone();
         let background_state = self.background_state.clone();
 
@@ -644,8 +438,6 @@ impl Plugin for Pluguzu {
             .expect("Sample loader thread");
 
         Box::new(move |task| {
-            let current_bar = current_bar.load(Ordering::Relaxed);
-
             let load_missing_samples = |events: &[Event]| {
                 let mut missing = HashSet::new();
                 missing.clear();
@@ -666,15 +458,8 @@ impl Plugin for Pluguzu {
                 }
             };
 
-            let update_state = |start: i32, events: Arc<Vec<Event>>, in_place: bool| {
-                {
-                    let mut state = haskell_state.buffer.lock();
-                    state.update(start, events.clone(), in_place);
-                }
-                load_missing_samples(&events)
-            };
-
-            let do_parse = |parse_task| {
+            let cycle_count = cycle_count.load(Ordering::Relaxed) as i32;
+            let do_update = || {
                 let code = code.lock().expect("lock");
                 let kind = *lang.lock().expect("lock");
                 // println!("Parsing {}", code);
@@ -690,35 +475,23 @@ impl Plugin for Pluguzu {
                     None => false,
                 };
                 *background_state.error.lock().expect("lock") = err.map(|(err, _, _)| err);
-                let render = |start, in_place| {
-                    let events = haskell_state.rts.lock().render(start, start + BUFFER_LEN);
+                if !is_err {
+                    let events = haskell_state.rts.lock().render(cycle_count);
 
                     // Lock the process callback at the end to update the shared state with the new events.
-                    debug!(
-                        "{current_bar} parsed and rendered {start}..{} (in place: {in_place})",
-                        start + BUFFER_LEN
-                    );
-                    update_state(start, events, in_place)
-                };
-                if !is_err {
-                    match parse_task {
-                        ParseTask::InPlace => render(current_bar, true),
-                        ParseTask::Next => render(current_bar + 1, false),
-                        ParseTask::NoRender => {}
+                    {
+                        let mut bg_buf = haskell_state.buffer.lock();
+                        bg_buf.update(events.clone());
+                        haskell_state.updated.store(true, Ordering::Relaxed);
                     }
+                    load_missing_samples(&events)
                 }
             };
+
             match task {
-                PluguzuTask::Parse(parse_task) => do_parse(parse_task),
-                PluguzuTask::Render(start) => {
-                    // This task happens right after the process callback got the events.
-                    debug!("{current_bar}: Rendering {}", start);
-
-                    // First acquire the Haskell runtime to render the next batch.
-                    let events = haskell_state.rts.lock().render(start, start + BUFFER_LEN);
-
-                    // Then lock the process callback to store the new events.
-                    update_state(start, events, false)
+                PluguzuTask::Update => {
+                    debug!("Rendering {}", cycle_count);
+                    do_update()
                 }
                 PluguzuTask::SaveCode(path) => {
                     let code = code.lock().expect("lock");
@@ -735,7 +508,7 @@ impl Plugin for Pluguzu {
                                 *code.lock().expect("lock") = new_code;
                                 *lang.lock().expect("lock") =
                                     path_to_lang(&path.display().to_string());
-                                do_parse(ParseTask::InPlace)
+                                do_update()
                             }
                         }
                         Err(e) => nih_warn!("{}: couldn't load: {e}", path.display()),
@@ -771,7 +544,7 @@ impl Plugin for Pluguzu {
     const MIDI_INPUT: MidiConfig = MidiConfig::MidiCCs;
     const MIDI_OUTPUT: MidiConfig = MidiConfig::MidiCCs;
 
-    const SAMPLE_ACCURATE_AUTOMATION: bool = true;
+    const SAMPLE_ACCURATE_AUTOMATION: bool = false;
 
     const NAME: &'static str = "Pluguzu";
     const VENDOR: &'static str = "Midirus";

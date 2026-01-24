@@ -6,6 +6,7 @@
 use parking_lot::Mutex;
 use std::ffi::c_char;
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 
 use crate::events::Event;
 
@@ -22,8 +23,6 @@ unsafe extern "C" {
 pub struct BackgroundBuffer {
     pub stale: Option<Arc<Vec<Event>>>,
     pub events: Arc<Vec<Event>>,
-    pub in_place: bool,
-    pub bar_start: Option<i32>,
 }
 
 impl Default for BackgroundBuffer {
@@ -31,8 +30,6 @@ impl Default for BackgroundBuffer {
         BackgroundBuffer {
             stale: None,
             events: Arc::new(vec![]),
-            in_place: false,
-            bar_start: None,
         }
     }
 }
@@ -53,6 +50,7 @@ impl Default for HaskellRuntime {
 pub struct HaskellState {
     pub rts: Mutex<HaskellRuntime>,
     pub buffer: Mutex<BackgroundBuffer>,
+    pub updated: AtomicBool,
 }
 
 impl Default for HaskellState {
@@ -60,6 +58,7 @@ impl Default for HaskellState {
         HaskellState {
             rts: Mutex::new(HaskellRuntime::default()),
             buffer: Mutex::new(BackgroundBuffer::default()),
+            updated: AtomicBool::new(false),
         }
     }
 }
@@ -98,10 +97,10 @@ impl HaskellRuntime {
         }
     }
 
-    pub fn render(&mut self, start: i32, end: i32) -> Arc<Vec<Event>> {
+    pub fn render(&mut self, cycle_count: i32) -> Arc<Vec<Event>> {
         let data: &[u8] = unsafe {
             let mut count_u64: u64 = 0;
-            let buf = pluguzuRender(self.0, start as u64, end as u64, &mut count_u64);
+            let buf = pluguzuRender(self.0, 0, cycle_count as u64, &mut count_u64);
             let count = count_u64 as usize;
             std::slice::from_raw_parts(buf, count)
         };
@@ -113,12 +112,10 @@ impl HaskellRuntime {
 }
 
 impl BackgroundBuffer {
-    pub fn update(&mut self, start: i32, events: Arc<Vec<Event>>, in_place: bool) {
-        self.bar_start = Some(start);
+    pub fn update(&mut self, events: Arc<Vec<Event>>) {
         // de-allocate the unused buffer that the audio callback gave back.
         self.stale.take();
         self.events = events;
-        self.in_place = in_place;
     }
 }
 

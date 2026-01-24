@@ -22,7 +22,7 @@ use crate::events::LocEvent;
 use crate::haskell::UzuKind;
 use crate::highlights;
 use crate::presets::{Presets, PresetsTags, add_preset, load_default_presets, load_user_presets};
-use crate::{BackgroundState, ParseTask, Pluguzu, PluguzuTask};
+use crate::{BackgroundState, Pluguzu, PluguzuTask};
 
 const VERT_SPACE: f32 = 3.;
 
@@ -44,6 +44,7 @@ struct EditorState {
     font_size: f32,
 
     highlights: BTreeMap<LocEvent, u64>,
+    last_dsp_end: f64,
 
     focused: bool,
     updated: bool,
@@ -66,8 +67,6 @@ struct UIState {
     background_state: Arc<BackgroundState>,
 }
 
-const PLAY_TIP: &str = "shift-enter triggers direct play and alt-enter queues to the next bar…";
-
 impl Pluguzu {
     pub fn do_editor(&mut self, async_executor: AsyncExecutor<Self>) -> Option<Box<dyn Editor>> {
         let egui_state = self.params.editor_state.clone();
@@ -75,7 +74,7 @@ impl Pluguzu {
         let initial_file = self.initial_file.clone();
         let initial_hosted_in_daw = self.hosted_in_daw.clone();
 
-        let dsp_state = self.dsp_state.clone();
+        let dsp_state = self.transport.state.clone();
 
         let state = UIState {
             view: UIView::Editor,
@@ -90,6 +89,7 @@ impl Pluguzu {
                 lang: self.params.lang.clone(),
                 font_size: 0.,
                 highlights: BTreeMap::new(),
+                last_dsp_end: 0.,
                 focused: false,
                 updated: false,
                 unsaved: false,
@@ -125,9 +125,7 @@ impl Pluguzu {
                                     if let Some((new_lang, new_code)) = changed {
                                         state.editor.set_code(new_code);
                                         *state.editor.lang.lock().expect("lock") = new_lang;
-                                        async_executor.execute_background(PluguzuTask::Parse(
-                                            ParseTask::InPlace,
-                                        ));
+                                        async_executor.execute_background(PluguzuTask::Update);
                                     }
                                     state.view = UIView::Editor;
                                 };
@@ -168,11 +166,13 @@ impl Pluguzu {
                                 let error = state.background_state.error.lock().expect("lock");
                                 let status_line = if error.is_some() { 2 } else { 0 };
                                 let output = state.editor.code_editor(ui, status_line);
+                                let cycle_length = params.length.load(Ordering::Relaxed);
                                 state.editor.render_highlights(
                                     ui,
                                     &dsp_state,
                                     &state.background_state,
                                     &output,
+                                    cycle_length.into(),
                                     status_line > 0,
                                 );
 
@@ -187,7 +187,7 @@ impl Pluguzu {
                                 }
 
                                 if let Some(task) = state.editor.update.take() {
-                                    if let PluguzuTask::Parse(_) = task {
+                                    if let PluguzuTask::Update = task {
                                         if state.editor.updated {
                                             // Tell the host that the project needs to be saved
                                             setter.begin_set_parameter(&params.version);
@@ -325,10 +325,7 @@ impl EditorState {
         ui.input_mut(|i| {
             if i.consume_key(egui::Modifiers::CTRL, egui::Key::Enter) {
                 self.last_eval = Some(self.monotonic_time);
-                self.update = Some(PluguzuTask::Parse(ParseTask::InPlace))
-            } else if i.consume_key(egui::Modifiers::ALT, egui::Key::Enter) {
-                self.last_eval = Some(self.monotonic_time);
-                self.update = Some(PluguzuTask::Parse(ParseTask::Next))
+                self.update = Some(PluguzuTask::Update)
             } else if let Some(path) = &self.picked_path
                 && i.consume_key(egui::Modifiers::CTRL, egui::Key::S)
             {
@@ -354,7 +351,7 @@ impl EditorState {
         if ui.button("New").clicked() {
             self.set_code("".to_string());
             self.picked_path = None;
-            self.update = Some(PluguzuTask::Parse(ParseTask::InPlace));
+            self.update = Some(PluguzuTask::Update);
         }
 
         if ui.button("Open").clicked()
@@ -393,7 +390,12 @@ impl EditorState {
             *view = UIView::Preset
         }
     }
-    fn render_status(&mut self, ui: &mut egui::Ui, synced: bool, dsp_state: &crate::PluguzuDSP) {
+    fn render_status(
+        &mut self,
+        ui: &mut egui::Ui,
+        synced: bool,
+        dsp_state: &crate::TransportState,
+    ) {
         let playing = dsp_state.playing.load(Ordering::Relaxed);
         if synced {
             let status = if playing { ">>=" } else { "|-|" };
@@ -408,11 +410,11 @@ impl EditorState {
                 dsp_state.bpm.store(bpm, Ordering::Relaxed);
             }
         }
-        let next = dsp_state.next.load(Ordering::Relaxed);
+        let end = dsp_state.end.load(Ordering::Relaxed);
         let remaining = dsp_state.remaining.load(Ordering::Relaxed);
-        ui.label(RichText::new(format!(" {next} | {remaining} events")));
-        if self.updated && ui.button("Play").on_hover_text(PLAY_TIP).clicked() {
-            self.update = Some(PluguzuTask::Parse(ParseTask::InPlace));
+        ui.label(RichText::new(format!(" {end:.2} | {remaining} events")));
+        if self.updated && ui.button("Play").clicked() {
+            self.update = Some(PluguzuTask::Update);
         }
 
         // Lang selector
@@ -436,14 +438,15 @@ impl EditorState {
     fn render_highlights(
         &mut self,
         ui: &mut egui::Ui,
-        dsp_state: &crate::PluguzuDSP,
+        dsp_state: &crate::TransportState,
         background_state: &BackgroundState,
         output: &TextEditOutput,
+        cycle_length: f64,
         with_error: bool,
     ) {
         let painter = ui.painter_at(output.response.rect);
         let ep = highlights::EditorPixels::new(output.galley_pos, &output.galley);
-        let dsp_state_pos = dsp_state.pos.load(Ordering::Relaxed);
+        let dsp_end = dsp_state.end.load(Ordering::Relaxed);
 
         // Remove old highlights
         let hl_age = 60;
@@ -451,33 +454,37 @@ impl EditorState {
             .retain(|_, when| self.monotonic_time - *when < hl_age);
 
         // Add new highlights
-        if dsp_state.playing.load(Ordering::Relaxed) {
+        if dsp_state.playing.load(Ordering::Relaxed) && dsp_end > self.last_dsp_end {
             let mut evlocs_pos = background_state.evlocs_pos.load(Ordering::Relaxed);
-            let initial_pos = evlocs_pos;
+            if evlocs_pos == 0 {
+                self.last_dsp_end = 0.;
+            }
+            let last_pos = evlocs_pos;
             let evlocs = background_state.evlocs.load();
-            while evlocs_pos < evlocs.len() {
-                let event = &evlocs[evlocs_pos];
-                let start = event.span.start;
-                if dsp_state_pos < start {
-                    break;
-                }
+            let start = self.last_dsp_end % cycle_length;
+            let end = dsp_end % cycle_length;
+            self.last_dsp_end = dsp_end;
+            while let Some(event) =
+                crate::events::next_event(&evlocs, last_pos, &mut evlocs_pos, start, end)
+            {
                 for loc in &event.locs {
                     self.highlights.insert(*loc, self.monotonic_time);
                 }
-                evlocs_pos += 1;
             }
             let _ = background_state.evlocs_pos.fetch_update(
                 Ordering::Relaxed,
                 Ordering::Relaxed,
                 |old_pos| {
                     // Only update the pos if the main thread didn't update it in the meantime.
-                    if initial_pos == old_pos {
+                    if last_pos == old_pos {
                         Some(evlocs_pos)
                     } else {
                         None
                     }
                 },
             );
+        } else {
+            self.last_dsp_end = 0.;
         }
 
         // Draw error

@@ -19,7 +19,7 @@ fn main() {
         if let Some(err) = ps.parse(kind, pat) {
             println!("Parse failure: {err:?}");
         } else {
-            let events = ps.render(0, 4);
+            let events = ps.render(4);
             for (nr, ev) in events.iter().enumerate() {
                 println!("{nr}=> {ev:?}");
             }

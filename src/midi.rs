@@ -4,7 +4,7 @@
 //! This module defines midi (and sound) event management.
 
 use crate::{
-    Pluguzu, debug,
+    Pluguzu, PluguzuTransport, debug,
     events::{Event, EventKind, EventSpan, EventValue, MidiEvent, SoundEvent},
     pwarn,
 };
@@ -16,20 +16,10 @@ pub struct FutureNoteOff {
     channel: u8,
 }
 
-/// Information to get midi event offset.
-pub struct ProcessMidi {
-    /// The process buffer start fraction.
-    pub start: f64,
-    /// The process buffer stop fraction.
-    pub end: f64,
-    /// The number of samples per whole fraction.
-    pub frames_per_fraction: f64,
-}
-
-impl ProcessMidi {
+impl PluguzuTransport {
     /// Calculate the event timing offset withing the current process buffer.
     fn event_offset(&self, when: f64) -> u32 {
-        ((when - self.start) * self.frames_per_fraction) as u32
+        ((when - self.range.arc.start) * self.range.frames_per_cycle) as u32
     }
 
     /// Send a note-off event with a pre-computed timing.
@@ -47,7 +37,7 @@ impl ProcessMidi {
             note,
             velocity: 0.,
         };
-        debug!("{:.4}: sending note off      {:?}", self.start, mev);
+        debug!("{}: sending note off - {:?}", self.range.arc, mev);
         context.send_event(mev);
     }
 
@@ -62,21 +52,12 @@ impl ProcessMidi {
     }
 }
 
-pub struct ProcessAudio {
-    /// The cycle per second, for dough.
-    pub cycle_length: f64,
-    /// The current time position in second.
-    pub now: f64,
-    /// The sample rate.
-    pub sample_rate: u32,
-}
-
 impl Pluguzu {
     pub fn send_note_offs(&mut self, context: &mut impl ProcessContext<Self>) {
-        let midi = &self.midi;
+        let transport = &self.transport;
         self.note_offs.retain(|(note, _), ev| {
-            if ev.when >= midi.start && ev.when < midi.end {
-                midi.send_note_off(*note, ev, context);
+            if ev.when >= transport.range.arc.start && ev.when < transport.range.arc.end {
+                transport.send_note_off(*note, ev, context);
                 false
             } else {
                 true
@@ -86,7 +67,7 @@ impl Pluguzu {
 
     pub fn send_all_note_offs(&mut self, context: &mut impl ProcessContext<Self>) {
         self.note_offs.retain(|(note, _), ev| {
-            self.midi.do_send_note_off(0, *note, ev, context);
+            self.transport.do_send_note_off(0, *note, ev, context);
             false
         });
     }
@@ -94,28 +75,25 @@ impl Pluguzu {
     pub fn send_midi_event(
         &mut self,
         span: &EventSpan,
+        span_start: f64,
         ev: &MidiEvent,
         context: &mut impl ProcessContext<Self>,
     ) {
-        let offset = if span.start > self.midi.start {
-            self.midi.event_offset(span.start)
+        let offset = if span_start > self.transport.range.arc.start {
+            self.transport.event_offset(span_start)
         } else {
             0
         };
         match NoteEvent::<()>::from_midi(offset, &ev.data()) {
             Ok(mev) => {
-                debug!(
-                    "{:.4}: sending event {:.4} {:?}",
-                    self.midi.start, span.start, mev
-                );
-                context.send_event(mev);
+                let off_when = span_start + (span.stop - span.start);
                 if let NoteEvent::NoteOn { note, channel, .. } = mev {
-                    if span.stop < self.midi.end {
+                    if off_when < self.transport.range.arc.end {
                         // This is a fast event, schedule the note-off right away
-                        self.midi.send_note_off(
+                        self.transport.send_note_off(
                             note,
                             &FutureNoteOff {
-                                when: span.stop,
+                                when: off_when,
                                 channel,
                             },
                             context,
@@ -125,26 +103,37 @@ impl Pluguzu {
                         let prev = self.note_offs.insert(
                             (note, channel),
                             FutureNoteOff {
-                                when: span.stop,
+                                when: off_when,
                                 channel,
                             },
                         );
                         if let Some(prev) = prev {
                             // Send any existing note-off
-                            self.midi.do_send_note_off(0, note, &prev, context)
+                            self.transport.do_send_note_off(0, note, &prev, context)
                         }
                     }
                 }
+                debug!(
+                    "{}: sending event {:.4} {:.4} {} {:?}",
+                    self.transport.range.arc, span.start, span_start, offset, mev
+                );
+                nih_plug::util::permit_alloc(|| context.send_event(mev));
             }
             Err(err) => nih_error!("Couldn't decode {:?} {:?}", ev, err),
         }
     }
 
-    fn send_sound_event(&mut self, ev: &Event, sev: &SoundEvent, buffer: &mut [&mut [f32]]) {
+    fn send_sound_event(
+        &mut self,
+        ev: &Event,
+        span_start: f64,
+        sev: &SoundEvent,
+        buffer: &mut [&mut [f32]],
+    ) {
         let mut sound = crate::dough::Sound::new();
         sound.apply_param(
             "duration",
-            ((ev.span.stop - ev.span.start) * self.audio.cycle_length) as f32,
+            ((ev.span.stop - ev.span.start) * self.transport.range.cycle_length_secs) as f32,
         );
         if !sound.default_sound(sev.name.as_str()) {
             match self.samples_library.get(ev.bank(), sev) {
@@ -172,7 +161,7 @@ impl Pluguzu {
             "{:.4}: playing sample {} at {}Hz for {} with {ev:?}",
             ev.span.start, sev.name, sound.0.freq, sound.0.duration,
         );
-        let frame_offset = self.midi.event_offset(ev.span.start) as usize;
+        let frame_offset = self.transport.event_offset(span_start) as usize;
         self.dough.advance(frame_offset.saturating_sub(1), buffer);
         self.dough.process(&sound);
     }
@@ -180,12 +169,13 @@ impl Pluguzu {
     fn send_tidal_event(
         &mut self,
         ev: &Event,
+        span_start: f64,
         buffer: &mut [&mut [f32]],
         context: &mut impl ProcessContext<Self>,
     ) {
         match &ev.kind {
-            EventKind::EventSound(sev) => self.send_sound_event(ev, sev, buffer),
-            EventKind::EventMidi(mev) => self.send_midi_event(&ev.span, mev, context),
+            EventKind::EventSound(sev) => self.send_sound_event(ev, span_start, sev, buffer),
+            EventKind::EventMidi(mev) => self.send_midi_event(&ev.span, span_start, mev, context),
         }
     }
 
@@ -195,30 +185,22 @@ impl Pluguzu {
         buffer: &mut [&mut [f32]],
         context: &mut impl ProcessContext<Self>,
     ) {
-        while self.events_pos < events.len() {
-            let ev = &events[self.events_pos];
-            if ev.span.start >= self.midi.end {
-                // This event (and the following ones) are scheduled for later
-                break;
-            } else if self.midi.start <= ev.span.start {
-                // The event is due for this buffer
-                self.send_tidal_event(ev, buffer, context);
-            } else if ev.span.stop >= self.midi.end {
-                pwarn!(
-                    "{:.7} Missed event start, but it still make sense to send it now... {:.7}..{:.7} < {:.7}",
-                    self.midi.start,
-                    ev.span.start,
-                    ev.span.stop,
-                    self.midi.end
-                );
-                self.send_tidal_event(ev, buffer, context);
-            } else if self.midi.start > ev.span.start {
-                // That's odd, it looks like we missed an event?!
-                pwarn!("{:.4} Skipped event {:.4}", self.midi.start, ev.span.start);
-            }
+        let length = self.get_cycle_count();
+        let start = self.transport.range.arc.start % length;
+        let end = self.transport.range.arc.end % length;
 
-            // Advance the event buffer position
-            self.events_pos += 1;
+        #[rustfmt::skip]
+        // debug!("{start:.7}..{end:.7} Sending events ({}/{}) (for {})", self.events_pos, events.len(), self.transport.range.arc);
+        let last_pos = self.events_pos;
+        while let Some(ev) =
+            crate::events::next_event(events, last_pos, &mut self.events_pos, start, end)
+        {
+            let span_start = if ev.span.start >= start {
+                self.transport.range.arc.start + (ev.span.start - start)
+            } else {
+                self.transport.range.arc.end - ev.span.start
+            };
+            self.send_tidal_event(ev, span_start, buffer, context);
         }
     }
 }

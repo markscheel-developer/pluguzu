@@ -77,3 +77,54 @@ impl Event {
         }
     }
 }
+
+pub fn next_event<'a>(
+    events: &'a [Event],
+    last_pos: usize,
+    pos: &mut usize,
+    start: f64,
+    end: f64,
+) -> Option<&'a Event> {
+    if events.is_empty() {
+        return None;
+    }
+    if *pos == usize::MAX {
+        // waiting for the cycles to restart...
+        if start > end { *pos = 0 } else { return None }
+    }
+    let ev = &events[*pos];
+
+    let mut next = || {
+        *pos += 1;
+        if last_pos == *pos {
+            // looped around
+            return None;
+        }
+        if *pos >= events.len() {
+            *pos = usize::MAX;
+        }
+        Some(ev)
+    };
+
+    if start < end {
+        // Non overlapping range
+        if ev.span.start >= end {
+            // This event starts in the future.
+            None
+        } else if ev.span.start >= start {
+            // This event is due for this buffer.
+            next()
+        } else {
+            // #[rustfmt::skip]
+            // crate::pwarn!("{} Missed an event? {:.7}..{:.7} for ev.start={:.7}", pos, start, end, ev.span.start);
+            None
+        }
+    } else {
+        // Overlapping range
+        if ev.span.start >= start || ev.span.start < end {
+            next()
+        } else {
+            None
+        }
+    }
+}
