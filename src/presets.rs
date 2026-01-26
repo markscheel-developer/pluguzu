@@ -117,5 +117,13 @@ s "bd*4"
 ```
 "#,
     );
-    assert_eq!(presets, vec![]);
+    assert_eq!(
+        presets,
+        vec![Arc::new(UzuProgram {
+            name: "test".to_string(),
+            lang: crate::UzuKind::Tidal,
+            code: "s \"bd*4\"".to_string(),
+            tags: vec![]
+        })]
+    );
 }
