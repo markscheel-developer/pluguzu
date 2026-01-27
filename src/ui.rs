@@ -10,11 +10,11 @@ use nih_plug_egui::{
     resizable_window::ResizableWindow,
 };
 
-use std::collections::BTreeMap;
 use std::ops::DerefMut;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::{Arc, Mutex};
+use std::{collections::BTreeMap, sync::atomic::AtomicU32};
 
 use egui::{Color32, Shape, Stroke, StrokeKind};
 
@@ -39,6 +39,8 @@ struct PresetState {
 }
 
 struct EditorState {
+    cycle_count: Arc<AtomicU32>,
+    desired_count: Option<u32>,
     code: Arc<Mutex<String>>,
     lang: Arc<Mutex<UzuKind>>,
     font_size: f32,
@@ -85,6 +87,8 @@ impl Pluguzu {
                 user_presets: vec![],
             },
             editor: EditorState {
+                cycle_count: self.params.length.clone(),
+                desired_count: None,
                 code: self.params.code.clone(),
                 lang: self.params.lang.clone(),
                 font_size: 0.,
@@ -196,6 +200,12 @@ impl Pluguzu {
                                                 params.version.value().overflowing_add(1).0,
                                             );
                                             setter.end_set_parameter(&params.version);
+                                        }
+                                        if let Some(count) = state.editor.desired_count.take() {
+                                            state
+                                                .editor
+                                                .cycle_count
+                                                .store(count, Ordering::Relaxed);
                                         }
                                         state.editor.updated = false;
                                     }
@@ -405,6 +415,28 @@ impl EditorState {
             if ui.button(status).clicked() {
                 dsp_state.playing.store(!playing, Ordering::Relaxed);
             }
+        }
+
+        {
+            let mut cycle_count = self
+                .desired_count
+                .unwrap_or_else(|| self.cycle_count.load(Ordering::Relaxed));
+            if ui
+                .add(egui::DragValue::new(&mut cycle_count).speed(0.1))
+                .on_hover_text("The number of cycles to play")
+                .changed()
+                && cycle_count > 0
+            {
+                self.updated = true;
+                self.desired_count = Some(cycle_count)
+            }
+        }
+
+        if self.updated && ui.button("UPDATE").clicked() {
+            self.update = Some(PluguzuTask::Update);
+        }
+
+        if !synced {
             let mut bpm = dsp_state.bpm.load(Ordering::Relaxed);
             if ui.add(egui::DragValue::new(&mut bpm).speed(0.1)).changed() {
                 dsp_state.bpm.store(bpm, Ordering::Relaxed);
@@ -413,9 +445,6 @@ impl EditorState {
         let end = dsp_state.end.load(Ordering::Relaxed);
         let remaining = dsp_state.remaining.load(Ordering::Relaxed);
         ui.label(RichText::new(format!(" {end:.2} | {remaining} events")));
-        if self.updated && ui.button("Play").clicked() {
-            self.update = Some(PluguzuTask::Update);
-        }
 
         // Lang selector
         let mut selected = self.lang.lock().expect("lock");
