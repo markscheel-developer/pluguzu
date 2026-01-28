@@ -136,35 +136,106 @@ impl Sound {
 
     pub fn apply_param(&mut self, name: &str, v: f32) {
         match name {
-            "gate" => self.0.gate = v,
-            "duration" => self.0.duration = v,
             "midinote" => self.0.freq = midi2freq(v),
             "note" => self.0.freq = midi2freq(v + 72.),
             "speed" => self.0.speed = v,
-            "cutoff" => self.0.lpf = v,
-            "lpe" => self.0.lpe = v,
-            "lpd" => self.0.lpd = v,
-            "pw" => self.0.pw = v,
-            "resonance" => self.0.lpq = v,
-            "hcutoff" => self.0.hpf = v,
-            "hresonance" => self.0.hpq = v,
-            "bandf" => self.0.bpf = v,
-            "bandq" => self.0.bpq = v,
+
             "gain" => self.0.gain = v,
+            "pan" => self.0.pan = v,
+            "velocity" => self.0.velocity = v,
+            "postgain" => self.0.postgain = v,
+            "gate" => self.0.gate = v,
+            "duration" => self.0.duration = v,
+            "pw" => self.0.pw = v,
+
             "attack" => self.0.attack = v,
             "decay" => self.0.decay = v,
             "sustain" => self.0.sustain = v,
             "release" => self.0.release = v,
+
+            "cutoff" => self.0.lpf = v,
+            "resonance" => self.0.lpq = v,
+            "lpf" => self.0.lpf = v,
+            "lpq" => self.0.lpq = v,
+            "lpe" => self.0.lpe = v,
+            "lpa" => self.0.lpa = v,
+            "lpd" => self.0.lpd = v,
+            "lps" => self.0.lps = v,
+            "lpr" => self.0.lpr = v,
+
+            "hcutoff" => self.0.hpf = v,
+            "hresonance" => self.0.hpq = v,
+            "hpf" => self.0.hpf = v,
+            "hpq" => self.0.hpq = v,
+            "hpe" => self.0.hpe = v,
+            "hpa" => self.0.hpa = v,
+            "hpd" => self.0.hpd = v,
+            "hps" => self.0.hps = v,
+            "hpr" => self.0.hpr = v,
+
+            "bandf" => self.0.bpf = v,
+            "bandq" => self.0.bpq = v,
+            "bpf" => self.0.bpf = v,
+            "bpq" => self.0.bpq = v,
+            "bpe" => self.0.bpe = v,
+            "bpa" => self.0.bpa = v,
+            "bpd" => self.0.bpd = v,
+            "bps" => self.0.bps = v,
+            "bpr" => self.0.bpr = v,
+
+            "penv" => self.0.penv = v,
+            "patt" => self.0.patt = v,
+            "pdec" => self.0.pdec = v,
+            "psus" => self.0.psus = v,
+            "prel" => self.0.prel = v,
+
+            "vib" => self.0.vib = v,
+            "vibmod" => self.0.vibmod = v,
+
+            "fm" => self.0.fm = v,
+            "fmh" => self.0.fmh = v,
+            "fme" => self.0.fme = v,
+            "fma" => self.0.fma = v,
+            "fmd" => self.0.fmd = v,
+            "fms" => self.0.fms = v,
+            "fmr" => self.0.fmr = v,
+
+            "am" => self.0.am = v,
+            "amdepth" => self.0.amdepth = v,
+
+            "rm" => self.0.rm = v,
+            "rmdepth" => self.0.rmdepth = v,
+
+            "phaser" => self.0.phaser = v,
+            "phaserdepth" => self.0.phaserdepth = v,
+            "phasersweep" => self.0.phasersweep = v,
+            "phasercenter" => self.0.phasercenter = v,
+
+            "flanger" => self.0.flanger = v,
+            "flangerdepth" => self.0.flangerdepth = v,
+            "flangerfeedback" => self.0.flangerfeedback = v,
+
+            "chorus" => self.0.chorus = v,
+            "chorusdepth" => self.0.chorusdepth = v,
+            "chorusdelay" => self.0.chorusdelay = v,
+
+            "coarse" => self.0.coarse = v,
+
+            "crush" => self.0.crush = v,
+
+            "distort" => self.0.distort = v,
+            "distortvol" => self.0.distortvol = v,
+
             "delay" => self.0.delay = v,
             "delaytime" => self.0.delaytime = v,
             "delayfeedback" => self.0.delayfeedback = v,
-            "crush" => self.0.crush = v,
-            "coarse" => self.0.coarse = v,
-            "distort" => self.0.distort = v,
-            "distortvol" => self.0.distortvol = v,
-            "vib" => self.0.vib = v,
-            "vibmod" => self.0.vibmod = v,
-            "pan" => self.0.pan = v,
+
+            "verb" => self.0.verb = v,
+            "verbdecay" => self.0.verbdecay = v,
+            "verbdamp" => self.0.verbdamp = v,
+            "verbpredelay" => self.0.verbpredelay = v,
+            "verbdiff" => self.0.verbdiff = v,
+
             _ => {}
         }
     }
