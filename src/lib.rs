@@ -405,6 +405,12 @@ impl Plugin for Pluguzu {
             // Send events.
             self.send_tidal_events(&events, buffer_slice, context);
 
+            // Update the remaining value for the UI.
+            self.transport.state.remaining.store(
+                events.len().saturating_sub(self.events_pos),
+                Ordering::Relaxed,
+            );
+
             // Play dough
             self.dough.advance(frames_count, buffer_slice);
         }
@@ -466,10 +472,11 @@ impl Plugin for Pluguzu {
 
                 // Perform code parse and maybe render
                 let err = haskell_state.rts.lock().parse(kind, &code);
-                let is_err = match err {
-                    Some((_, row, col)) => {
-                        background_state.error_row.store(row, Ordering::SeqCst);
-                        background_state.error_col.store(col, Ordering::SeqCst);
+                let is_err = match err.as_ref() {
+                    Some((err, row, col)) => {
+                        pwarn!("Parsing failed: {row}:{col} - {err}");
+                        background_state.error_row.store(*row, Ordering::SeqCst);
+                        background_state.error_col.store(*col, Ordering::SeqCst);
                         true
                     }
                     None => false,
@@ -477,6 +484,7 @@ impl Plugin for Pluguzu {
                 *background_state.error.lock().expect("lock") = err.map(|(err, _, _)| err);
                 if !is_err {
                     let events = haskell_state.rts.lock().render(cycle_count);
+                    pwarn!("Rendered {cycle_count} into {} events", events.len());
 
                     // Lock the process callback at the end to update the shared state with the new events.
                     {
@@ -489,10 +497,7 @@ impl Plugin for Pluguzu {
             };
 
             match task {
-                PluguzuTask::Update => {
-                    debug!("Rendering {}", cycle_count);
-                    do_update()
-                }
+                PluguzuTask::Update => do_update(),
                 PluguzuTask::SaveCode(path) => {
                     let code = code.lock().expect("lock");
                     if let Err(e) = std::fs::write(&path, code.as_bytes()) {
