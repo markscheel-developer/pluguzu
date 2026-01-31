@@ -207,8 +207,6 @@ impl Default for Pluguzu {
                 cycle_transport: CycleTransport::default(),
                 range: CycleRange {
                     jumped: true,
-                    frames_per_cycle: 0.,
-                    cycle_length_secs: 0.,
                     arc: CycleArc { start: 0., end: 0. },
                 },
                 state: Arc::new(TransportState {

@@ -85,7 +85,7 @@ pub fn next_event<'a>(
     start: f64,
     end: f64,
 ) -> Option<&'a Event> {
-    if events.is_empty() {
+    if events.is_empty() || start >= end {
         return None;
     }
     if *pos == usize::MAX {

@@ -11,6 +11,8 @@ use std::sync::Arc;
 pub struct DebugTransport {
     info: CycleTransport,
     last: Option<crate::transport::CycleRange>,
+    last_second: f64,
+    last_beat: f64,
 }
 
 #[derive(Params)]
@@ -38,17 +40,23 @@ impl Plugin for DebugTransport {
         let transport = context.transport();
         let buffer_length = buffer.samples() as i64;
         if let Some(range) = self.info.update_transport(buffer_length, transport) {
-            if range.jumped {
-                crate::pwarn!("Jumped to {}", range.arc);
-            }
             if Some(range) != self.last {
-                let pos = transport.pos_samples().unwrap_or(0);
+                let sec = transport.pos_seconds().expect("transport sec");
+                let beat = transport.pos_beats().expect("transport beat");
+                let empty = range.arc.start >= range.arc.end;
                 crate::pwarn!(
-                    "{}  (transport{{sample: {:.7}, time: {:.7}}})",
+                    "{} {}{} (transport{{cycle: {:.7}, sample: {:.7}, tempo: {:.3}, d/s: {:.9}, d/b: {:.9}}})",
                     range.arc,
-                    pos,
-                    transport.pos_seconds().unwrap_or(-42.)
-                )
+                    if range.jumped { "J" } else { " " },
+                    if empty { "V" } else { " " },
+                    beat / transport.time_sig_numerator.expect("transport sig") as f64,
+                    transport.pos_samples().expect("transport samples"),
+                    transport.tempo.expect("transport tempo"),
+                    sec - self.last_second,
+                    beat - self.last_beat,
+                );
+                self.last_second = sec;
+                self.last_beat = beat;
             }
             self.last = Some(range)
         } else {

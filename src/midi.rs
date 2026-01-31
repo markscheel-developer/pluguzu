@@ -19,7 +19,7 @@ pub struct FutureNoteOff {
 impl PluguzuTransport {
     /// Calculate the event timing offset withing the current process buffer.
     fn event_offset(&self, when: f64) -> u32 {
-        ((when - self.range.arc.start) * self.range.frames_per_cycle) as u32
+        ((when - self.range.arc.start) * self.cycle_transport.frames_per_cycle) as u32
     }
 
     /// Send a note-off event with a pre-computed timing.
@@ -133,7 +133,8 @@ impl Pluguzu {
         let mut sound = crate::dough::Sound::new();
         sound.apply_param(
             "duration",
-            ((ev.span.stop - ev.span.start) * self.transport.range.cycle_length_secs) as f32,
+            ((ev.span.stop - ev.span.start) * self.transport.cycle_transport.cycle_length_secs)
+                as f32,
         );
         if !sound.default_sound(sev.name.as_str()) {
             match self.samples_library.get(ev.bank(), sev) {
