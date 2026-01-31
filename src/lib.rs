@@ -570,5 +570,7 @@ impl Vst3Plugin for Pluguzu {
         &[Vst3SubCategory::Fx, Vst3SubCategory::Generator];
 }
 
+#[cfg(not(feature = "debug-plugin"))]
 nih_export_clap!(Pluguzu);
+#[cfg(not(feature = "debug-plugin"))]
 nih_export_vst3!(Pluguzu);

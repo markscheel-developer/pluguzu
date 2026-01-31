@@ -48,6 +48,7 @@ crate-type = ["cdylib", "lib"]
 
 [features]
 debug = []
+debug-plugin = []
 
 [profile.release]
 lto = "thin"

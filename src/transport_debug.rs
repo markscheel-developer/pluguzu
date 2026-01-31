@@ -111,6 +111,7 @@ impl Vst3Plugin for DebugTransport {
         &[Vst3SubCategory::Fx, Vst3SubCategory::Generator];
 }
 
-// must comment the lib.rs export before building this plugin
-// nih_export_clap!(DebugTransport);
-// nih_export_vst3!(DebugTransport);
+#[cfg(feature = "debug-plugin")]
+nih_export_clap!(DebugTransport);
+#[cfg(feature = "debug-plugin")]
+nih_export_vst3!(DebugTransport);

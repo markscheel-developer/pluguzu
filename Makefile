@@ -29,6 +29,14 @@ install: install-standalone install-clap install-vst3
 		echo "  git clone --depth 1 --recurse-submodules https://codeberg.org/TristanCacqueray/uzu-Samples ~/.config/pluguzu/samples" ; \
 	}
 
+install-debug-plugin:
+	@cargo xtask bundle pluguzu --features debug --features debug-plugin
+	@rm -Rf bin/pluguzu-debug.vst3
+	@mv target/bundled/pluguzu.clap bin/pluguzu-debug.clap
+	@mv target/bundled/pluguzu.vst3 bin/pluguzu-debug.vst3
+	@ln -sf bin/pluguzu-debug.clap ~/.clap/pluguzu-debug.clap
+	@ln -sf bin/pluguzu-debug.vst3 ~/.vst3/pluguzu-debug.vst3
+
 render-presets:
 	@echo "renderPresetData" | cabal repl
 	@cargo fmt
