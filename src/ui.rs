@@ -483,35 +483,35 @@ impl EditorState {
             .retain(|_, when| self.monotonic_time - *when < hl_age);
 
         // Add new highlights
-        if dsp_state.playing.load(Ordering::Relaxed) && dsp_end > self.last_dsp_end {
-            let mut evlocs_pos = background_state.evlocs_pos.load(Ordering::Relaxed);
-            if evlocs_pos == 0 {
-                self.last_dsp_end = 0.;
-            }
-            let last_pos = evlocs_pos;
-            let evlocs = background_state.evlocs.load();
-            let start = self.last_dsp_end % cycle_length;
-            let end = dsp_end % cycle_length;
-            self.last_dsp_end = dsp_end;
-            while let Some(event) =
-                crate::events::next_event(&evlocs, last_pos, &mut evlocs_pos, start, end)
-            {
-                for loc in &event.locs {
-                    self.highlights.insert(*loc, self.monotonic_time);
-                }
-            }
-            let _ = background_state.evlocs_pos.fetch_update(
-                Ordering::Relaxed,
-                Ordering::Relaxed,
-                |old_pos| {
-                    // Only update the pos if the main thread didn't update it in the meantime.
-                    if last_pos == old_pos {
-                        Some(evlocs_pos)
-                    } else {
-                        None
+        if dsp_state.playing.load(Ordering::Relaxed) {
+            if dsp_end != self.last_dsp_end {
+                let mut evlocs_pos = background_state.evlocs_pos.load(Ordering::Relaxed);
+                let last_pos = evlocs_pos;
+                let evlocs = background_state.evlocs.load();
+                let start = self.last_dsp_end % cycle_length;
+                let end = dsp_end % cycle_length;
+
+                self.last_dsp_end = dsp_end;
+                while let Some(event) =
+                    crate::events::next_event(&evlocs, last_pos, &mut evlocs_pos, start, end)
+                {
+                    for loc in &event.locs {
+                        self.highlights.insert(*loc, self.monotonic_time);
                     }
-                },
-            );
+                }
+                let _ = background_state.evlocs_pos.fetch_update(
+                    Ordering::Relaxed,
+                    Ordering::Relaxed,
+                    |old_pos| {
+                        // Only update the pos if the main thread didn't update it in the meantime.
+                        if last_pos == old_pos {
+                            Some(evlocs_pos)
+                        } else {
+                            None
+                        }
+                    },
+                );
+            }
         } else {
             self.last_dsp_end = 0.;
         }
