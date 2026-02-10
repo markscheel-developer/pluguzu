@@ -285,13 +285,16 @@ impl Pluguzu {
         self.events = Some(events);
     }
 
-    fn ensure_events_buffer(&mut self) {
+    fn ensure_events_buffer(&mut self) -> bool {
         // Copy the buffer from the haskell thread if needed
         if self.haskell_state.updated.load(Ordering::Relaxed) {
             let state = self.haskell_state.clone();
             let mut buffer = nih_plug::util::permit_alloc(|| state.buffer.lock());
             self.sync_events_buffer(buffer.deref_mut());
             self.haskell_state.updated.store(false, Ordering::Relaxed);
+            true
+        } else {
+            false
         }
     }
 
@@ -388,13 +391,15 @@ impl Plugin for Pluguzu {
         self.send_note_offs(context);
 
         // Ensure the events buffer is ready
-        self.ensure_events_buffer();
+        let new_events = self.ensure_events_buffer();
         let evs = self.events.as_ref().map(|c| c.clone());
         if let Some(events) = evs {
             if self.transport.range.jumped {
                 self.dough.stop();
                 self.send_all_note_offs(context);
-                self.find_next_event(&events)
+                if !new_events {
+                    self.find_next_event(&events)
+                }
             }
 
             self.dough.init_buffer(frames_count);
