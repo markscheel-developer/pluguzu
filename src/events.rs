@@ -85,12 +85,16 @@ pub fn next_event<'a>(
     start: f64,
     end: f64,
 ) -> Option<&'a Event> {
-    if events.is_empty() || start >= end {
-        return None;
-    }
     if *pos == usize::MAX {
         // waiting for the cycles to restart...
-        if start > end { *pos = 0 } else { return None }
+        if start == 0. || start > end {
+            *pos = 0
+        } else {
+            return None;
+        }
+    }
+    if events.is_empty() {
+        return None;
     }
     let ev = &events[*pos];
 
