@@ -8,7 +8,6 @@ clean:
 install-vst3:
 	@mkdir -p ~/.vst3
 	@ln -sf $(PWD)/bin/pluguzu.vst3 ~/.vst3
-	@ln -sf $(PWD)/bin/libpluguzu.so bin/pluguzu.vst3/Contents/x86_64-linux
 	@chmod +x bin/pluguzu.vst3/Contents/x86_64-linux/pluguzu.so
 	@echo "[+] Installed VST3: ~/.vst3/pluguzu.vst3"
 
@@ -45,6 +44,7 @@ build-rust:
 	@cargo xtask bundle pluguzu --release
 	@rm -Rf bin/pluguzu.vst3
 	@mv target/bundled/pluguzu* bin/
+	@ln -sf $(PWD)/bin/libpluguzu.so bin/pluguzu.vst3/Contents/x86_64-linux
 
 haskell-lib:
 	@cabal build -O2
