@@ -432,24 +432,7 @@ dependencies = [
 [[package]]
 name = "baseview"
 version = "0.1.0"
-source = "git+https://github.com/RustAudio/baseview.git?rev=579130ecb4f9f315ae52190af42f0ea46aeaa4a2#579130ecb4f9f315ae52190af42f0ea46aeaa4a2"
-dependencies = [
- "cocoa",
- "core-foundation",
- "keyboard-types",
- "nix 0.22.3",
- "objc",
- "raw-window-handle 0.5.2",
- "uuid",
- "winapi",
- "x11",
- "x11rb",
-]
-
-[[package]]
-name = "baseview"
-version = "0.1.0"
-source = "git+https://github.com/TristanCacqueray/baseview.git?rev=999ef6e4a64515b5e981f932515d4cf02bd85e74#999ef6e4a64515b5e981f932515d4cf02bd85e74"
+source = "git+https://github.com/TristanCacqueray/baseview.git?rev=3a81205f2c70b6973f503027060b9355aac41655#3a81205f2c70b6973f503027060b9355aac41655"
 dependencies = [
  "cocoa",
  "core-foundation",
@@ -462,6 +445,23 @@ dependencies = [
  "x11",
  "x11rb",
  "xkbcommon",
+]
+
+[[package]]
+name = "baseview"
+version = "0.1.0"
+source = "git+https://github.com/RustAudio/baseview.git?rev=579130ecb4f9f315ae52190af42f0ea46aeaa4a2#579130ecb4f9f315ae52190af42f0ea46aeaa4a2"
+dependencies = [
+ "cocoa",
+ "core-foundation",
+ "keyboard-types",
+ "nix 0.22.3",
+ "objc",
+ "raw-window-handle 0.5.2",
+ "uuid",
+ "winapi",
+ "x11",
+ "x11rb",
 ]
 
 [[package]]
@@ -1121,9 +1121,9 @@ dependencies = [
 [[package]]
 name = "egui-baseview"
 version = "0.6.0"
-source = "git+https://codeberg.org/TristanCacqueray/egui-baseview.git?rev=1781fbf23cd915cf2f373485b5181801ac917ca4#1781fbf23cd915cf2f373485b5181801ac917ca4"
+source = "git+https://codeberg.org/TristanCacqueray/egui-baseview.git?rev=3bc260a3a862d38458c64a4637ab10c132ebf23c#3bc260a3a862d38458c64a4637ab10c132ebf23c"
 dependencies = [
- "baseview 0.1.0 (git+https://github.com/TristanCacqueray/baseview.git?rev=999ef6e4a64515b5e981f932515d4cf02bd85e74)",
+ "baseview 0.1.0 (git+https://github.com/TristanCacqueray/baseview.git?rev=3a81205f2c70b6973f503027060b9355aac41655)",
  "copypasta",
  "egui",
  "egui_glow",
@@ -1976,7 +1976,7 @@ dependencies = [
 [[package]]
 name = "nih_plug"
 version = "0.0.0"
-source = "git+https://github.com/TristanCacqueray/nih-plug.git?rev=cede7e305b13318ad44f8157cd7f8f0d0431d7c3#cede7e305b13318ad44f8157cd7f8f0d0431d7c3"
+source = "git+https://github.com/TristanCacqueray/nih-plug.git?rev=67e450a368fe3e229ee8de522642a84ddba2bd3c#67e450a368fe3e229ee8de522642a84ddba2bd3c"
 dependencies = [
  "anyhow",
  "anymap3",
@@ -2013,7 +2013,7 @@ dependencies = [
 [[package]]
 name = "nih_plug_derive"
 version = "0.1.0"
-source = "git+https://github.com/TristanCacqueray/nih-plug.git?rev=cede7e305b13318ad44f8157cd7f8f0d0431d7c3#cede7e305b13318ad44f8157cd7f8f0d0431d7c3"
+source = "git+https://github.com/TristanCacqueray/nih-plug.git?rev=67e450a368fe3e229ee8de522642a84ddba2bd3c#67e450a368fe3e229ee8de522642a84ddba2bd3c"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2023,9 +2023,9 @@ dependencies = [
 [[package]]
 name = "nih_plug_egui"
 version = "0.0.0"
-source = "git+https://github.com/TristanCacqueray/nih-plug.git?rev=cede7e305b13318ad44f8157cd7f8f0d0431d7c3#cede7e305b13318ad44f8157cd7f8f0d0431d7c3"
+source = "git+https://github.com/TristanCacqueray/nih-plug.git?rev=67e450a368fe3e229ee8de522642a84ddba2bd3c#67e450a368fe3e229ee8de522642a84ddba2bd3c"
 dependencies = [
- "baseview 0.1.0 (git+https://github.com/TristanCacqueray/baseview.git?rev=999ef6e4a64515b5e981f932515d4cf02bd85e74)",
+ "baseview 0.1.0 (git+https://github.com/TristanCacqueray/baseview.git?rev=3a81205f2c70b6973f503027060b9355aac41655)",
  "crossbeam",
  "egui-baseview",
  "nih_plug",
