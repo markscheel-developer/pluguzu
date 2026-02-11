@@ -111,12 +111,13 @@ impl Pluguzu {
         create_egui_editor(
             self.params.editor_state.clone(),
             state,
-            move |egui_ctx, state| {
+            Default::default(),
+            move |egui_ctx, _queue, state| {
                 state.hosted_in_daw = initial_hosted_in_daw.load(Ordering::Relaxed);
                 state.editor.picked_path = initial_file.lock().unwrap().take();
                 state.update_font_size(egui_ctx, state.font_size.load(Ordering::Relaxed));
             },
-            move |egui_ctx, setter, state| {
+            move |egui_ctx, setter, _queue, state| {
                 // TODO: handle input dropped_files!
                 ResizableWindow::new("res-wind")
                     .min_size(Vec2::new(80.0, 60.0))

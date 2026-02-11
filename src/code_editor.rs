@@ -134,7 +134,7 @@ fn num_lines_layout(ctx: &egui::Context, fontsize: f32, rows: usize) -> LayoutJo
 fn show_numlines(ui: &mut egui::Ui, fontsize: f32, rows: usize) {
     let mut layouter = |ui: &egui::Ui, _buf: &dyn egui::TextBuffer, _wrap_width: f32| {
         let layout_job = num_lines_layout(ui.ctx(), fontsize, rows);
-        ui.fonts(|f| f.layout_job(layout_job))
+        ui.fonts_mut(|f| f.layout_job(layout_job))
     };
     let width = (rows.checked_ilog10().unwrap_or(0)) as f32 * fontsize;
     egui::TextEdit::multiline(&mut "")
@@ -155,7 +155,7 @@ pub fn show(
 ) -> TextEditOutput {
     let mut layouter = |ui: &egui::Ui, buf: &dyn egui::TextBuffer, _wrap_width: f32| {
         let layout_job = highlight(ui.ctx(), fontsize, lang, buf.as_str());
-        ui.fonts(|f| f.layout_job(layout_job))
+        ui.fonts_mut(|f| f.layout_job(layout_job))
     };
     ui.spacing_mut().scroll = ScrollStyle::solid();
     egui::ScrollArea::vertical()
