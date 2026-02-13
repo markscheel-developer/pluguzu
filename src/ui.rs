@@ -380,8 +380,7 @@ impl EditorState {
             self.update = Some(PluguzuTask::SaveCode(path.into()));
         }
 
-        if self.unsaved
-            && ui.button("Save-As").clicked()
+        if ui.button("Save-As").clicked()
             && let Some(path) = file_dialog(true)
         {
             self.unsaved = false;
