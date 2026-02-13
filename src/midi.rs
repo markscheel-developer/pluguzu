@@ -158,6 +158,7 @@ impl Pluguzu {
                 }
             }
         }
+        sound.apply_param("midinote", sev.note as f32);
         debug!(
             "{:.4}: playing sample {} at {}Hz for {} with {ev:?}",
             ev.span.start, sev.name, sound.0.freq, sound.0.duration,

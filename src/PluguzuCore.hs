@@ -168,9 +168,9 @@ evmapToEvent ev
     soundEvent = do
         s <- Pattern.getS =<< Map.lookup "s" ev.value
         let i = maybe 0 round (Pattern.getN =<< Map.lookup "n" ev.value)
-        let n = maybe 36 (round . (+ 72)) (Pattern.getN =<< Map.lookup "note" ev.value)
-        let params = Map.filterWithKey (\k _ -> k /= "s" && k /= "n") ev.value
-        pure (EventSound s i n, Just params)
+        let note = maybe 36 (round . (+ 72)) (Pattern.getN =<< Map.lookup "note" ev.value)
+        let params = Map.filterWithKey (\k _ -> k /= "s" && k /= "n" && k /= "note") ev.value
+        pure (EventSound s i note, Just params)
 
 eventToCC :: Pattern.Event Pattern.ValueMap -> Maybe (Word8, Word8)
 eventToCC ev = do
