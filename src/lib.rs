@@ -300,21 +300,20 @@ impl Pluguzu {
 
     fn find_next_event(&mut self, events: &[Event]) {
         let start = self.transport.range.arc.start % self.get_cycle_count();
-        let pos = events.iter().position(|ev| ev.span.start >= start);
+        let pos = events
+            .iter()
+            .position(|ev| ev.span.start >= start)
+            .unwrap_or(usize::MAX);
         debug!(
             "{:.4}: catching up event pos {}/{}",
             start,
-            pos.unwrap_or(usize::MAX),
+            pos,
             events.len()
         );
-        if let Some(pos) = pos {
-            self.events_pos = pos;
-            self.background_state
-                .evlocs_pos
-                .store(self.events_pos, Ordering::Relaxed);
-        } else {
-            pwarn!("No next event found?!")
-        }
+        self.events_pos = pos;
+        self.background_state
+            .evlocs_pos
+            .store(self.events_pos, Ordering::Relaxed);
     }
 }
 
