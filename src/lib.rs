@@ -453,7 +453,7 @@ impl Plugin for Pluguzu {
                 // Collect unknown samples
                 for ev in events.iter() {
                     if let EventKind::EventSound(sev) = &ev.kind
-                        && !dough::SOUNDS.contains(&sev.name.as_str())
+                        && !dough::is_synth_sound(sev.name.as_str())
                         && !samples_library.has_sample(ev.bank(), sev)
                     {
                         missing.insert((ev.bank(), sev.clone()));

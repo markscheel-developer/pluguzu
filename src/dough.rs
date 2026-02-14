@@ -114,14 +114,7 @@ impl Sound {
     }
 
     pub fn default_sound(&mut self, sound: &str) -> bool {
-        let sound = match sound {
-            "tri" => Some(Source::TRI_OSC),
-            "sine" => Some(Source::SINE_OSC),
-            "pulse" => Some(Source::PULSE_OSC),
-            "saw" => Some(Source::SAW_OSC),
-            _ => None,
-        };
-        if let Some(sound) = sound {
+        if let Some(sound) = synth_sound(sound) {
             self.0.sound = sound;
             true
         } else {
@@ -245,9 +238,24 @@ pub fn midi2freq(midi: f32) -> f32 {
     2.0_f32.powf((midi - 69.0) / 12.0) * 440.0
 }
 
-pub const SOUNDS: &[&str] = &[
-    "sine", "triangle", "tri", "saw", "pulse", "white", "pink", "brown",
-];
+pub fn synth_sound(name: &str) -> Option<Source> {
+    match name {
+        "tri" => Some(Source::TRI_OSC),
+        "sine" => Some(Source::SINE_OSC),
+        "saw" => Some(Source::SAW_OSC),
+        "zaw" => Some(Source::ZAW_OSC),
+        "pulse" => Some(Source::PULSE_OSC),
+        "pulze" => Some(Source::PULZE_OSC),
+        "white" => Some(Source::WHITE_NOISE),
+        "pink" => Some(Source::PINK_NOISE),
+        "brown" => Some(Source::BROWN_NOISE),
+        _ => None,
+    }
+}
+
+pub fn is_synth_sound(name: &str) -> bool {
+    synth_sound(name).is_some()
+}
 
 unsafe impl Send for Sample {}
 unsafe impl Sync for Sample {}
