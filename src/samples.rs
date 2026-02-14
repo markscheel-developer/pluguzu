@@ -94,7 +94,7 @@ impl SampleLibrary {
             }
         }
     }
-    pub fn get(
+    pub fn get_sample(
         &self,
         bank: SmolStr,
         sev: &SoundEvent,
@@ -108,7 +108,7 @@ impl SampleLibrary {
             })
     }
 
-    pub fn load(&self, bank: SmolStr, sev: &SoundEvent) -> Result<()> {
+    pub fn load_sample(&self, bank: SmolStr, sev: &SoundEvent) -> Result<()> {
         let (base, sfs) = self
             .soundmap
             .0

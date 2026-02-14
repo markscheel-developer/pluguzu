@@ -131,13 +131,16 @@ impl Pluguzu {
         buffer: &mut [&mut [f32]],
     ) {
         let mut sound = crate::dough::Sound::new();
-        sound.apply_param(
-            "duration",
-            ((ev.span.stop - ev.span.start) * self.transport.cycle_transport.cycle_length_secs)
-                as f32,
-        );
-        if !sound.default_sound(sev.name.as_str()) {
-            match self.samples_library.get(ev.bank(), sev) {
+        let synth_sound = sound.default_sound(sev.name.as_str());
+        if synth_sound || ev.has_legato() {
+            sound.apply_param(
+                "duration",
+                ((ev.span.stop - ev.span.start) * self.transport.cycle_transport.cycle_length_secs)
+                    as f32,
+            );
+        }
+        if !synth_sound {
+            match self.samples_library.get_sample(ev.bank(), sev) {
                 Some(samples) => {
                     sound.file_source(&samples);
                 }

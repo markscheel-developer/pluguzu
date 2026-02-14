@@ -67,6 +67,12 @@ const NO_BANK: SmolStr = SmolStr::new_static("");
 const BANK: SmolStr = SmolStr::new_static("bank");
 
 impl Event {
+    pub fn has_legato(&self) -> bool {
+        self.value
+            .as_ref()
+            .map(|vs| vs.contains_key("legato"))
+            .unwrap_or(false)
+    }
     pub fn bank(&self) -> SmolStr {
         if let Some(EventValue::String(bank)) =
             self.value.as_ref().and_then(|value| value.get(&BANK))
