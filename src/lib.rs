@@ -22,7 +22,6 @@ pub mod transport_debug;
 mod ui;
 pub(crate) use debug::{debug, info, pwarn};
 
-use arc_swap::ArcSwap;
 use atomic_float::{AtomicF32, AtomicF64};
 use nih_plug::prelude::*;
 use nih_plug_egui::{EguiState, egui};
@@ -34,7 +33,7 @@ use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU32, AtomicUsize};
 use std::sync::{Arc, Mutex};
 
 use crate::config::Config;
-use crate::events::{Event, EventKind};
+use crate::events::{Event, EventKind, EventsBuffer};
 use crate::haskell::{BackgroundBuffer, HaskellState, UzuKind};
 use crate::midi::FutureNoteOff;
 use crate::transport::{CycleArc, CycleRange, CycleTransport};
@@ -46,7 +45,9 @@ struct TransportState {
     /// Count down of the remaining bar until the next events buffer start.
     remaining: AtomicUsize,
     /// The current end fraction for event highlights
-    end: AtomicF64,
+    dsp_end: AtomicF64,
+    dsp_start: AtomicF64,
+    dsp_jumped: AtomicBool,
     /// Are we synced to an external clock?
     synced: AtomicBool,
     /// The BPM when not synced.
@@ -91,7 +92,14 @@ impl PluguzuTransport {
             }
             playing
         };
-        self.state.end.store(self.range.arc.end, Ordering::Relaxed);
+        self.state
+            .dsp_end
+            .store(self.range.arc.end, Ordering::Relaxed);
+        if self.range.jumped {
+            self.state
+                .dsp_start
+                .store(self.range.arc.start, Ordering::Relaxed);
+        }
         playing
     }
 }
@@ -145,16 +153,13 @@ impl Default for PluguzuParams {
 }
 
 /// This structure is shared between the background executor and the UI
-/// It is not accessed nor lock in the process audio callback
+/// It is not accessed in the process audio callback
 struct BackgroundState {
-    /// The current code parsing error.
     error: Mutex<Option<String>>,
     error_row: AtomicUsize,
     error_col: AtomicUsize,
-    /// The event location for highlights.
-    evlocs: ArcSwap<Vec<Event>>,
-    /// The last event location position.
-    evlocs_pos: AtomicUsize,
+    events: Mutex<Arc<Vec<Event>>>,
+    events_ready: AtomicBool,
 }
 
 pub struct Pluguzu {
@@ -181,10 +186,7 @@ pub struct Pluguzu {
     dough: crate::dough::Dough,
     samples_library: Arc<crate::samples::SampleLibrary>,
 
-    /// The current events buffer to be sent.
-    events: Option<Arc<Vec<Event>>>,
-    /// The current events buffer position, e.g. the index of the last event submitted.
-    events_pos: usize,
+    events: EventsBuffer,
 
     /// The state shared between the UI and the background task executor.
     background_state: Arc<BackgroundState>,
@@ -212,7 +214,9 @@ impl Default for Pluguzu {
                 state: Arc::new(TransportState {
                     playing: AtomicBool::new(false),
                     remaining: AtomicUsize::new(0),
-                    end: AtomicF64::new(0.),
+                    dsp_end: AtomicF64::new(0.),
+                    dsp_start: AtomicF64::new(0.),
+                    dsp_jumped: AtomicBool::new(true),
                     synced: AtomicBool::new(true),
                     bpm: AtomicF32::new(120.),
                 }),
@@ -221,8 +225,7 @@ impl Default for Pluguzu {
             user_presets_file: Arc::new(config.path("presets.md")),
             initial_file: Arc::new(Mutex::new(None)),
             hosted_in_daw: Arc::new(AtomicBool::new(true)),
-            events: None,
-            events_pos: 0,
+            events: EventsBuffer::default(),
 
             dough: dough::Dough::new(),
             samples_library: Arc::new(crate::samples::SampleLibrary::new(sm)),
@@ -233,8 +236,8 @@ impl Default for Pluguzu {
                 error: Mutex::new(None),
                 error_row: AtomicUsize::new(0),
                 error_col: AtomicUsize::new(0),
-                evlocs: ArcSwap::from_pointee(Vec::new()),
-                evlocs_pos: AtomicUsize::new(0),
+                events: Mutex::new(Arc::new(vec![])),
+                events_ready: AtomicBool::new(false),
             }),
         }
     }
@@ -247,9 +250,6 @@ pub enum PluguzuTask {
 }
 
 impl Pluguzu {
-    fn get_cycle_count(&self) -> f64 {
-        self.params.length.load(Ordering::Relaxed) as f64
-    }
     // Setup the process callback buffer.
     fn sync_events_buffer(&mut self, buffer: &mut BackgroundBuffer) {
         // Here is the tricky part.
@@ -261,28 +261,13 @@ impl Pluguzu {
                 std::mem::drop(stale);
             })
         }
+        buffer.stale = Some(self.events.take());
 
         // Store the previous events back in the buffer so that they will be freed by the background task
-        buffer.stale = self.events.take();
-        // Borrow the new events.
-        let events = buffer.events.clone();
-
-        // Share the events with the UI
-        if self.events.is_none() {
-            // arc-swap does a small allocation the first time it is used...
-            nih_plug::util::permit_alloc(|| self.background_state.evlocs.store(events.clone()));
-        } else {
-            self.background_state.evlocs.store(events.clone())
-        }
-        self.background_state
-            .evlocs_pos
-            .store(self.events_pos, Ordering::Relaxed);
-
-        // Update the events position
-        self.find_next_event(&events);
-
-        // Keep a copy of the events for the process callback
-        self.events = Some(events);
+        self.events.reset(
+            buffer.events.clone(),
+            self.params.length.load(Ordering::Relaxed) as f64,
+        );
     }
 
     fn ensure_events_buffer(&mut self) -> bool {
@@ -297,23 +282,33 @@ impl Pluguzu {
             false
         }
     }
-
-    fn find_next_event(&mut self, events: &[Event]) {
-        let start = self.transport.range.arc.start % self.get_cycle_count();
-        let pos = events
-            .iter()
-            .position(|ev| ev.span.start >= start)
-            .unwrap_or(usize::MAX);
-        debug!(
-            "{:.4}: catching up event pos {}/{}",
-            start,
-            pos,
-            events.len()
-        );
-        self.events_pos = pos;
-        self.background_state
-            .evlocs_pos
-            .store(self.events_pos, Ordering::Relaxed);
+    pub fn send_tidal_events(
+        &mut self,
+        buffer: &mut [&mut [f32]],
+        context: &mut impl ProcessContext<Self>,
+    ) {
+        // #[rustfmt::skip]
+        // debug!("{start:.7}..{end:.7} Sending events ({}/{}) (for {})", self.events_pos, events.len(), self.transport.range.arc);
+        let mut events = self.events.iter(self.transport.range);
+        while let Some((ev, span_start)) = events.next() {
+            match &ev.kind {
+                EventKind::EventSound(sev) => self.dough.play_sound_event(
+                    &self.transport,
+                    &self.samples_library,
+                    ev,
+                    span_start,
+                    sev,
+                    buffer,
+                ),
+                EventKind::EventMidi(mev) => self.transport.send_midi_event(
+                    &ev.span,
+                    span_start,
+                    mev,
+                    &mut self.note_offs,
+                    context,
+                ),
+            }
+        }
     }
 }
 
@@ -380,42 +375,56 @@ impl Plugin for Pluguzu {
 
         // When not playing...
         if !running {
-            self.send_all_note_offs(context);
+            self.transport
+                .send_all_note_offs(context, &mut self.note_offs);
             self.dough.stop();
             return ProcessStatus::Normal;
             // return ProcessStatus::KeepAlive;
         }
 
         // Send any previously registered note-off.
-        self.send_note_offs(context);
+        self.transport.send_note_offs(context, &mut self.note_offs);
 
         // Ensure the events buffer is ready
         let new_events = self.ensure_events_buffer();
-        let evs = self.events.as_ref().map(|c| c.clone());
-        if let Some(events) = evs {
-            if self.transport.range.jumped {
-                self.dough.stop();
-                self.send_all_note_offs(context);
-                if !new_events {
-                    self.find_next_event(&events)
-                }
-            }
-
-            self.dough.init_buffer(frames_count);
-            let buffer_slice = buffer.as_slice();
-
-            // Send events.
-            self.send_tidal_events(&events, buffer_slice, context);
-
-            // Update the remaining value for the UI.
-            self.transport.state.remaining.store(
-                events.len().saturating_sub(self.events_pos),
-                Ordering::Relaxed,
-            );
-
-            // Play dough
-            self.dough.advance(frames_count, buffer_slice);
+        if self.transport.range.jumped {
+            self.dough.stop();
+            self.transport
+                .send_all_note_offs(context, &mut self.note_offs);
+        } else if new_events {
+            // Pretent transport jumped to reset buffer position...
+            self.transport.range.jumped = true
         }
+
+        if self.transport.range.jumped {
+            // Tell the UI to reset its buffer
+            self.transport
+                .state
+                .dsp_jumped
+                .store(true, Ordering::Relaxed)
+        }
+        if new_events {
+            // Tell the UI the buffer is ready
+            self.background_state
+                .events_ready
+                .store(true, Ordering::Relaxed);
+        }
+
+        self.dough.init_buffer(frames_count);
+        let buffer_slice = buffer.as_slice();
+
+        // Send events.
+        self.send_tidal_events(buffer_slice, context);
+
+        // Update the remaining value for the UI.
+        self.transport
+            .state
+            .remaining
+            .store(self.events.remaining(), Ordering::Relaxed);
+
+        // Play dough
+        self.dough.advance(frames_count, buffer_slice);
+
         ProcessStatus::KeepAlive
     }
 
@@ -486,8 +495,13 @@ impl Plugin for Pluguzu {
                     None => false,
                 };
                 *background_state.error.lock().expect("lock") = err.map(|(err, _, _)| err);
+                background_state
+                    .events_ready
+                    .store(false, Ordering::Relaxed);
                 if !is_err {
                     let events = haskell_state.rts.lock().render(cycle_count);
+                    *background_state.events.lock().expect("lock") = events.clone();
+
                     pwarn!("Rendered {cycle_count} into {} events", events.len());
 
                     // Lock the process callback at the end to update the shared state with the new events.

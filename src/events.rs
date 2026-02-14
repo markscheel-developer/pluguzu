@@ -5,7 +5,9 @@
 
 use serde::Deserialize;
 use smol_str::SmolStr;
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
+
+use crate::transport::CycleRange;
 
 #[derive(Ord, PartialOrd, Eq, PartialEq, Debug, Clone, Copy, Deserialize)]
 pub struct LocEvent {
@@ -84,57 +86,101 @@ impl Event {
     }
 }
 
-pub fn next_event<'a>(
-    events: &'a [Event],
-    last_pos: usize,
-    pos: &mut usize,
-    start: f64,
-    end: f64,
-) -> Option<&'a Event> {
-    if *pos == usize::MAX {
-        // waiting for the cycles to restart...
-        if start == 0. || start > end {
-            *pos = 0
-        } else {
-            return None;
+#[derive(Default, Clone)]
+pub struct EventsBuffer {
+    pub events: Arc<Vec<Event>>,
+    pub pos: usize,
+    pub cycle_length: f64,
+}
+
+impl EventsBuffer {
+    // Reset the buffer after a new update from the background thread
+    pub(crate) fn reset(&mut self, events: Arc<Vec<Event>>, cycle_length: f64) {
+        self.events = events;
+        self.cycle_length = cycle_length;
+        self.pos = 0;
+    }
+    pub fn take(&self) -> Arc<Vec<Event>> {
+        self.events.clone()
+    }
+    pub fn remaining(&self) -> usize {
+        self.events.len().saturating_sub(self.pos)
+    }
+    pub fn iter(&mut self, range: CycleRange) -> EventsIter<'_> {
+        let start = range.arc.start % self.cycle_length;
+        let end = range.arc.end % self.cycle_length;
+        if range.jumped {
+            self.pos = self
+                .events
+                .iter()
+                .position(|ev| ev.span.start >= start)
+                .unwrap_or(usize::MAX);
+        }
+        let last_pos = self.pos;
+        EventsIter {
+            buffer: self,
+            last_pos,
+            start,
+            end,
         }
     }
-    if events.is_empty() {
-        return None;
-    }
-    let ev = &events[*pos];
+}
 
-    let mut next = || {
-        *pos += 1;
-        if last_pos == *pos {
+pub struct EventsIter<'a> {
+    buffer: &'a mut EventsBuffer,
+    last_pos: usize,
+    start: f64,
+    end: f64,
+}
+
+impl EventsIter<'_> {
+    pub fn next(&mut self) -> Option<(&Event, f64)> {
+        let start = self.start;
+        let end = self.end;
+        if self.buffer.pos == usize::MAX {
+            // waiting for the cycles to restart...
+            if start == 0. || start > end {
+                self.buffer.pos = 0
+            } else {
+                return None;
+            }
+        }
+        if self.buffer.events.is_empty() {
+            return None;
+        }
+        let ev = &self.buffer.events[self.buffer.pos];
+
+        let span_start = if start < end {
+            // Non overlapping range
+            if ev.span.start >= end {
+                // This event starts in the future.
+                return None;
+            } else if ev.span.start >= start {
+                // This event is due for this buffer.
+                start + (ev.span.start - self.start)
+            } else {
+                // #[rustfmt::skip]
+                // crate::pwarn!("{} Missed an event? {:.7}..{:.7} for ev.start={:.7}", pos, start, end, ev.span.start);
+                return None;
+            }
+        } else {
+            // Overlapping range
+            if ev.span.start >= start || ev.span.start < end {
+                end - ev.span.start
+            } else {
+                return None;
+            }
+        };
+
+        self.buffer.pos += 1;
+        if self.last_pos == self.buffer.pos {
             // looped around
             return None;
         }
-        if *pos >= events.len() {
-            *pos = usize::MAX;
+        if self.buffer.pos >= self.buffer.events.len() {
+            self.buffer.pos = usize::MAX;
         }
-        Some(ev)
-    };
 
-    if start < end {
-        // Non overlapping range
-        if ev.span.start >= end {
-            // This event starts in the future.
-            None
-        } else if ev.span.start >= start {
-            // This event is due for this buffer.
-            next()
-        } else {
-            // #[rustfmt::skip]
-            // crate::pwarn!("{} Missed an event? {:.7}..{:.7} for ev.start={:.7}", pos, start, end, ev.span.start);
-            None
-        }
-    } else {
-        // Overlapping range
-        if ev.span.start >= start || ev.span.start < end {
-            next()
-        } else {
-            None
-        }
+        Some((ev, span_start))
     }
 }

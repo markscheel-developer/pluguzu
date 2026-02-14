@@ -18,11 +18,14 @@ use std::{collections::BTreeMap, sync::atomic::AtomicU32};
 
 use egui::{Color32, Shape, Stroke, StrokeKind};
 
-use crate::events::LocEvent;
-use crate::haskell::UzuKind;
 use crate::highlights;
 use crate::presets::{Presets, PresetsTags, add_preset, load_default_presets, load_user_presets};
 use crate::{BackgroundState, Pluguzu, PluguzuTask};
+use crate::{
+    events::{EventsBuffer, LocEvent},
+    transport::CycleArc,
+};
+use crate::{haskell::UzuKind, transport::CycleRange};
 
 const VERT_SPACE: f32 = 3.;
 
@@ -46,7 +49,9 @@ struct EditorState {
     font_size: f32,
 
     highlights: BTreeMap<LocEvent, u64>,
-    last_dsp_end: f64,
+
+    events: EventsBuffer,
+    last_end: f64,
 
     focused: bool,
     updated: bool,
@@ -93,7 +98,8 @@ impl Pluguzu {
                 lang: self.params.lang.clone(),
                 font_size: 0.,
                 highlights: BTreeMap::new(),
-                last_dsp_end: 0.,
+                events: EventsBuffer::default(),
+                last_end: 0.,
                 focused: false,
                 updated: false,
                 unsaved: false,
@@ -442,7 +448,7 @@ impl EditorState {
                 dsp_state.bpm.store(bpm, Ordering::Relaxed);
             }
         }
-        let end = dsp_state.end.load(Ordering::Relaxed);
+        let end = dsp_state.dsp_end.load(Ordering::Relaxed);
         let remaining = dsp_state.remaining.load(Ordering::Relaxed);
         ui.label(RichText::new(format!(" {end:.2} | {remaining} events")));
 
@@ -473,9 +479,20 @@ impl EditorState {
         cycle_length: f64,
         with_error: bool,
     ) {
+        if background_state
+            .events_ready
+            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |_| Some(false))
+            .unwrap()
+        {
+            // it is expected that when that happens, the dsp_jumped atomic is true to jump in the buffer.
+            self.events.reset(
+                background_state.events.lock().expect("lock").clone(),
+                cycle_length,
+            )
+        }
         let painter = ui.painter_at(output.response.rect);
         let ep = highlights::EditorPixels::new(output.galley_pos, &output.galley);
-        let dsp_end = dsp_state.end.load(Ordering::Relaxed);
+        let dsp_end = dsp_state.dsp_end.load(Ordering::Relaxed);
 
         // Remove old highlights
         let hl_age = 60;
@@ -484,36 +501,33 @@ impl EditorState {
 
         // Add new highlights
         if dsp_state.playing.load(Ordering::Relaxed) {
-            if dsp_end != self.last_dsp_end {
-                let mut evlocs_pos = background_state.evlocs_pos.load(Ordering::Relaxed);
-                let last_pos = evlocs_pos;
-                let evlocs = background_state.evlocs.load();
-                let start = self.last_dsp_end % cycle_length;
-                let end = dsp_end % cycle_length;
-
-                self.last_dsp_end = dsp_end;
-                while let Some(event) =
-                    crate::events::next_event(&evlocs, last_pos, &mut evlocs_pos, start, end)
-                {
+            if dsp_end != self.last_end {
+                let jumped = dsp_state
+                    .dsp_jumped
+                    .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |_| Some(false))
+                    .unwrap();
+                let dsp_start = if jumped {
+                    dsp_state.dsp_start.load(Ordering::Relaxed)
+                } else {
+                    // the ui runs at it's own pace, so we can't use the main transport arc.
+                    // instead, the ui has it's own internal arc based on the fps.
+                    self.last_end
+                };
+                self.last_end = dsp_end;
+                let range = CycleRange {
+                    arc: CycleArc {
+                        start: dsp_start,
+                        end: dsp_end,
+                    },
+                    jumped,
+                };
+                let mut events = self.events.iter(range);
+                while let Some((event, _)) = events.next() {
                     for loc in &event.locs {
                         self.highlights.insert(*loc, self.monotonic_time);
                     }
                 }
-                let _ = background_state.evlocs_pos.fetch_update(
-                    Ordering::Relaxed,
-                    Ordering::Relaxed,
-                    |old_pos| {
-                        // Only update the pos if the main thread didn't update it in the meantime.
-                        if last_pos == old_pos {
-                            Some(evlocs_pos)
-                        } else {
-                            None
-                        }
-                    },
-                );
             }
-        } else {
-            self.last_dsp_end = 0.;
         }
 
         // Draw error

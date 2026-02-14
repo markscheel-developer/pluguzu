@@ -4,6 +4,13 @@
 use dough_sys::Source;
 use std::ffi::c_int;
 
+use crate::{
+    PluguzuTransport, debug,
+    events::{Event, EventValue, SoundEvent},
+    pwarn,
+    samples::SampleLibrary,
+};
+
 pub struct Dough {
     pub sr: f64,
     pos: usize,
@@ -48,6 +55,56 @@ impl Dough {
     }
     pub fn stop(&mut self) {
         unsafe { dough_sys::panic(&mut self.engine) };
+    }
+
+    pub fn play_sound_event(
+        &mut self,
+        transport: &PluguzuTransport,
+        samples_library: &SampleLibrary,
+        ev: &Event,
+        span_start: f64,
+        sev: &SoundEvent,
+        buffer: &mut [&mut [f32]],
+    ) {
+        let mut sound = crate::dough::Sound::new();
+        let synth_sound = sound.default_sound(sev.name.as_str());
+        if synth_sound || ev.has_legato() {
+            sound.apply_param(
+                "duration",
+                ((ev.span.stop - ev.span.start) * transport.cycle_transport.cycle_length_secs)
+                    as f32,
+            );
+        }
+        if !synth_sound {
+            match samples_library.get_sample(ev.bank(), sev) {
+                Some(samples) => {
+                    sound.file_source(&samples);
+                }
+                None => {
+                    pwarn!("Sample not ready! {:?}", sev);
+                    return;
+                }
+            }
+        }
+        if let Some(value) = ev.value.as_ref() {
+            for (k, v) in value.iter() {
+                if let EventValue::Num(val) = v {
+                    if k == "legato" {
+                        sound.0.duration *= *val
+                    } else {
+                        sound.apply_param(k, *val)
+                    }
+                }
+            }
+        }
+        sound.apply_param("midinote", sev.note as f32);
+        debug!(
+            "{:.4}: playing sample {} at {}Hz for {} with {ev:?}",
+            ev.span.start, sev.name, sound.0.freq, sound.0.duration,
+        );
+        let frame_offset = transport.event_offset(span_start) as usize;
+        self.advance(frame_offset.saturating_sub(1), buffer);
+        self.process(&sound);
     }
 }
 
