@@ -428,6 +428,8 @@ impl Plugin for Pluguzu {
         let haskell_state = self.haskell_state.clone();
         let samples_library = self.samples_library.clone();
         let background_state = self.background_state.clone();
+        let transport_state = self.transport.state.clone();
+        let first_updates = AtomicU8::new(0);
 
         let (tx, rx) = std::sync::mpsc::channel();
         let sl = self.samples_library.clone();
@@ -493,6 +495,14 @@ impl Plugin for Pluguzu {
                         let mut bg_buf = haskell_state.buffer.lock();
                         bg_buf.update(events.clone());
                         haskell_state.updated.store(true, Ordering::Relaxed);
+                    }
+                    // Auto play on first update (skipping the initial one on load)
+                    let updates = first_updates.load(Ordering::Relaxed);
+                    if updates == 1 && !transport_state.synced.load(Ordering::Relaxed) {
+                        transport_state.playing.store(true, Ordering::Relaxed);
+                    }
+                    if updates < 2 {
+                        first_updates.store(updates + 1, Ordering::Relaxed);
                     }
                     load_missing_samples(&events)
                 }
