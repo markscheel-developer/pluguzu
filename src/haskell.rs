@@ -8,7 +8,7 @@ use std::ffi::c_char;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
-use crate::events::Event;
+use crate::events::Events;
 
 #[link(name = "pluguzu")]
 unsafe extern "C" {
@@ -21,15 +21,15 @@ unsafe extern "C" {
 
 /// The events shared with the audio callback.
 pub struct BackgroundBuffer {
-    pub stale: Option<Arc<Vec<Event>>>,
-    pub events: Arc<Vec<Event>>,
+    pub stale: Option<Arc<Events>>,
+    pub events: Arc<Events>,
 }
 
 impl Default for BackgroundBuffer {
     fn default() -> Self {
         BackgroundBuffer {
             stale: None,
-            events: Arc::new(vec![]),
+            events: Arc::new(Events::default()),
         }
     }
 }
@@ -97,22 +97,24 @@ impl HaskellRuntime {
         }
     }
 
-    pub fn render(&mut self, cycle_count: i32) -> Arc<Vec<Event>> {
+    pub fn render(&mut self, cycle_count: i32) -> Arc<Events> {
         let data: &[u8] = unsafe {
             let mut count_u64: u64 = 0;
             let buf = pluguzuRender(self.0, 0, cycle_count as u64, &mut count_u64);
             let count = count_u64 as usize;
             std::slice::from_raw_parts(buf, count)
         };
-        Arc::new(serde_json::from_slice(data).unwrap_or_else(|err| {
-            crate::pwarn!("FFI decode error {err}: {}", String::from_utf8_lossy(data));
-            vec![]
-        }))
+        Arc::new(Events::from_events(
+            serde_json::from_slice(data).unwrap_or_else(|err| {
+                crate::pwarn!("FFI decode error {err}: {}", String::from_utf8_lossy(data));
+                vec![]
+            }),
+        ))
     }
 }
 
 impl BackgroundBuffer {
-    pub fn update(&mut self, events: Arc<Vec<Event>>) {
+    pub fn update(&mut self, events: Arc<Events>) {
         // de-allocate the unused buffer that the audio callback gave back.
         self.stale.take();
         self.events = events;

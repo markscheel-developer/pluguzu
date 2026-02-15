@@ -3,7 +3,10 @@
 
 //! The command line entry point
 
-use pluguzu::haskell::{HaskellRuntime, UzuKind};
+use pluguzu::{
+    haskell::{HaskellRuntime, UzuKind},
+    transport::{CycleArc, CycleRange},
+};
 
 fn main() {
     let mut args = std::env::args().collect::<Vec<_>>();
@@ -20,8 +23,34 @@ fn main() {
             println!("Parse failure: {err:?}");
         } else {
             let events = ps.render(4);
-            for (nr, ev) in events.iter().enumerate() {
-                println!("{nr}=> {ev:?}");
+            // for (nr, ev) in events.per_trigger[0].1.iter().enumerate() {
+            //     println!("{nr}=> {ev:?}");
+            // }
+            // println!("Iter:");
+            let mut buf = pluguzu::events::EventsBuffer::default();
+            buf.reset(events, 4.0);
+            buf.midi_trigger.trigger(&1, Some(0.));
+            println!("Iter1:");
+            let mut evs = buf.iter(CycleRange {
+                jumped: true,
+                arc: CycleArc {
+                    start: 0.,
+                    end: 0.5,
+                },
+            });
+            while let Some(ev) = evs.next() {
+                println!("=> {ev:?}")
+            }
+            println!("Iter2:");
+            let mut evs = buf.iter(CycleRange {
+                jumped: true,
+                arc: CycleArc {
+                    start: 0.5,
+                    end: 1.,
+                },
+            });
+            while let Some(ev) = evs.next() {
+                println!("=> {ev:?}")
             }
         }
     } else {

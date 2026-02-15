@@ -164,7 +164,7 @@ evmapToEvent ev
     ccToMidi (ccn, ccv) = MidiEvent (0xb0 .|. chan) ccn ccv
     midiEvent = do
         mev <- (ccToMidi <$> eventToCC ev) <|> (noteToMidi <$> eventToNote ev)
-        pure (EventMidi mev, Nothing)
+        pure (EventMidi mev, Just ev.value)
     soundEvent = do
         s <- Pattern.getS =<< Map.lookup "s" ev.value
         let i = maybe 0 round (Pattern.getN =<< Map.lookup "n" ev.value)

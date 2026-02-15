@@ -9,7 +9,7 @@ mod config;
 mod debug;
 mod default_presets;
 mod dough;
-mod events;
+pub mod events;
 pub mod haskell;
 mod highlights;
 mod midi;
@@ -17,7 +17,7 @@ mod presets;
 mod samples;
 mod soundmap;
 mod syntax;
-mod transport;
+pub mod transport;
 pub mod transport_debug;
 mod ui;
 pub(crate) use debug::{debug, info, pwarn};
@@ -33,7 +33,7 @@ use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU32, AtomicUsize};
 use std::sync::{Arc, Mutex};
 
 use crate::config::Config;
-use crate::events::{Event, EventKind, EventsBuffer};
+use crate::events::{EventKind, Events, EventsBuffer};
 use crate::haskell::{BackgroundBuffer, HaskellState, UzuKind};
 use crate::midi::FutureNoteOff;
 use crate::transport::{CycleArc, CycleRange, CycleTransport};
@@ -158,7 +158,7 @@ struct BackgroundState {
     error: Mutex<Option<String>>,
     error_row: AtomicUsize,
     error_col: AtomicUsize,
-    events: Mutex<Arc<Vec<Event>>>,
+    events: Mutex<Arc<Events>>,
     events_ready: AtomicBool,
 }
 
@@ -236,7 +236,7 @@ impl Default for Pluguzu {
                 error: Mutex::new(None),
                 error_row: AtomicUsize::new(0),
                 error_col: AtomicUsize::new(0),
-                events: Mutex::new(Arc::new(vec![])),
+                events: Mutex::new(Arc::new(Events::default())),
                 events_ready: AtomicBool::new(false),
             }),
         }
@@ -349,9 +349,6 @@ impl Plugin for Pluguzu {
         // Parse the initial code
         context.execute(PluguzuTask::Update);
 
-        // Start with trigger on
-        self.events.midi_trigger = Some(0.);
-
         // Setup sample-rate
         let sr = buffer_config.sample_rate as u32;
         self.dough.initialize(sr.into());
@@ -373,20 +370,9 @@ impl Plugin for Pluguzu {
 
         // Pass through midi events:
         while let Some(event) = context.next_event() {
-            match event {
-                NoteEvent::NoteOn { .. } => {
-                    // TODO: handle timing offset
-                    self.events.midi_trigger = Some(self.transport.range.arc.start);
-                    self.transport.range.jumped = true;
-
-                    // auto play on first note
-                    if !self.transport.state.synced.load(Ordering::Relaxed) {
-                        self.transport.state.playing.store(true, Ordering::Relaxed);
-                    }
-                }
-                NoteEvent::NoteOff { .. } => self.events.midi_trigger = None,
-                _ => {}
-            };
+            self.events
+                .midi_trigger
+                .update_from_event(&self.transport, &event);
             context.send_event(event)
         }
 
@@ -474,16 +460,18 @@ impl Plugin for Pluguzu {
             .expect("Sample loader thread");
 
         Box::new(move |task| {
-            let load_missing_samples = |events: &[Event]| {
+            let load_missing_samples = |events: &Events| {
                 let mut missing = HashSet::new();
                 missing.clear();
-                // Collect unknown samples
-                for ev in events.iter() {
-                    if let EventKind::EventSound(sev) = &ev.kind
-                        && !dough::is_synth_sound(sev.name.as_str())
-                        && !samples_library.has_sample(ev.bank(), sev)
-                    {
-                        missing.insert((ev.bank(), sev.clone()));
+                for (_, evs) in &events.per_trigger {
+                    // Collect unknown samples
+                    for ev in evs.iter() {
+                        if let EventKind::EventSound(sev) = &ev.kind
+                            && !dough::is_synth_sound(sev.name.as_str())
+                            && !samples_library.has_sample(ev.bank(), sev)
+                        {
+                            missing.insert((ev.bank(), sev.clone()));
+                        }
                     }
                 }
                 // Dispatch task to load missing samples
@@ -519,7 +507,7 @@ impl Plugin for Pluguzu {
                     let events = haskell_state.rts.lock().render(cycle_count);
                     *background_state.events.lock().expect("lock") = events.clone();
 
-                    pwarn!("Rendered {cycle_count} into {} events", events.len());
+                    pwarn!("Rendered {cycle_count} into {} events", events.count);
 
                     // Lock the process callback at the end to update the shared state with the new events.
                     {

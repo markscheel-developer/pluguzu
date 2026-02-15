@@ -98,7 +98,7 @@ impl Pluguzu {
                 lang: self.params.lang.clone(),
                 font_size: 0.,
                 highlights: BTreeMap::new(),
-                events: EventsBuffer::default(),
+                events: EventsBuffer::with_trigger(self.events.midi_trigger.clone()),
                 last_end: 0.,
                 focused: false,
                 updated: false,
@@ -528,6 +528,8 @@ impl EditorState {
                     }
                 }
             }
+        } else {
+            self.last_end = 0.;
         }
 
         // Draw error
