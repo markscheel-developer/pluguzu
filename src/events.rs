@@ -91,6 +91,7 @@ pub struct EventsBuffer {
     pub events: Arc<Vec<Event>>,
     pub pos: usize,
     pub cycle_length: f64,
+    pub midi_trigger: Option<f64>,
 }
 
 impl EventsBuffer {
@@ -107,8 +108,9 @@ impl EventsBuffer {
         self.events.len().saturating_sub(self.pos)
     }
     pub fn iter(&mut self, range: CycleRange) -> EventsIter<'_> {
-        let start = range.arc.start % self.cycle_length;
-        let end = range.arc.end % self.cycle_length;
+        let offset = self.midi_trigger.unwrap_or(0.);
+        let start = (range.arc.start - offset) % self.cycle_length;
+        let end = (range.arc.end - offset) % self.cycle_length;
         if range.jumped {
             self.pos = self
                 .events

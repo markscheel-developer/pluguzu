@@ -349,6 +349,9 @@ impl Plugin for Pluguzu {
         // Parse the initial code
         context.execute(PluguzuTask::Update);
 
+        // Start with trigger on
+        self.events.midi_trigger = Some(0.);
+
         // Setup sample-rate
         let sr = buffer_config.sample_rate as u32;
         self.dough.initialize(sr.into());
@@ -363,15 +366,29 @@ impl Plugin for Pluguzu {
         _aux: &mut AuxiliaryBuffers,
         context: &mut impl ProcessContext<Self>,
     ) -> ProcessStatus {
-        // Pass through midi events:
-        while let Some(event) = context.next_event() {
-            context.send_event(event)
-        }
-
         // Update transport timings
         let nih_transport = context.transport();
         let frames_count = buffer.samples();
         let running = self.transport.update(frames_count as i64, nih_transport);
+
+        // Pass through midi events:
+        while let Some(event) = context.next_event() {
+            match event {
+                NoteEvent::NoteOn { .. } => {
+                    // TODO: handle timing offset
+                    self.events.midi_trigger = Some(self.transport.range.arc.start);
+                    self.transport.range.jumped = true;
+
+                    // auto play on first note
+                    if !self.transport.state.synced.load(Ordering::Relaxed) {
+                        self.transport.state.playing.store(true, Ordering::Relaxed);
+                    }
+                }
+                NoteEvent::NoteOff { .. } => self.events.midi_trigger = None,
+                _ => {}
+            };
+            context.send_event(event)
+        }
 
         // When not playing...
         if !running {
