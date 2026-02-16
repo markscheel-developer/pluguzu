@@ -463,7 +463,7 @@ impl Plugin for Pluguzu {
             let load_missing_samples = |events: &Events| {
                 let mut missing = HashSet::new();
                 missing.clear();
-                for (_, evs) in &events.per_trigger {
+                for evs in &events.per_trigger {
                     // Collect unknown samples
                     for ev in evs.iter() {
                         if let EventKind::EventSound(sev) = &ev.kind

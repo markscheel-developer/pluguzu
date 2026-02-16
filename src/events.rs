@@ -97,74 +97,35 @@ impl Event {
             .as_ref()
             .and_then(|v| v.get(&SmolStr::new_static("mt")))
             .and_then(|v| match v {
-                EventValue::Num(v) => Some(MidiTrigger(*v as usize)),
+                EventValue::Num(v) => Some(MidiTrigger(*v as usize % TRIGGER_COUNT)),
                 _ => None,
             })
     }
 }
 
-#[derive(Default, Clone)]
-struct MidiTrigger(usize);
-
-// The events are storer per midi trigger.
-// 0 is for global events.
-// 1..13 is for triggered events (1 is midi C)
 #[derive(Default, Clone, Hash, PartialEq, Eq, PartialOrd, Ord, Copy, Debug)]
-pub struct TriggerIDX(usize);
-
-impl TriggerIDX {
-    fn from_mt(mt: MidiTrigger) -> Self {
-        Self(mt.0 + 1)
-    }
-}
+struct MidiTrigger(usize);
 
 #[derive(Default, Clone)]
 pub struct Events {
-    pub per_trigger: Vec<(TriggerIDX, Vec<Event>)>,
+    pub per_trigger: [Vec<Event>; TRIGGER_COUNT + 1],
     pub count: usize,
 }
 
 impl Events {
     pub fn from_events(events: Vec<Event>) -> Self {
-        // Store events per trigger
-        let mut per_trigger = HashMap::new();
+        let mut per_trigger: [Vec<Event>; TRIGGER_COUNT + 1] = Default::default();
         let count = events.len();
         for event in events {
-            let trigger = match event.midi_trigger() {
-                Some(mt) => TriggerIDX::from_mt(mt),
+            match event.midi_trigger() {
+                Some(mt) => per_trigger[mt.0 + 1].push(event),
                 // no mt, trigger is 0
-                _ => TriggerIDX(0),
+                _ => per_trigger[0].push(event),
             };
-            per_trigger
-                .entry(trigger)
-                .or_insert_with(Vec::new)
-                .push(event)
         }
-        let mut per_trigger: Vec<(TriggerIDX, Vec<Event>)> = per_trigger.drain().collect();
-        // Store the events to ensure global events are at the begining
-        per_trigger.sort_by(|a, b| a.0.cmp(&b.0));
         Self { per_trigger, count }
     }
-
-    fn pos(&self, trigger: Option<MidiTrigger>) -> Option<TriggerIDX> {
-        let val = TriggerIDX(trigger.map(|x| x.0 + 1).unwrap_or(0));
-        self.per_trigger
-            .iter()
-            .position(|x| x.0 == val)
-            .map(TriggerIDX)
-    }
-    fn get_trigger(&self, trigger: Option<MidiTrigger>) -> Option<&[Event]> {
-        match self.pos(trigger) {
-            None => None,
-            Some(idx) => Some(&(self.per_trigger[idx.0].1)),
-        }
-    }
-    fn get(&self, idx: TriggerIDX) -> &[Event] {
-        &self.per_trigger[idx.0].1
-    }
 }
-
-const NO_EVENTS: &[Event] = &[];
 
 const TRIGGER_COUNT: usize = 12;
 pub struct MidiTriggers {
@@ -202,13 +163,19 @@ impl MidiTriggers {
             _ => {}
         };
     }
+    fn iter(&self) -> impl Iterator<Item = (MidiTrigger, f64)> {
+        self.starts
+            .iter()
+            .enumerate()
+            .map(|(x, y)| (MidiTrigger(x), y.load(Ordering::Relaxed)))
+    }
 }
 
 #[derive(Clone, Debug)]
 struct ActiveTrigger {
-    pos_idx: usize,
-    events_idx: TriggerIDX,
-    start: f64,
+    idx: usize,
+    last_pos: usize,
+    arc: CycleArc,
 }
 
 #[derive(Clone)]
@@ -232,10 +199,10 @@ impl EventsBuffer {
         Self {
             events: Arc::new(Events::default()),
             pos: [0; TRIGGER_COUNT + 1],
-            last_start: [0.; TRIGGER_COUNT],
+            last_start: [f64::NAN; TRIGGER_COUNT],
             cycle_length: 4.,
             midi_trigger,
-            actives: Vec::with_capacity(TRIGGER_COUNT),
+            actives: Vec::with_capacity(TRIGGER_COUNT + 1),
         }
     }
     // Reset the buffer after a new update from the background thread
@@ -252,65 +219,57 @@ impl EventsBuffer {
         // self.events.len().saturating_sub(self.pos)
         //TODO: compute based on active triggers
     }
-    pub fn update_actives(&mut self) {
+    pub fn update_actives(&mut self, arc: CycleArc) {
         self.actives.clear();
-        for (idx, start) in self.midi_trigger.starts.iter().enumerate() {
-            let start = start.load(Ordering::Relaxed);
+        if !self.events.per_trigger[0].is_empty() {
+            self.actives.push(ActiveTrigger {
+                idx: 0,
+                last_pos: self.pos[0],
+                arc: CycleArc {
+                    start: arc.start % self.cycle_length,
+                    end: arc.end % self.cycle_length,
+                },
+            })
+        }
+        for (mt, start) in self.midi_trigger.iter() {
             if !start.is_nan() {
-                match self.events.pos(Some(MidiTrigger(idx))) {
-                    Some(pos) => self.actives.push(ActiveTrigger {
-                        pos_idx: idx + 1,
-                        events_idx: pos,
-                        start,
-                    }),
-                    None => pwarn!("Unknown trigger: {idx}"),
+                let idx = mt.0 + 1;
+                if !self.events.per_trigger[idx].is_empty() {
+                    if self.last_start[mt.0] != start {
+                        pwarn!("Trigger reset! {mt:?} {start}");
+                        self.pos[idx] = 0;
+                    }
+                    self.last_start[mt.0] = start;
+                    self.actives.push(ActiveTrigger {
+                        idx,
+                        last_pos: self.pos[idx],
+                        arc: CycleArc {
+                            start: (arc.start - start) % self.cycle_length,
+                            end: (arc.end - start) % self.cycle_length,
+                        },
+                    })
+                } else {
+                    pwarn!("Unknown trigger: {idx}")
                 }
             }
         }
     }
     pub fn iter(&mut self, range: CycleRange) -> EventsIter<'_> {
-        self.update_actives();
-        let actives = &self.actives;
-        let current_events = self.events.get_trigger(None).unwrap_or(NO_EVENTS);
-        let start = range.arc.start % self.cycle_length;
+        self.update_actives(range.arc);
 
         if range.jumped {
-            self.pos[0] = current_events
+            let start = range.arc.start % self.cycle_length;
+            self.pos[0] = self.events.per_trigger[0]
                 .iter()
                 .position(|ev| ev.span.start >= start)
                 .unwrap_or(usize::MAX);
-            for active in actives {
-                let tstart = (range.arc.start - active.start) % self.cycle_length;
-                self.pos[active.pos_idx] = self.events.per_trigger[active.events_idx.0]
-                    .1
-                    .iter()
-                    .position(|ev| ev.span.start >= tstart)
-                    .unwrap_or(usize::MAX);
-            }
         }
-        for active in actives {
-            if self.last_start[active.pos_idx - 1] != active.start {
-                pwarn!("Trigger reset! {active:?} {start}");
-                self.pos[active.pos_idx] = 0;
-            }
-            self.last_start[active.pos_idx - 1] = active.start;
-        }
-
-        let current_last_pos = self.pos[0];
+        let queue = smallvec::SmallVec::<[(&Event, f64); TRIGGER_COUNT + 1]>::new();
         EventsIter {
             events: &self.events,
             pos: &mut self.pos,
-            current_last_pos,
-            current_pos: 0,
-            current_arc: CycleArc {
-                start,
-                end: range.arc.end % self.cycle_length,
-            },
-            current_events,
-            actives_pos: 0,
-            actives,
-            range,
-            cycle_length: self.cycle_length,
+            actives: &mut self.actives,
+            queue: queue,
         }
     }
 }
@@ -318,51 +277,40 @@ impl EventsBuffer {
 pub struct EventsIter<'a> {
     events: &'a Events,
     pos: &'a mut [usize],
-    actives: &'a [ActiveTrigger],
-    actives_pos: usize,
-    current_pos: usize,
-    current_events: &'a [Event],
-    current_arc: CycleArc,
-    current_last_pos: usize,
-    range: CycleRange,
-    cycle_length: f64,
+    actives: &'a mut [ActiveTrigger],
+    queue: smallvec::SmallVec<[(&'a Event, f64); TRIGGER_COUNT + 1]>,
 }
 
 impl EventsIter<'_> {
-    pub fn next(&mut self) -> Option<(&Event, f64)> {
-        // if self.current_pos > 0 {
-        //     crate::debug!(
-        //         "pos: {:?}, actives: {:?}, actives_pos: {}, current_pos: {}, current_last_pos: {}",
-        //         self.pos,
-        //         self.actives,
-        //         self.actives_pos,
-        //         self.current_pos,
-        //         self.current_last_pos
-        //     );
-        // }
-        let pos = &mut self.pos[self.current_pos];
-        match next_event(
-            &self.current_arc,
-            pos,
-            self.current_last_pos,
-            self.current_events,
-        ) {
-            Some(ev) => Some(ev),
-            None => match self.actives.get(self.actives_pos) {
-                None => None,
-                Some(active) => {
-                    self.actives_pos += 1;
-                    self.current_arc = CycleArc {
-                        start: (self.range.arc.start - active.start) % self.cycle_length,
-                        end: (self.range.arc.end - active.start) % self.cycle_length,
-                    };
-                    self.current_events = self.events.get(active.events_idx);
-                    self.current_last_pos = self.pos[active.pos_idx];
-                    self.current_pos = active.pos_idx;
-                    self.next()
-                }
-            },
+    pub fn fast_next(&mut self) -> Option<&Event> {
+        // for the ui, don't sort
+        for active in self.actives.iter() {
+            match next_event(
+                &active.arc,
+                &mut self.pos[active.idx],
+                active.last_pos,
+                &self.events.per_trigger[active.idx],
+            ) {
+                Some((ev, _)) => return Some(ev),
+                None => {}
+            }
         }
+        None
+    }
+    pub fn next(&mut self) -> Option<(&Event, f64)> {
+        for active in self.actives.iter() {
+            next_event(
+                &active.arc,
+                &mut self.pos[active.idx],
+                active.last_pos,
+                &self.events.per_trigger[active.idx],
+            )
+            .map(|ev| {
+                self.queue.push(ev);
+            });
+        }
+        self.queue.sort_by(|a, b| b.1.total_cmp(&a.1));
+        self.queue.pop()
     }
 }
 

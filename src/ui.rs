@@ -522,7 +522,7 @@ impl EditorState {
                     jumped,
                 };
                 let mut events = self.events.iter(range);
-                while let Some((event, _)) = events.next() {
+                while let Some(event) = events.fast_next() {
                     for loc in &event.locs {
                         self.highlights.insert(*loc, self.monotonic_time);
                     }
