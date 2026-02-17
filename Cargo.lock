@@ -1125,7 +1125,7 @@ dependencies = [
 [[package]]
 name = "egui-baseview"
 version = "0.7.0"
-source = "git+https://codeberg.org/TristanCacqueray/egui-baseview?rev=2233f9e46686ea073202e6dc351aa7612c83f3f8#2233f9e46686ea073202e6dc351aa7612c83f3f8"
+source = "git+https://codeberg.org/TristanCacqueray/egui-baseview?rev=f5baf53d20afe1e35b6c471d9d53c5a89387d8d7#f5baf53d20afe1e35b6c471d9d53c5a89387d8d7"
 dependencies = [
  "baseview 0.1.0 (git+https://github.com/TristanCacqueray/baseview.git?rev=3a81205f2c70b6973f503027060b9355aac41655)",
  "copypasta",
@@ -2016,7 +2016,7 @@ dependencies = [
 [[package]]
 name = "nih_plug"
 version = "0.0.0"
-source = "git+https://github.com/TristanCacqueray/nih-plug.git?rev=48b278e3844beb44b981512ca8852ded69f136f5#48b278e3844beb44b981512ca8852ded69f136f5"
+source = "git+https://github.com/TristanCacqueray/nih-plug.git?rev=ea91b3cfa7ccba0b6b853eb077a73f530d038521#ea91b3cfa7ccba0b6b853eb077a73f530d038521"
 dependencies = [
  "anyhow",
  "anymap3",
@@ -2053,7 +2053,7 @@ dependencies = [
 [[package]]
 name = "nih_plug_derive"
 version = "0.1.0"
-source = "git+https://github.com/TristanCacqueray/nih-plug.git?rev=48b278e3844beb44b981512ca8852ded69f136f5#48b278e3844beb44b981512ca8852ded69f136f5"
+source = "git+https://github.com/TristanCacqueray/nih-plug.git?rev=ea91b3cfa7ccba0b6b853eb077a73f530d038521#ea91b3cfa7ccba0b6b853eb077a73f530d038521"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2063,7 +2063,7 @@ dependencies = [
 [[package]]
 name = "nih_plug_egui"
 version = "0.1.0"
-source = "git+https://codeberg.org/TristanCacqueray/egui-baseview?rev=2233f9e46686ea073202e6dc351aa7612c83f3f8#2233f9e46686ea073202e6dc351aa7612c83f3f8"
+source = "git+https://codeberg.org/TristanCacqueray/egui-baseview?rev=f5baf53d20afe1e35b6c471d9d53c5a89387d8d7#f5baf53d20afe1e35b6c471d9d53c5a89387d8d7"
 dependencies = [
  "baseview 0.1.0 (git+https://github.com/TristanCacqueray/baseview.git?rev=3a81205f2c70b6973f503027060b9355aac41655)",
  "crossbeam",

@@ -8,10 +8,10 @@ authors = ["TristanCacqueray"]
 
 [dependencies]
 # The audio pluging framework
-nih_plug = { git = "https://github.com/TristanCacqueray/nih-plug.git", rev = "48b278e3844beb44b981512ca8852ded69f136f5", features = ["assert_process_allocs", "standalone"] }
-nih_plug_egui = { git = "https://codeberg.org/TristanCacqueray/egui-baseview", rev = "2233f9e46686ea073202e6dc351aa7612c83f3f8" }
+nih_plug = { git = "https://github.com/TristanCacqueray/nih-plug.git", rev = "ea91b3cfa7ccba0b6b853eb077a73f530d038521", features = ["assert_process_allocs", "standalone"] }
+nih_plug_egui = { git = "https://codeberg.org/TristanCacqueray/egui-baseview", rev = "f5baf53d20afe1e35b6c471d9d53c5a89387d8d7" }
 # nih_plug = { path = "/srv/github.com/robbert-vdh/nih-plug/", features = ["assert_process_allocs", "standalone"] }
-# nih_plug_egui = { path = "/srv/github.com/robbert-vdh/nih-plug/nih_plug_egui" }
+# nih_plug_egui = { path = "/srv/codeberg.org/BillyDM/egui-baseview/nih_plug_egui" }
 
 # A str type to store sample names
 smol_str = { version = "0.3.2", features = ["serde"]}
