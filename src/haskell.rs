@@ -6,7 +6,7 @@
 use parking_lot::Mutex;
 use std::ffi::c_char;
 use std::sync::Arc;
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, AtomicI32};
 
 use crate::events::Events;
 
@@ -51,6 +51,8 @@ pub struct HaskellState {
     pub rts: Mutex<HaskellRuntime>,
     pub buffer: Mutex<BackgroundBuffer>,
     pub updated: AtomicBool,
+    // The bar at witch the buffer is rendered for.
+    pub buffer_start: AtomicI32,
 }
 
 impl Default for HaskellState {
@@ -59,6 +61,7 @@ impl Default for HaskellState {
             rts: Mutex::new(HaskellRuntime::default()),
             buffer: Mutex::new(BackgroundBuffer::default()),
             updated: AtomicBool::new(false),
+            buffer_start: AtomicI32::new(0),
         }
     }
 }
@@ -97,10 +100,10 @@ impl HaskellRuntime {
         }
     }
 
-    pub fn render(&mut self, cycle_count: i32) -> Arc<Events> {
+    pub fn render(&mut self, start: i32, end: i32) -> Arc<Events> {
         let data: &[u8] = unsafe {
             let mut count_u64: u64 = 0;
-            let buf = pluguzuRender(self.0, 0, cycle_count as u64, &mut count_u64);
+            let buf = pluguzuRender(self.0, start as u64, end as u64, &mut count_u64);
             let count = count_u64 as usize;
             std::slice::from_raw_parts(buf, count)
         };

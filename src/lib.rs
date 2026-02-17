@@ -56,6 +56,7 @@ struct TransportState {
 
 struct PluguzuTransport {
     cycle_transport: CycleTransport,
+    continuous: Option<i32>,
     range: CycleRange,
     state: Arc<TransportState>,
 }
@@ -69,6 +70,7 @@ impl PluguzuTransport {
                 .cycle_transport
                 .update_transport(frames_count, transport)
             {
+                self.continuous = None;
                 self.state
                     .playing
                     .store(transport.playing, Ordering::Relaxed);
@@ -87,6 +89,7 @@ impl PluguzuTransport {
                 tempo,
                 4,
             );
+            self.continuous = Some(self.range.arc.start.floor() as i32);
             if !playing {
                 self.range.arc.end = 0.;
             }
@@ -220,6 +223,7 @@ impl Default for Pluguzu {
                     synced: AtomicBool::new(true),
                     bpm: AtomicF32::new(120.),
                 }),
+                continuous: None,
             },
             haskell_state: Arc::new(HaskellState::default()),
             user_presets_file: Arc::new(config.path("presets.md")),
@@ -245,6 +249,7 @@ impl Default for Pluguzu {
 
 pub enum PluguzuTask {
     Update,
+    RenderNext(i32),
     LoadCode(PathBuf),
     SaveCode(PathBuf),
 }
@@ -261,18 +266,26 @@ impl Pluguzu {
                 std::mem::drop(stale);
             })
         }
+        // Store the previous events back in the buffer so that they will be freed by the background task
         buffer.stale = Some(self.events.take());
 
-        // Store the previous events back in the buffer so that they will be freed by the background task
-        self.events.reset(
-            buffer.events.clone(),
-            self.params.length.load(Ordering::Relaxed) as f64,
-        );
+        let cycle_length = if self.transport.continuous.is_some() {
+            None
+        } else {
+            Some(self.params.length.load(Ordering::Relaxed) as f64)
+        };
+        self.events.reset(buffer.events.clone(), cycle_length);
     }
 
     fn ensure_events_buffer(&mut self) -> bool {
         // Copy the buffer from the haskell thread if needed
         if self.haskell_state.updated.load(Ordering::Relaxed) {
+            if let Some(current_bar) = self.transport.continuous
+                && current_bar < self.haskell_state.buffer_start.load(Ordering::Relaxed)
+            {
+                // continuous transport waiting for the current bar to match next buffer
+                return false;
+            }
             let state = self.haskell_state.clone();
             let mut buffer = nih_plug::util::permit_alloc(|| state.buffer.lock());
             self.sync_events_buffer(buffer.deref_mut());
@@ -290,7 +303,7 @@ impl Pluguzu {
         // #[rustfmt::skip]
         // debug!("{start:.7}..{end:.7} Sending events ({}/{}) (for {})", self.events_pos, events.len(), self.transport.range.arc);
         let mut events = self.events.iter(self.transport.range);
-        while let Some((ev, span_start)) = events.next() {
+        while let Some((ev, span_start)) = events.next_ev() {
             match &ev.kind {
                 EventKind::EventSound(sev) => self.dough.play_sound_event(
                     &self.transport,
@@ -381,6 +394,12 @@ impl Plugin for Pluguzu {
             self.transport
                 .send_all_note_offs(context, &mut self.note_offs);
             self.dough.stop();
+            if self.transport.continuous.is_some()
+                && self.haskell_state.buffer_start.load(Ordering::Relaxed) > 0
+            {
+                // Re-render for first cycle.
+                context.execute_background(PluguzuTask::RenderNext(0))
+            }
             return ProcessStatus::Normal;
             // return ProcessStatus::KeepAlive;
         }
@@ -411,6 +430,13 @@ impl Plugin for Pluguzu {
             self.background_state
                 .events_ready
                 .store(true, Ordering::Relaxed);
+        }
+
+        if let Some(current_bar) = self.transport.continuous
+            && current_bar - self.haskell_state.buffer_start.load(Ordering::Relaxed) > 1
+        {
+            // Prepare the next buffer...
+            context.execute_background(PluguzuTask::RenderNext(current_bar + 1))
         }
 
         self.dough.init_buffer(frames_count);
@@ -483,6 +509,39 @@ impl Plugin for Pluguzu {
             };
 
             let cycle_count = cycle_count.load(Ordering::Relaxed) as i32;
+            let do_render = |start| {
+                let end = start + cycle_count;
+                let events = haskell_state.rts.lock().render(start, end);
+                pwarn!("Rendered {start}..{end} into {} events", events.count);
+
+                // Share the events with the UI.
+                {
+                    background_state
+                        .events_ready
+                        .store(false, Ordering::Relaxed);
+                    let mut ui_buf = background_state.events.lock().expect("lock");
+                    *ui_buf = events.clone();
+                }
+
+                haskell_state.buffer_start.store(start, Ordering::Relaxed);
+
+                // Lock the process callback at the end to update the shared state with the new events.
+                {
+                    let mut bg_buf = haskell_state.buffer.lock();
+                    bg_buf.update(events.clone());
+                    haskell_state.updated.store(true, Ordering::Relaxed);
+                }
+
+                // Auto play on first update (skipping the initial one on load)
+                let updates = first_updates.load(Ordering::Relaxed);
+                if updates == 1 && !transport_state.synced.load(Ordering::Relaxed) {
+                    transport_state.playing.store(true, Ordering::Relaxed);
+                }
+                if updates < 2 {
+                    first_updates.store(updates + 1, Ordering::Relaxed);
+                }
+                load_missing_samples(&events)
+            };
             let do_update = || {
                 let code = code.lock().expect("lock");
                 let kind = *lang.lock().expect("lock");
@@ -500,35 +559,21 @@ impl Plugin for Pluguzu {
                     None => false,
                 };
                 *background_state.error.lock().expect("lock") = err.map(|(err, _, _)| err);
-                background_state
-                    .events_ready
-                    .store(false, Ordering::Relaxed);
                 if !is_err {
-                    let events = haskell_state.rts.lock().render(cycle_count);
-                    *background_state.events.lock().expect("lock") = events.clone();
-
-                    pwarn!("Rendered {cycle_count} into {} events", events.count);
-
-                    // Lock the process callback at the end to update the shared state with the new events.
-                    {
-                        let mut bg_buf = haskell_state.buffer.lock();
-                        bg_buf.update(events.clone());
-                        haskell_state.updated.store(true, Ordering::Relaxed);
-                    }
-                    // Auto play on first update (skipping the initial one on load)
-                    let updates = first_updates.load(Ordering::Relaxed);
-                    if updates == 1 && !transport_state.synced.load(Ordering::Relaxed) {
-                        transport_state.playing.store(true, Ordering::Relaxed);
-                    }
-                    if updates < 2 {
-                        first_updates.store(updates + 1, Ordering::Relaxed);
-                    }
-                    load_missing_samples(&events)
+                    let start = if transport_state.synced.load(Ordering::Relaxed) {
+                        0
+                    } else {
+                        transport_state.dsp_end.load(Ordering::Relaxed).floor() as i32
+                    };
+                    do_render(start)
                 }
             };
 
             match task {
                 PluguzuTask::Update => do_update(),
+                PluguzuTask::RenderNext(start) => {
+                    do_render(start);
+                }
                 PluguzuTask::SaveCode(path) => {
                     let code = code.lock().expect("lock");
                     if let Err(e) = std::fs::write(&path, code.as_bytes()) {

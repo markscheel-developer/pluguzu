@@ -22,13 +22,13 @@ fn main() {
         if let Some(err) = ps.parse(kind, pat) {
             println!("Parse failure: {err:?}");
         } else {
-            let events = ps.render(4);
+            let events = ps.render(0, 4);
             // for (nr, ev) in events.per_trigger[0].1.iter().enumerate() {
             //     println!("{nr}=> {ev:?}");
             // }
             // println!("Iter:");
             let mut buf = pluguzu::events::EventsBuffer::default();
-            buf.reset(events, 4.0);
+            buf.reset(events, None);
             buf.midi_trigger.trigger(&1, Some(0.));
             {
                 println!("Iter1:");
@@ -39,7 +39,7 @@ fn main() {
                         end: 0.5,
                     },
                 });
-                while let Some(ev) = evs.next() {
+                while let Some(ev) = evs.next_ev() {
                     println!("=> {ev:?}")
                 }
             }
@@ -52,7 +52,7 @@ fn main() {
                         end: 1.,
                     },
                 });
-                while let Some(ev) = evs.next() {
+                while let Some(ev) = evs.next_ev() {
                     println!("=> {ev:?}")
                 }
             }

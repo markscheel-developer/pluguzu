@@ -143,6 +143,7 @@ impl Pluguzu {
                             }
                             UIView::Editor => {
                                 // Top-bar
+                                let mut synced = dsp_state.synced.load(Ordering::Relaxed);
                                 egui::MenuBar::new().ui(ui, |ui| {
                                     let style = ui.style_mut();
                                     style.spacing.item_spacing.x = 8.;
@@ -164,7 +165,6 @@ impl Pluguzu {
                                             &mut state.preset.user_presets,
                                         )
                                     });
-                                    let mut synced = dsp_state.synced.load(Ordering::Relaxed);
                                     ui.menu_button("Clock", |ui| {
                                         if ui.checkbox(&mut synced, "Sync").clicked() {
                                             dsp_state.synced.store(synced, Ordering::Relaxed)
@@ -177,13 +177,17 @@ impl Pluguzu {
                                 let error = state.background_state.error.lock().expect("lock");
                                 let status_line = if error.is_some() { 2 } else { 0 };
                                 let output = state.editor.code_editor(ui, status_line);
-                                let cycle_length = params.length.load(Ordering::Relaxed);
+                                let cycle_length = if synced {
+                                    Some(params.length.load(Ordering::Relaxed).into())
+                                } else {
+                                    None
+                                };
                                 state.editor.render_highlights(
                                     ui,
                                     &dsp_state,
                                     &state.background_state,
                                     &output,
-                                    cycle_length.into(),
+                                    cycle_length,
                                     status_line > 0,
                                 );
 
@@ -423,7 +427,7 @@ impl EditorState {
             }
         }
 
-        {
+        if synced {
             let mut cycle_count = self
                 .desired_count
                 .unwrap_or_else(|| self.cycle_count.load(Ordering::Relaxed));
@@ -476,7 +480,7 @@ impl EditorState {
         dsp_state: &crate::TransportState,
         background_state: &BackgroundState,
         output: &TextEditOutput,
-        cycle_length: f64,
+        cycle_length: Option<f64>,
         with_error: bool,
     ) {
         if background_state
