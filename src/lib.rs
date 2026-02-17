@@ -10,6 +10,7 @@ mod debug;
 mod default_presets;
 mod dough;
 pub mod events;
+pub mod events_buffer;
 pub mod haskell;
 mod highlights;
 mod midi;
@@ -28,12 +29,13 @@ use nih_plug_egui::{EguiState, egui};
 use std::collections::{HashMap, HashSet};
 use std::ops::DerefMut;
 use std::path::PathBuf;
-use std::sync::atomic::Ordering;
 use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU32, AtomicUsize};
+use std::sync::atomic::{AtomicI32, Ordering};
 use std::sync::{Arc, Mutex};
 
 use crate::config::Config;
-use crate::events::{EventKind, Events, EventsBuffer};
+use crate::events::EventKind;
+use crate::events_buffer::{Events, EventsBuffer};
 use crate::haskell::{BackgroundBuffer, HaskellState, UzuKind};
 use crate::midi::FutureNoteOff;
 use crate::transport::{CycleArc, CycleRange, CycleTransport};
@@ -56,21 +58,36 @@ struct TransportState {
 
 struct PluguzuTransport {
     cycle_transport: CycleTransport,
-    continuous: Option<i32>,
     range: CycleRange,
     state: Arc<TransportState>,
+    stopped: bool,
+}
+
+struct TransportStatus {
+    running: bool,
+    synced: bool,
 }
 
 impl PluguzuTransport {
-    fn update(&mut self, frames_count: i64, transport: &nih_plug::prelude::Transport) -> bool {
+    fn is_continuous(&self, ts: &TransportStatus) -> Option<i32> {
+        if !ts.synced {
+            Some(self.range.arc.start.floor() as i32)
+        } else {
+            None
+        }
+    }
+    fn update(
+        &mut self,
+        frames_count: i64,
+        transport: &nih_plug::prelude::Transport,
+    ) -> TransportStatus {
         let synced = self.state.synced.load(Ordering::Relaxed);
 
-        let playing = if synced {
+        let running = if synced {
             if let Some(range) = self
                 .cycle_transport
                 .update_transport(frames_count, transport)
             {
-                self.continuous = None;
                 self.state
                     .playing
                     .store(transport.playing, Ordering::Relaxed);
@@ -82,14 +99,15 @@ impl PluguzuTransport {
         } else {
             let playing = self.state.playing.load(Ordering::Relaxed);
             let tempo = self.state.bpm.load(Ordering::Relaxed) as f64;
+            let sig_numerator = 4;
+            let pos_beats = self.range.arc.end * sig_numerator as f64;
             self.range = self.cycle_transport.update_local(
                 playing,
                 frames_count,
-                self.range.arc.end * 4.,
+                pos_beats,
                 tempo,
-                4,
+                sig_numerator,
             );
-            self.continuous = Some(self.range.arc.start.floor() as i32);
             if !playing {
                 self.range.arc.end = 0.;
             }
@@ -98,12 +116,7 @@ impl PluguzuTransport {
         self.state
             .dsp_end
             .store(self.range.arc.end, Ordering::Relaxed);
-        if self.range.jumped {
-            self.state
-                .dsp_start
-                .store(self.range.arc.start, Ordering::Relaxed);
-        }
-        playing
+        TransportStatus { running, synced }
     }
 }
 
@@ -189,7 +202,9 @@ pub struct Pluguzu {
     dough: crate::dough::Dough,
     samples_library: Arc<crate::samples::SampleLibrary>,
 
+    /// The current events
     events: EventsBuffer,
+    next_requested: bool,
 
     /// The state shared between the UI and the background task executor.
     background_state: Arc<BackgroundState>,
@@ -209,6 +224,7 @@ impl Default for Pluguzu {
         Self {
             params: Arc::new(PluguzuParams::default()),
             transport: PluguzuTransport {
+                stopped: false,
                 cycle_transport: CycleTransport::default(),
                 range: CycleRange {
                     jumped: true,
@@ -223,13 +239,13 @@ impl Default for Pluguzu {
                     synced: AtomicBool::new(true),
                     bpm: AtomicF32::new(120.),
                 }),
-                continuous: None,
             },
             haskell_state: Arc::new(HaskellState::default()),
             user_presets_file: Arc::new(config.path("presets.md")),
             initial_file: Arc::new(Mutex::new(None)),
             hosted_in_daw: Arc::new(AtomicBool::new(true)),
             events: EventsBuffer::default(),
+            next_requested: false,
 
             dough: dough::Dough::new(),
             samples_library: Arc::new(crate::samples::SampleLibrary::new(sm)),
@@ -269,18 +285,13 @@ impl Pluguzu {
         // Store the previous events back in the buffer so that they will be freed by the background task
         buffer.stale = Some(self.events.take());
 
-        let cycle_length = if self.transport.continuous.is_some() {
-            None
-        } else {
-            Some(self.params.length.load(Ordering::Relaxed) as f64)
-        };
-        self.events.reset(buffer.events.clone(), cycle_length);
+        self.events.reset(buffer.events.clone());
     }
 
-    fn ensure_events_buffer(&mut self) -> bool {
+    fn ensure_events_buffer(&mut self, ts: &TransportStatus) -> bool {
         // Copy the buffer from the haskell thread if needed
         if self.haskell_state.updated.load(Ordering::Relaxed) {
-            if let Some(current_bar) = self.transport.continuous
+            if let Some(current_bar) = self.transport.is_continuous(ts)
                 && current_bar < self.haskell_state.buffer_start.load(Ordering::Relaxed)
             {
                 // continuous transport waiting for the current bar to match next buffer
@@ -289,6 +300,11 @@ impl Pluguzu {
             let state = self.haskell_state.clone();
             let mut buffer = nih_plug::util::permit_alloc(|| state.buffer.lock());
             self.sync_events_buffer(buffer.deref_mut());
+            self.next_requested = false;
+            self.haskell_state.current_start.store(
+                self.haskell_state.buffer_start.load(Ordering::Relaxed),
+                Ordering::Relaxed,
+            );
             self.haskell_state.updated.store(false, Ordering::Relaxed);
             true
         } else {
@@ -297,12 +313,13 @@ impl Pluguzu {
     }
     pub fn send_tidal_events(
         &mut self,
-        buffer: &mut [&mut [f32]],
         context: &mut impl ProcessContext<Self>,
+        buffer: &mut [&mut [f32]],
+        synced: bool,
     ) {
         // #[rustfmt::skip]
         // debug!("{start:.7}..{end:.7} Sending events ({}/{}) (for {})", self.events_pos, events.len(), self.transport.range.arc);
-        let mut events = self.events.iter(self.transport.range);
+        let mut events = self.events.iter(self.transport.range, synced);
         while let Some((ev, span_start)) = events.next_ev() {
             match &ev.kind {
                 EventKind::EventSound(sev) => self.dough.play_sound_event(
@@ -379,7 +396,7 @@ impl Plugin for Pluguzu {
         // Update transport timings
         let nih_transport = context.transport();
         let frames_count = buffer.samples();
-        let running = self.transport.update(frames_count as i64, nih_transport);
+        let ts = self.transport.update(frames_count as i64, nih_transport);
 
         // Pass through midi events:
         while let Some(event) = context.next_event() {
@@ -390,41 +407,47 @@ impl Plugin for Pluguzu {
         }
 
         // When not playing...
-        if !running {
-            self.transport
-                .send_all_note_offs(context, &mut self.note_offs);
-            self.dough.stop();
-            if self.transport.continuous.is_some()
-                && self.haskell_state.buffer_start.load(Ordering::Relaxed) > 0
-            {
-                // Re-render for first cycle.
-                context.execute_background(PluguzuTask::RenderNext(0))
+        if !ts.running {
+            if !self.transport.stopped {
+                self.transport
+                    .send_all_note_offs(context, &mut self.note_offs);
+                self.dough.stop();
+                if !ts.synced && self.events.events.bar_start > 0 {
+                    // Re-render for first cycle.
+                    context.execute_background(PluguzuTask::RenderNext(0))
+                }
+                self.transport.stopped = true;
             }
             return ProcessStatus::Normal;
             // return ProcessStatus::KeepAlive;
         }
+        self.transport.stopped = false;
 
         // Send any previously registered note-off.
         self.transport.send_note_offs(context, &mut self.note_offs);
 
         // Ensure the events buffer is ready
-        let new_events = self.ensure_events_buffer();
+        let new_events = self.ensure_events_buffer(&ts);
         if self.transport.range.jumped {
             self.dough.stop();
             self.transport
                 .send_all_note_offs(context, &mut self.note_offs);
         } else if new_events {
             // Pretent transport jumped to reset buffer position...
-            self.transport.range.jumped = true
+            self.transport.range.jumped = true;
         }
 
         if self.transport.range.jumped {
-            // Tell the UI to reset its buffer
+            self.transport
+                .state
+                .dsp_start
+                .store(self.transport.range.arc.start, Ordering::Relaxed);
             self.transport
                 .state
                 .dsp_jumped
-                .store(true, Ordering::Relaxed)
+                .store(true, Ordering::Relaxed);
         }
+
         if new_events {
             // Tell the UI the buffer is ready
             self.background_state
@@ -432,18 +455,21 @@ impl Plugin for Pluguzu {
                 .store(true, Ordering::Relaxed);
         }
 
-        if let Some(current_bar) = self.transport.continuous
-            && current_bar - self.haskell_state.buffer_start.load(Ordering::Relaxed) > 1
+        if let Some(current_bar) = self.transport.is_continuous(&ts)
+            && current_bar - self.events.events.bar_start >= 1
+            && !self.next_requested
         {
             // Prepare the next buffer...
-            context.execute_background(PluguzuTask::RenderNext(current_bar + 1))
+            let next_start = self.events.events.bar_start + self.events.events.bar_count - 1;
+            context.execute_background(PluguzuTask::RenderNext(next_start));
+            self.next_requested = true;
         }
 
         self.dough.init_buffer(frames_count);
         let buffer_slice = buffer.as_slice();
 
         // Send events.
-        self.send_tidal_events(buffer_slice, context);
+        self.send_tidal_events(context, buffer_slice, ts.synced);
 
         // Update the remaining value for the UI.
         self.transport
@@ -468,6 +494,7 @@ impl Plugin for Pluguzu {
         let background_state = self.background_state.clone();
         let transport_state = self.transport.state.clone();
         let first_updates = AtomicU8::new(0);
+        let last_start = AtomicI32::new(0);
 
         let (tx, rx) = std::sync::mpsc::channel();
         let sl = self.samples_library.clone();
@@ -509,10 +536,9 @@ impl Plugin for Pluguzu {
             };
 
             let cycle_count = cycle_count.load(Ordering::Relaxed) as i32;
-            let do_render = |start| {
-                let end = start + cycle_count;
-                let events = haskell_state.rts.lock().render(start, end);
-                pwarn!("Rendered {start}..{end} into {} events", events.count);
+            let do_render = |start, len| {
+                let events = haskell_state.rts.lock().render(start, start + len);
+                pwarn!("Rendered at {start} for {len} into {} events", events.count);
 
                 // Share the events with the UI.
                 {
@@ -560,19 +586,24 @@ impl Plugin for Pluguzu {
                 };
                 *background_state.error.lock().expect("lock") = err.map(|(err, _, _)| err);
                 if !is_err {
-                    let start = if transport_state.synced.load(Ordering::Relaxed) {
-                        0
+                    if transport_state.synced.load(Ordering::Relaxed) {
+                        do_render(0, cycle_count)
                     } else {
-                        transport_state.dsp_end.load(Ordering::Relaxed).floor() as i32
+                        do_render(
+                            haskell_state.current_start.load(Ordering::Relaxed),
+                            cycle_count + 1,
+                        )
                     };
-                    do_render(start)
                 }
             };
 
             match task {
                 PluguzuTask::Update => do_update(),
                 PluguzuTask::RenderNext(start) => {
-                    do_render(start);
+                    last_start.store(start, Ordering::Relaxed);
+                    // render an extra bar so that if the last process callback overflow then
+                    // we still play the very first event.
+                    do_render(start, cycle_count + 1);
                 }
                 PluguzuTask::SaveCode(path) => {
                     let code = code.lock().expect("lock");

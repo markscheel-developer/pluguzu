@@ -4,6 +4,7 @@
 //! The command line entry point
 
 use pluguzu::{
+    events_buffer::EventsBuffer,
     haskell::{HaskellRuntime, UzuKind},
     transport::{CycleArc, CycleRange},
 };
@@ -27,31 +28,37 @@ fn main() {
             //     println!("{nr}=> {ev:?}");
             // }
             // println!("Iter:");
-            let mut buf = pluguzu::events::EventsBuffer::default();
-            buf.reset(events, None);
+            let mut buf = EventsBuffer::default();
+            buf.reset(events);
             buf.midi_trigger.trigger(&1, Some(0.));
             {
                 println!("Iter1:");
-                let mut evs = buf.iter(CycleRange {
-                    jumped: true,
-                    arc: CycleArc {
-                        start: 0.,
-                        end: 0.5,
+                let mut evs = buf.iter(
+                    CycleRange {
+                        jumped: true,
+                        arc: CycleArc {
+                            start: 0.,
+                            end: 0.5,
+                        },
                     },
-                });
+                    true,
+                );
                 while let Some(ev) = evs.next_ev() {
                     println!("=> {ev:?}")
                 }
             }
             {
                 println!("Iter2:");
-                let mut evs = buf.iter(CycleRange {
-                    jumped: true,
-                    arc: CycleArc {
-                        start: 0.5,
-                        end: 1.,
+                let mut evs = buf.iter(
+                    CycleRange {
+                        jumped: true,
+                        arc: CycleArc {
+                            start: 0.5,
+                            end: 1.,
+                        },
                     },
-                });
+                    true,
+                );
                 while let Some(ev) = evs.next_ev() {
                     println!("=> {ev:?}")
                 }

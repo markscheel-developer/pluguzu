@@ -8,7 +8,7 @@ use std::ffi::c_char;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicI32};
 
-use crate::events::Events;
+use crate::events_buffer::Events;
 
 #[link(name = "pluguzu")]
 unsafe extern "C" {
@@ -53,6 +53,7 @@ pub struct HaskellState {
     pub updated: AtomicBool,
     // The bar at witch the buffer is rendered for.
     pub buffer_start: AtomicI32,
+    pub current_start: AtomicI32,
 }
 
 impl Default for HaskellState {
@@ -62,6 +63,7 @@ impl Default for HaskellState {
             buffer: Mutex::new(BackgroundBuffer::default()),
             updated: AtomicBool::new(false),
             buffer_start: AtomicI32::new(0),
+            current_start: AtomicI32::new(0),
         }
     }
 }
@@ -112,6 +114,8 @@ impl HaskellRuntime {
                 crate::pwarn!("FFI decode error {err}: {}", String::from_utf8_lossy(data));
                 vec![]
             }),
+            start,
+            end,
         ))
     }
 }

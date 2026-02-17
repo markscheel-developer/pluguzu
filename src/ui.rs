@@ -18,13 +18,11 @@ use std::{collections::BTreeMap, sync::atomic::AtomicU32};
 
 use egui::{Color32, Shape, Stroke, StrokeKind};
 
+use crate::EventsBuffer;
 use crate::highlights;
 use crate::presets::{Presets, PresetsTags, add_preset, load_default_presets, load_user_presets};
 use crate::{BackgroundState, Pluguzu, PluguzuTask};
-use crate::{
-    events::{EventsBuffer, LocEvent},
-    transport::CycleArc,
-};
+use crate::{events::LocEvent, transport::CycleArc};
 use crate::{haskell::UzuKind, transport::CycleRange};
 
 const VERT_SPACE: f32 = 3.;
@@ -177,17 +175,12 @@ impl Pluguzu {
                                 let error = state.background_state.error.lock().expect("lock");
                                 let status_line = if error.is_some() { 2 } else { 0 };
                                 let output = state.editor.code_editor(ui, status_line);
-                                let cycle_length = if synced {
-                                    Some(params.length.load(Ordering::Relaxed).into())
-                                } else {
-                                    None
-                                };
                                 state.editor.render_highlights(
                                     ui,
                                     &dsp_state,
                                     &state.background_state,
                                     &output,
-                                    cycle_length,
+                                    synced,
                                     status_line > 0,
                                 );
 
@@ -427,19 +420,17 @@ impl EditorState {
             }
         }
 
-        if synced {
-            let mut cycle_count = self
-                .desired_count
-                .unwrap_or_else(|| self.cycle_count.load(Ordering::Relaxed));
-            if ui
-                .add(egui::DragValue::new(&mut cycle_count).speed(0.1))
-                .on_hover_text("The number of cycles to play")
-                .changed()
-                && cycle_count > 0
-            {
-                self.updated = true;
-                self.desired_count = Some(cycle_count)
-            }
+        let mut cycle_count = self
+            .desired_count
+            .unwrap_or_else(|| self.cycle_count.load(Ordering::Relaxed));
+        if ui
+            .add(egui::DragValue::new(&mut cycle_count).speed(0.1))
+            .on_hover_text("The number of cycles to play")
+            .changed()
+            && cycle_count > 0
+        {
+            self.updated = true;
+            self.desired_count = Some(cycle_count)
         }
 
         if self.updated && ui.button("UPDATE").clicked() {
@@ -480,7 +471,7 @@ impl EditorState {
         dsp_state: &crate::TransportState,
         background_state: &BackgroundState,
         output: &TextEditOutput,
-        cycle_length: Option<f64>,
+        synced: bool,
         with_error: bool,
     ) {
         if background_state
@@ -489,10 +480,8 @@ impl EditorState {
             .unwrap()
         {
             // it is expected that when that happens, the dsp_jumped atomic is true to jump in the buffer.
-            self.events.reset(
-                background_state.events.lock().expect("lock").clone(),
-                cycle_length,
-            )
+            self.events
+                .reset(background_state.events.lock().expect("lock").clone())
         }
         let painter = ui.painter_at(output.response.rect);
         let ep = highlights::EditorPixels::new(output.galley_pos, &output.galley);
@@ -525,7 +514,7 @@ impl EditorState {
                     },
                     jumped,
                 };
-                let mut events = self.events.iter(range);
+                let mut events = self.events.iter(range, synced);
                 while let Some(event) = events.fast_next() {
                     for loc in &event.locs {
                         self.highlights.insert(*loc, self.monotonic_time);

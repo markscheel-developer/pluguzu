@@ -31,6 +31,16 @@ pub struct CycleArc {
     pub end: f64,
 }
 
+impl CycleArc {
+    pub fn modulo(&self, bar_count: i32, offset: f64) -> Self {
+        let m = bar_count as f64;
+        CycleArc {
+            start: (self.start - offset) % m,
+            end: (self.end - offset) % m,
+        }
+    }
+}
+
 impl std::fmt::Display for CycleArc {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "arc[{:.7}..{:.7}]", self.start, self.end)
