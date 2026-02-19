@@ -21,6 +21,7 @@ mod syntax;
 pub mod transport;
 pub mod transport_debug;
 mod ui;
+use crossbeam::queue::ArrayQueue;
 pub(crate) use debug::{debug, info, pwarn};
 
 use atomic_float::{AtomicF32, AtomicF64};
@@ -35,7 +36,7 @@ use std::sync::{Arc, Mutex};
 
 use crate::config::Config;
 use crate::events::EventKind;
-use crate::events_buffer::{Events, EventsBuffer};
+use crate::events_buffer::{EventID, Events, EventsBuffer};
 use crate::haskell::{BackgroundBuffer, HaskellState, UzuKind};
 use crate::midi::FutureNoteOff;
 use crate::transport::{CycleArc, CycleRange, CycleTransport};
@@ -46,10 +47,8 @@ struct TransportState {
     playing: AtomicBool,
     /// Count down of the remaining bar until the next events buffer start.
     remaining: AtomicUsize,
-    /// The current range for event highlights
-    dsp_end: AtomicF64,
-    dsp_start: AtomicF64,
-    dsp_jumped: AtomicBool,
+    /// The current cycle position
+    arc_pos: AtomicF64,
     /// Are we synced to an external clock?
     synced: AtomicBool,
     /// The BPM when not synced.
@@ -122,7 +121,7 @@ impl PluguzuTransport {
         };
         // always keep track of the end range for events highlights.
         self.state
-            .dsp_end
+            .arc_pos
             .store(self.range.arc.end, Ordering::Relaxed);
         TransportStatus { running, synced }
     }
@@ -212,6 +211,7 @@ pub struct Pluguzu {
 
     /// The current events
     events: EventsBuffer,
+    played: Arc<ArrayQueue<EventID>>,
     next_requested: bool,
 
     /// The state shared between the UI and the background task executor.
@@ -243,9 +243,7 @@ impl Default for Pluguzu {
                 state: Arc::new(TransportState {
                     playing: AtomicBool::new(false),
                     remaining: AtomicUsize::new(0),
-                    dsp_end: AtomicF64::new(0.),
-                    dsp_start: AtomicF64::new(0.),
-                    dsp_jumped: AtomicBool::new(true),
+                    arc_pos: AtomicF64::new(0.),
                     synced: AtomicBool::new(true),
                     bpm: AtomicF32::new(120.),
                 }),
@@ -255,6 +253,7 @@ impl Default for Pluguzu {
             initial_file: Arc::new(Mutex::new(None)),
             hosted_in_daw: Arc::new(AtomicBool::new(true)),
             events: EventsBuffer::default(),
+            played: Arc::new(ArrayQueue::new(100)), // number of events per ui frame
             next_requested: false,
 
             dough: dough::Dough::new(),
@@ -332,6 +331,7 @@ impl Pluguzu {
         // debug!("{start:.7}..{end:.7} Sending events ({}/{}) (for {})", self.events_pos, events.len(), self.transport.range.arc);
         let mut events = self.events.iter(self.transport.range, synced);
         while let Some((ev, span_start)) = events.next_ev() {
+            // todo: let _ = self.played.push(ev);
             match &ev.kind {
                 EventKind::EventSound(sev) => self.dough.play_sound_event(
                     &self.transport,
@@ -448,17 +448,6 @@ impl Plugin for Pluguzu {
             self.transport.range.jumped = true;
         }
 
-        if self.transport.range.jumped {
-            self.transport
-                .state
-                .dsp_start
-                .store(self.transport.range.arc.start, Ordering::Relaxed);
-            self.transport
-                .state
-                .dsp_jumped
-                .store(true, Ordering::Relaxed);
-        }
-
         if new_events {
             // Tell the UI the buffer is ready
             self.background_state
@@ -469,7 +458,7 @@ impl Plugin for Pluguzu {
         if let Some(current_bar) = self.transport.is_continuous(&ts)
             && !self.next_requested
             && // wait one bar
-            current_bar - self.events.events.bar_start >= 1
+            current_bar - self.events.events.bar_start > 1
         {
             // Prepare the next buffer...
             let next_start = self.events.events.bar_start + self.events.events.bar_count - 1;

@@ -9,6 +9,8 @@ use crate::{
     transport::{CycleArc, CycleRange},
 };
 
+pub struct EventID(usize);
+
 #[derive(Default, Clone)]
 pub struct Events {
     pub per_trigger: [Vec<Event>; TRIGGER_COUNT + 1],
@@ -18,6 +20,9 @@ pub struct Events {
 }
 
 impl Events {
+    pub fn get(&self, ev: EventID) -> Option<&Event> {
+        todo!()
+    }
     pub fn from_events(events: Vec<Event>, start: i32, end: i32) -> Self {
         let mut per_trigger: [Vec<Event>; TRIGGER_COUNT + 1] = Default::default();
         let count = events.len();
@@ -182,21 +187,6 @@ pub struct EventsIter<'a> {
 }
 
 impl EventsIter<'_> {
-    pub fn next_fast(&mut self) -> Option<&Event> {
-        // for the ui, don't sort
-        for active in self.actives.iter() {
-            if let Some((ev, _)) = next_event(
-                self.continuous,
-                &active.arc,
-                &mut self.pos[active.idx],
-                active.last_pos,
-                &self.events.per_trigger[active.idx],
-            ) {
-                return Some(ev);
-            }
-        }
-        None
-    }
     pub fn next_ev(&mut self) -> Option<(&Event, f64)> {
         for active in self.actives.iter() {
             if let Some(ev) = next_event(

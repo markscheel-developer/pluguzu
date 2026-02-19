@@ -18,12 +18,15 @@ use std::{collections::BTreeMap, sync::atomic::AtomicU32};
 
 use egui::{Color32, Shape, Stroke, StrokeKind};
 
-use crate::EventsBuffer;
-use crate::highlights;
-use crate::presets::{Presets, PresetsTags, add_preset, load_default_presets, load_user_presets};
+use crate::debug;
+use crate::events::LocEvent;
+use crate::haskell::UzuKind;
 use crate::{BackgroundState, Pluguzu, PluguzuTask};
-use crate::{events::LocEvent, transport::CycleArc};
-use crate::{haskell::UzuKind, transport::CycleRange};
+use crate::{events_buffer::EventID, highlights};
+use crate::{
+    events_buffer::Events,
+    presets::{Presets, PresetsTags, add_preset, load_default_presets, load_user_presets},
+};
 
 const VERT_SPACE: f32 = 3.;
 
@@ -48,8 +51,8 @@ struct EditorState {
 
     highlights: BTreeMap<LocEvent, u64>,
 
-    events: EventsBuffer,
-    last_end: f64,
+    played: Arc<crossbeam::queue::ArrayQueue<EventID>>,
+    events: Option<Arc<Events>>,
 
     focused: bool,
     updated: bool,
@@ -96,8 +99,8 @@ impl Pluguzu {
                 lang: self.params.lang.clone(),
                 font_size: 0.,
                 highlights: BTreeMap::new(),
-                events: EventsBuffer::with_trigger(self.events.midi_trigger.clone()),
-                last_end: 0.,
+                events: None,
+                played: self.played.clone(),
                 focused: false,
                 updated: false,
                 unsaved: false,
@@ -177,10 +180,8 @@ impl Pluguzu {
                                 let output = state.editor.code_editor(ui, status_line);
                                 state.editor.render_highlights(
                                     ui,
-                                    &dsp_state,
                                     &state.background_state,
                                     &output,
-                                    synced,
                                     status_line > 0,
                                 );
 
@@ -443,9 +444,9 @@ impl EditorState {
                 dsp_state.bpm.store(bpm, Ordering::Relaxed);
             }
         }
-        let end = dsp_state.dsp_end.load(Ordering::Relaxed);
+        let arc_pos = dsp_state.arc_pos.load(Ordering::Relaxed);
         let remaining = dsp_state.remaining.load(Ordering::Relaxed);
-        ui.label(RichText::new(format!(" {end:.2} | {remaining} events")));
+        ui.label(RichText::new(format!(" {arc_pos:.2} | {remaining} events")));
 
         // Lang selector
         let mut selected = self.lang.lock().expect("lock");
@@ -468,10 +469,8 @@ impl EditorState {
     fn render_highlights(
         &mut self,
         ui: &mut egui::Ui,
-        dsp_state: &crate::TransportState,
         background_state: &BackgroundState,
         output: &TextEditOutput,
-        synced: bool,
         with_error: bool,
     ) {
         if background_state
@@ -479,13 +478,11 @@ impl EditorState {
             .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |_| Some(false))
             .unwrap()
         {
-            // it is expected that when that happens, the dsp_jumped atomic is true to jump in the buffer.
-            self.events
-                .reset(background_state.events.lock().expect("lock").clone())
+            debug!("Got new UI events...");
+            self.events = Some(background_state.events.lock().expect("lock").clone());
         }
         let painter = ui.painter_at(output.response.rect);
         let ep = highlights::EditorPixels::new(output.galley_pos, &output.galley);
-        let dsp_end = dsp_state.dsp_end.load(Ordering::Relaxed);
 
         // Remove old highlights
         let hl_age = 60;
@@ -493,36 +490,12 @@ impl EditorState {
             .retain(|_, when| self.monotonic_time - *when < hl_age);
 
         // Add new highlights
-        if dsp_state.playing.load(Ordering::Relaxed) {
-            if dsp_end != self.last_end {
-                let jumped = dsp_state
-                    .dsp_jumped
-                    .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |_| Some(false))
-                    .unwrap();
-                let dsp_start = if jumped {
-                    dsp_state.dsp_start.load(Ordering::Relaxed)
-                } else {
-                    // the ui runs at it's own pace, so we can't use the main transport arc.
-                    // instead, the ui has it's own internal arc based on the fps.
-                    self.last_end
-                };
-                self.last_end = dsp_end;
-                let range = CycleRange {
-                    arc: CycleArc {
-                        start: dsp_start,
-                        end: dsp_end,
-                    },
-                    jumped,
-                };
-                let mut events = self.events.iter(range, synced);
-                while let Some(event) = events.next_fast() {
-                    for loc in &event.locs {
-                        self.highlights.insert(*loc, self.monotonic_time);
-                    }
+        while let Some(ev) = self.played.pop() {
+            if let Some(event) = self.events.as_ref().and_then(|evs| evs.get(ev)) {
+                for loc in &event.locs {
+                    self.highlights.insert(*loc, self.monotonic_time);
                 }
             }
-        } else {
-            self.last_end = 0.;
         }
 
         // Draw error

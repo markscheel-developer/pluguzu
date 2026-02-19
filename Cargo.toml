@@ -39,6 +39,7 @@ dashmap = "6.1.0"
 time = "0.3.44"
 urlencoding = "2"
 lazy_static = "*"
+crossbeam = "*"
 
 [workspace]
 members = ["xtask"]
