@@ -330,21 +330,21 @@ impl Pluguzu {
         // #[rustfmt::skip]
         // debug!("{start:.7}..{end:.7} Sending events ({}/{}) (for {})", self.events_pos, events.len(), self.transport.range.arc);
         let mut events = self.events.iter(self.transport.range, synced);
-        while let Some((ev, span_start)) = events.next_ev() {
-            // todo: let _ = self.played.push(ev);
-            match &ev.kind {
+        while let Some((ev, event, span_start)) = events.next() {
+            let _ = self.played.push(ev);
+            match &event.kind {
                 EventKind::EventSound(sev) => self.dough.play_sound_event(
                     &self.transport,
                     &self.samples_library,
-                    ev,
+                    event,
                     span_start,
-                    sev,
+                    &sev,
                     buffer,
                 ),
                 EventKind::EventMidi(mev) => self.transport.send_midi_event(
-                    &ev.span,
+                    &event.span,
                     span_start,
-                    mev,
+                    &mev,
                     &mut self.note_offs,
                     context,
                 ),
@@ -516,15 +516,13 @@ impl Plugin for Pluguzu {
             let load_missing_samples = |events: &Events| {
                 let mut missing = HashSet::new();
                 missing.clear();
-                for evs in &events.per_trigger {
+                for ev in &events.events {
                     // Collect unknown samples
-                    for ev in evs.iter() {
-                        if let EventKind::EventSound(sev) = &ev.kind
-                            && !dough::is_synth_sound(sev.name.as_str())
-                            && !samples_library.has_sample(ev.bank(), sev)
-                        {
-                            missing.insert((ev.bank(), sev.clone()));
-                        }
+                    if let EventKind::EventSound(sev) = &ev.kind
+                        && !dough::is_synth_sound(sev.name.as_str())
+                        && !samples_library.has_sample(ev.bank(), sev)
+                    {
+                        missing.insert((ev.bank(), sev.clone()));
                     }
                 }
                 // Dispatch task to load missing samples

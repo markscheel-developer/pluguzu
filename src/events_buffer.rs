@@ -9,31 +9,43 @@ use crate::{
     transport::{CycleArc, CycleRange},
 };
 
+#[derive(Default, Copy, Debug, Clone)]
 pub struct EventID(usize);
 
 #[derive(Default, Clone)]
 pub struct Events {
-    pub per_trigger: [Vec<Event>; TRIGGER_COUNT + 1],
+    pub events: Vec<Event>,
+    pub per_trigger: [Vec<EventID>; TRIGGER_COUNT + 1],
     pub count: usize,
     pub bar_start: i32,
     pub bar_count: i32,
 }
 
 impl Events {
-    pub fn get(&self, ev: EventID) -> Option<&Event> {
-        todo!()
+    pub fn get(&self, ev: &EventID) -> Option<&Event> {
+        self.events.get(ev.0)
+    }
+    pub fn iter(&self, trigger: usize) -> impl Iterator<Item = &Event> {
+        self.per_trigger[trigger]
+            .iter()
+            .map(|ev| &self.events[ev.0])
+    }
+    pub fn ev_start(&self, ev: &EventID) -> Option<f64> {
+        self.get(ev).map(|ev| ev.span.start)
     }
     pub fn from_events(events: Vec<Event>, start: i32, end: i32) -> Self {
-        let mut per_trigger: [Vec<Event>; TRIGGER_COUNT + 1] = Default::default();
+        let mut per_trigger: [Vec<EventID>; TRIGGER_COUNT + 1] = Default::default();
         let count = events.len();
-        for event in events {
+        for (idx, event) in events.iter().enumerate() {
+            let ev = EventID(idx);
             match event.midi_trigger() {
-                Some(mt) => per_trigger[mt.0 + 1].push(event),
+                Some(mt) => per_trigger[mt.0 + 1].push(ev),
                 // no mt, trigger is 0
-                _ => per_trigger[0].push(event),
+                _ => per_trigger[0].push(ev),
             };
         }
         Self {
+            events,
             per_trigger,
             count,
             bar_start: start,
@@ -75,6 +87,9 @@ impl EventsBuffer {
             midi_trigger,
             actives: Vec::with_capacity(TRIGGER_COUNT + 1),
         }
+    }
+    pub fn get(&self, ev: EventID) -> &Event {
+        &self.events.events[ev.0]
     }
     // Reset the buffer after a new update from the background thread
     pub fn reset(&mut self, events: Arc<Events>) {
@@ -134,7 +149,9 @@ impl EventsBuffer {
                                 pwarn!("{arc} Reseting trigger {} at {start}", mt.0);
                                 self.pos[idx] = self.events.per_trigger[idx]
                                     .iter()
-                                    .position(|ev| ev.span.start >= start)
+                                    .position(|ev| {
+                                        self.events.ev_start(ev).unwrap_or(f64::MIN) >= start
+                                    })
                                     .unwrap_or(usize::MAX);
                                 self.need_reset[mt.0] = false;
                             }
@@ -161,12 +178,12 @@ impl EventsBuffer {
             for active in self.actives.iter_mut() {
                 self.pos[active.idx] = self.events.per_trigger[active.idx]
                     .iter()
-                    .position(|ev| ev.span.start >= active.arc.start)
+                    .position(|ev| self.events.ev_start(ev).unwrap_or(f64::MIN) >= active.arc.start)
                     .unwrap_or(usize::MAX);
                 active.last_pos = self.pos[active.idx];
             }
         }
-        let queue = smallvec::SmallVec::<[(&Event, f64); TRIGGER_COUNT + 1]>::new();
+        let queue = smallvec::SmallVec::<[(EventID, f64); TRIGGER_COUNT + 1]>::new();
         // pwarn!("HERE: {} {} {:?}", range.arc, self.pos[0], self.actives);
         EventsIter {
             events: &self.events,
@@ -182,12 +199,12 @@ pub struct EventsIter<'a> {
     events: &'a Events,
     pos: &'a mut [usize],
     actives: &'a mut [ActiveTrigger],
-    queue: smallvec::SmallVec<[(&'a Event, f64); TRIGGER_COUNT + 1]>,
+    queue: smallvec::SmallVec<[(EventID, f64); TRIGGER_COUNT + 1]>,
     continuous: bool,
 }
 
 impl EventsIter<'_> {
-    pub fn next_ev(&mut self) -> Option<(&Event, f64)> {
+    pub fn next(&mut self) -> Option<(EventID, &Event, f64)> {
         for active in self.actives.iter() {
             if let Some(ev) = next_event(
                 self.continuous,
@@ -195,40 +212,46 @@ impl EventsIter<'_> {
                 &mut self.pos[active.idx],
                 active.last_pos,
                 &self.events.per_trigger[active.idx],
+                &self.events.events,
             ) {
                 self.queue.push(ev);
             }
         }
         // ensure the events are yieled in order
         self.queue.sort_by(|a, b| b.1.total_cmp(&a.1));
-        self.queue.pop()
+        self.queue
+            .pop()
+            .map(|(ev, start)| (ev, &self.events.events[ev.0], start))
     }
 }
 
-fn next_continuous_event<'a>(
+fn next_continuous_event(
     arc: &CycleArc,
     pos: &mut usize,
-    events: &'a [Event],
-) -> Option<(&'a Event, f64)> {
-    events.get(*pos).and_then(|event| {
+    events: &[EventID],
+    all_events: &[Event],
+) -> Option<(EventID, f64)> {
+    events.get(*pos).and_then(|ev| {
+        let event = &all_events[ev.0];
         if event.span.start >= arc.start && event.span.start < arc.end {
             *pos += 1;
-            Some((event, event.span.start))
+            Some((*ev, event.span.start))
         } else {
             None
         }
     })
 }
 
-fn next_event<'a>(
+fn next_event(
     continuous: bool,
     arc: &CycleArc,
     pos: &mut usize,
     last_pos: usize,
-    events: &'a [Event],
-) -> Option<(&'a Event, f64)> {
+    events: &[EventID],
+    all_events: &[Event],
+) -> Option<(EventID, f64)> {
     if continuous {
-        return next_continuous_event(arc, pos, events);
+        return next_continuous_event(arc, pos, events, all_events);
     }
     let start = arc.start;
     let end = arc.end;
@@ -243,7 +266,8 @@ fn next_event<'a>(
     if events.is_empty() {
         return None;
     }
-    let ev = &events[*pos];
+    let evid = events[*pos];
+    let ev = &all_events[evid.0];
 
     let span_start = if start < end {
         // Non overlapping range
@@ -276,5 +300,5 @@ fn next_event<'a>(
         *pos = usize::MAX;
     }
 
-    Some((ev, span_start))
+    Some((evid, span_start))
 }

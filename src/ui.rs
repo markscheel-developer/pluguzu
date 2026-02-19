@@ -491,7 +491,7 @@ impl EditorState {
 
         // Add new highlights
         while let Some(ev) = self.played.pop() {
-            if let Some(event) = self.events.as_ref().and_then(|evs| evs.get(ev)) {
+            if let Some(event) = self.events.as_ref().and_then(|evs| evs.get(&ev)) {
                 for loc in &event.locs {
                     self.highlights.insert(*loc, self.monotonic_time);
                 }

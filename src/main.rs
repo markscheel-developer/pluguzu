@@ -43,7 +43,7 @@ fn main() {
                     },
                     true,
                 );
-                while let Some(ev) = evs.next_ev() {
+                while let Some(ev) = evs.next() {
                     println!("=> {ev:?}")
                 }
             }
@@ -59,7 +59,7 @@ fn main() {
                     },
                     true,
                 );
-                while let Some(ev) = evs.next_ev() {
+                while let Some(ev) = evs.next() {
                     println!("=> {ev:?}")
                 }
             }
