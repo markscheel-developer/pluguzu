@@ -102,7 +102,7 @@ impl HaskellRuntime {
         }
     }
 
-    pub fn render(&mut self, start: i32, end: i32) -> Arc<Events> {
+    pub fn render(&mut self, start: i32, end: i32, version: u32) -> Arc<Events> {
         let data: &[u8] = unsafe {
             let mut count_u64: u64 = 0;
             let buf = pluguzuRender(self.0, start as u64, end as u64, &mut count_u64);
@@ -116,6 +116,7 @@ impl HaskellRuntime {
             }),
             start,
             end,
+            version,
         ))
     }
 }

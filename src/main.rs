@@ -23,17 +23,17 @@ fn main() {
         if let Some(err) = ps.parse(kind, pat) {
             println!("Parse failure: {err:?}");
         } else {
-            let events = ps.render(0, 4);
+            let events = ps.render(0, 4, 1);
             // for (nr, ev) in events.per_trigger[0].1.iter().enumerate() {
             //     println!("{nr}=> {ev:?}");
             // }
             // println!("Iter:");
             let mut buf = EventsBuffer::default();
-            buf.reset(events);
             buf.midi_trigger.trigger(&1, Some(0.));
             {
                 println!("Iter1:");
                 let mut evs = buf.iter(
+                    &events,
                     CycleRange {
                         jumped: true,
                         arc: CycleArc {
@@ -50,6 +50,7 @@ fn main() {
             {
                 println!("Iter2:");
                 let mut evs = buf.iter(
+                    &events,
                     CycleRange {
                         jumped: true,
                         arc: CycleArc {
