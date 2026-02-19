@@ -148,10 +148,12 @@ Implemented:
 - [x] Support the mondo notation.
 - [x] Integrate the dough synth.
 - [x] Improve error reporting to the UI.
+- [x] MIDI triggers.
 
 Next:
 
 - [ ] Add pattern visualizations, e.g. a pianoroll in the background.
+- [ ] Samples browser.
 
 Future:
 

@@ -29,8 +29,8 @@ use nih_plug_egui::{EguiState, egui};
 use std::collections::{HashMap, HashSet};
 use std::ops::DerefMut;
 use std::path::PathBuf;
+use std::sync::atomic::Ordering;
 use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU32, AtomicUsize};
-use std::sync::atomic::{AtomicI32, Ordering};
 use std::sync::{Arc, Mutex};
 
 use crate::config::Config;
@@ -46,7 +46,7 @@ struct TransportState {
     playing: AtomicBool,
     /// Count down of the remaining bar until the next events buffer start.
     remaining: AtomicUsize,
-    /// The current end fraction for event highlights
+    /// The current range for event highlights
     dsp_end: AtomicF64,
     dsp_start: AtomicF64,
     dsp_jumped: AtomicBool,
@@ -60,6 +60,7 @@ struct PluguzuTransport {
     cycle_transport: CycleTransport,
     range: CycleRange,
     state: Arc<TransportState>,
+    /// Have we performed the stop routing.
     stopped: bool,
 }
 
@@ -69,6 +70,7 @@ struct TransportStatus {
 }
 
 impl PluguzuTransport {
+    /// Return the currently playing bar
     fn is_continuous(&self, ts: &TransportStatus) -> Option<i32> {
         if !ts.synced {
             Some(self.range.arc.start.floor() as i32)
@@ -84,10 +86,13 @@ impl PluguzuTransport {
         let synced = self.state.synced.load(Ordering::Relaxed);
 
         let running = if synced {
+            // when synced to an external transport
+            // we compute the current cycle range based on the beat positions
             if let Some(range) = self
                 .cycle_transport
                 .update_transport(frames_count, transport)
             {
+                // tell the UI if the external transport is playing
                 self.state
                     .playing
                     .store(transport.playing, Ordering::Relaxed);
@@ -97,9 +102,11 @@ impl PluguzuTransport {
             }
             transport.playing
         } else {
+            // otherwise, we advance the cycle range continuously
             let playing = self.state.playing.load(Ordering::Relaxed);
             let tempo = self.state.bpm.load(Ordering::Relaxed) as f64;
             let sig_numerator = 4;
+            // the current position is strictly based on the last buffer end
             let pos_beats = self.range.arc.end * sig_numerator as f64;
             self.range = self.cycle_transport.update_local(
                 playing,
@@ -113,6 +120,7 @@ impl PluguzuTransport {
             }
             playing
         };
+        // always keep track of the end range for events highlights.
         self.state
             .dsp_end
             .store(self.range.arc.end, Ordering::Relaxed);
@@ -215,12 +223,14 @@ impl Default for Pluguzu {
         #[cfg(not(feature = "debug"))]
         nih_plug::log::set_max_level(nih_plug::log::LevelFilter::Info);
 
+        // load the soundmap on ctor
         let config = Config::new();
         let samples_dir = config.path("samples");
         let sm = soundmap::load_soundmaps(samples_dir).unwrap_or_else(|e| {
             pwarn!("Couldn't load sound map: {:?}", e);
             soundmap::SoundMap(HashMap::new())
         });
+
         Self {
             params: Arc::new(PluguzuParams::default()),
             transport: PluguzuTransport {
@@ -311,6 +321,7 @@ impl Pluguzu {
             false
         }
     }
+
     pub fn send_tidal_events(
         &mut self,
         context: &mut impl ProcessContext<Self>,
@@ -456,8 +467,9 @@ impl Plugin for Pluguzu {
         }
 
         if let Some(current_bar) = self.transport.is_continuous(&ts)
-            && current_bar - self.events.events.bar_start >= 1
             && !self.next_requested
+            && // wait one bar
+            current_bar - self.events.events.bar_start >= 1
         {
             // Prepare the next buffer...
             let next_start = self.events.events.bar_start + self.events.events.bar_count - 1;
@@ -494,7 +506,6 @@ impl Plugin for Pluguzu {
         let background_state = self.background_state.clone();
         let transport_state = self.transport.state.clone();
         let first_updates = AtomicU8::new(0);
-        let last_start = AtomicI32::new(0);
 
         let (tx, rx) = std::sync::mpsc::channel();
         let sl = self.samples_library.clone();
@@ -551,12 +562,14 @@ impl Plugin for Pluguzu {
 
                 haskell_state.buffer_start.store(start, Ordering::Relaxed);
 
-                // Lock the process callback at the end to update the shared state with the new events.
+                // Share the vents with the process callback.
                 {
                     let mut bg_buf = haskell_state.buffer.lock();
                     bg_buf.update(events.clone());
-                    haskell_state.updated.store(true, Ordering::Relaxed);
                 }
+                haskell_state.updated.store(true, Ordering::Relaxed);
+
+                load_missing_samples(&events);
 
                 // Auto play on first update (skipping the initial one on load)
                 let updates = first_updates.load(Ordering::Relaxed);
@@ -566,8 +579,8 @@ impl Plugin for Pluguzu {
                 if updates < 2 {
                     first_updates.store(updates + 1, Ordering::Relaxed);
                 }
-                load_missing_samples(&events)
             };
+
             let do_update = || {
                 let code = code.lock().expect("lock");
                 let kind = *lang.lock().expect("lock");
@@ -587,6 +600,7 @@ impl Plugin for Pluguzu {
                 *background_state.error.lock().expect("lock") = err.map(|(err, _, _)| err);
                 if !is_err {
                     if transport_state.synced.load(Ordering::Relaxed) {
+                        // When synced, the events buffer is static, always from [0..cycle_count]
                         do_render(0, cycle_count)
                     } else {
                         do_render(
@@ -600,8 +614,7 @@ impl Plugin for Pluguzu {
             match task {
                 PluguzuTask::Update => do_update(),
                 PluguzuTask::RenderNext(start) => {
-                    last_start.store(start, Ordering::Relaxed);
-                    // render an extra bar so that if the last process callback overflow then
+                    // render an extra bar so that when the last process callback overflow then
                     // we still play the very first event.
                     do_render(start, cycle_count + 1);
                 }

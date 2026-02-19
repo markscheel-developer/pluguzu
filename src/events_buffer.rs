@@ -48,7 +48,7 @@ struct ActiveTrigger {
 pub struct EventsBuffer {
     pub events: Arc<Events>,
     pub pos: [usize; TRIGGER_COUNT + 1],
-    pub last_start: [f64; TRIGGER_COUNT],
+    pub trigger_start: [f64; TRIGGER_COUNT],
     pub need_reset: [bool; TRIGGER_COUNT],
     actives: Vec<ActiveTrigger>,
     pub midi_trigger: Arc<MidiTriggers>,
@@ -65,7 +65,7 @@ impl EventsBuffer {
         Self {
             events: Arc::new(Events::default()),
             pos: [0; TRIGGER_COUNT + 1],
-            last_start: [f64::NAN; TRIGGER_COUNT],
+            trigger_start: [f64::NAN; TRIGGER_COUNT],
             need_reset: [false; TRIGGER_COUNT],
             midi_trigger,
             actives: Vec::with_capacity(TRIGGER_COUNT + 1),
@@ -101,16 +101,17 @@ impl EventsBuffer {
             if !start.is_nan() {
                 let idx = mt.0 + 1;
                 if !self.events.per_trigger[idx].is_empty() {
-                    if self.last_start[mt.0] != start {
+                    if self.trigger_start[mt.0] != start {
                         pwarn!("Trigger reset! {mt:?} {start}");
                         self.pos[idx] = 0;
                     }
-                    self.last_start[mt.0] = start;
+                    self.trigger_start[mt.0] = start;
+
                     self.actives.push(ActiveTrigger {
                         idx,
                         last_pos: self.pos[idx],
                         arc: if synced {
-                            // When synce#, the arc wrap around the static buffer
+                            // When synced, the arc wrap around the static buffer
                             arc.modulo(self.events.bar_count, start)
                         } else {
                             // Here is the tricky part... The events buffer is continuous,
@@ -120,6 +121,8 @@ impl EventsBuffer {
                             let base = self.events.bar_start as f64;
                             let count = (self.events.bar_count - 1) as f64;
                             let start = base + (arc.start - start) % count;
+                            let end = start + (arc.end - arc.start);
+
                             if self.need_reset[mt.0] {
                                 // When the trigger starts mid way through a buffer, we might have to
                                 // catchup to the current event position after it reach the end of the buffer...
@@ -130,8 +133,9 @@ impl EventsBuffer {
                                     .unwrap_or(usize::MAX);
                                 self.need_reset[mt.0] = false;
                             }
-                            let end = start + (arc.end - arc.start);
                             if end > base + count {
+                                // This frame overlaps with the next buffer,
+                                // so next time we'll have to reset the trigger position
                                 self.need_reset[mt.0] = true;
                             }
                             CycleArc { start, end }
@@ -143,6 +147,8 @@ impl EventsBuffer {
             }
         }
     }
+
+    // when synced, the events buffer is static, from 0 to cycle count.
     pub fn iter(&mut self, range: CycleRange, synced: bool) -> EventsIter<'_> {
         self.update_actives(range.arc, synced);
 
@@ -176,7 +182,7 @@ pub struct EventsIter<'a> {
 }
 
 impl EventsIter<'_> {
-    pub fn fast_next(&mut self) -> Option<&Event> {
+    pub fn next_fast(&mut self) -> Option<&Event> {
         // for the ui, don't sort
         for active in self.actives.iter() {
             if let Some((ev, _)) = next_event(
@@ -203,6 +209,7 @@ impl EventsIter<'_> {
                 self.queue.push(ev);
             }
         }
+        // ensure the events are yieled in order
         self.queue.sort_by(|a, b| b.1.total_cmp(&a.1));
         self.queue.pop()
     }

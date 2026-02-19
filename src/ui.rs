@@ -515,7 +515,7 @@ impl EditorState {
                     jumped,
                 };
                 let mut events = self.events.iter(range, synced);
-                while let Some(event) = events.fast_next() {
+                while let Some(event) = events.next_fast() {
                     for loc in &event.locs {
                         self.highlights.insert(*loc, self.monotonic_time);
                     }
