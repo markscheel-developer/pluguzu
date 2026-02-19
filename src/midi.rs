@@ -86,7 +86,7 @@ impl Pluguzu {
         };
         match NoteEvent::<()>::from_midi(offset, &ev.data()) {
             Ok(mev) => {
-                let off_when = span_start + (span.stop - span.start);
+                let off_when = self.range.arc.start + (span.stop - span.start);
                 if let NoteEvent::NoteOn { note, channel, .. } = mev {
                     if off_when < self.transport.range.arc.end {
                         // This is a fast event, schedule the note-off right away
