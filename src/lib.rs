@@ -460,7 +460,9 @@ impl Plugin for Pluguzu {
             if new_events {
                 // Share the events with the UI. Note that this is not great to share a lock with the UI, and this
                 // doesn't have to be synchronous. Perhaps arc-swap can be used instead?
-                *self.background_state.events.lock().expect("lock") = events.clone();
+                nih_plug::util::permit_alloc(|| {
+                    *self.background_state.events.lock().expect("lock") = events.clone();
+                });
                 self.background_state
                     .events_ready
                     .store(true, Ordering::Relaxed);
