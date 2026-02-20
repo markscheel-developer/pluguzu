@@ -456,14 +456,16 @@ impl Plugin for Pluguzu {
                 .send_all_note_offs(context, &mut self.note_offs);
         }
 
-        if new_events {
-            // Tell the UI the buffer is ready
-            self.background_state
-                .events_ready
-                .store(true, Ordering::Relaxed);
-        }
-
         if let Some(events) = self.events.take() {
+            if new_events {
+                // Share the events with the UI. Note that this is not great to share a lock with the UI, and this
+                // doesn't have to be synchronous. Perhaps arc-swap can be used instead?
+                *self.background_state.events.lock().expect("lock") = events.clone();
+                self.background_state
+                    .events_ready
+                    .store(true, Ordering::Relaxed);
+            }
+
             if let Some(current_bar) = self.transport.is_continuous(&ts)
             && !self.next_requested
             && // wait one bar
@@ -554,18 +556,9 @@ impl Plugin for Pluguzu {
                     .render(start, start + len, version + 1);
                 pwarn!("Rendered at {start} for {len} into {} events", events.count);
 
-                // Share the events with the UI.
-                {
-                    background_state
-                        .events_ready
-                        .store(false, Ordering::Relaxed);
-                    let mut ui_buf = background_state.events.lock().expect("lock");
-                    *ui_buf = events.clone();
-                }
-
                 haskell_state.buffer_start.store(start, Ordering::Relaxed);
 
-                // Share the vents with the process callback.
+                // Share the events with the process callback.
                 {
                     let mut bg_buf = haskell_state.buffer.lock();
                     bg_buf.update(events.clone());
