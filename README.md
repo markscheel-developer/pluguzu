@@ -152,6 +152,7 @@ Implemented:
 
 Next:
 
+- [ ] Quantize MIDI trigger start time.
 - [ ] Add pattern visualizations, e.g. a pianoroll in the background.
 - [ ] Samples browser.
 
