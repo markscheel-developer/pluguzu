@@ -24,6 +24,7 @@ fn main() {
             println!("Parse failure: {err:?}");
         } else {
             let events = ps.render(0, 4, 1);
+            println!("Events: {:?}", &events.events);
             // for (nr, ev) in events.per_trigger[0].1.iter().enumerate() {
             //     println!("{nr}=> {ev:?}");
             // }
