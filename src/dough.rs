@@ -42,6 +42,7 @@ impl Dough {
     }
     pub fn advance(&mut self, until: usize, samples: &mut [&mut [f32]]) {
         let max = until.min(self.frame_count);
+        #[allow(clippy::needless_range_loop)]
         for idx in self.pos..max {
             let mut arr = [0., 0.];
             unsafe { dough_sys::gen_sample(&mut self.engine, arr.as_mut_ptr(), 0) };

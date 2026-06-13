@@ -33,7 +33,7 @@ fn main() {
             buf.midi_trigger.trigger(&1, Some(0.));
             {
                 println!("Iter1:");
-                let mut evs = buf.iter(
+                let evs = buf.iter(
                     &events,
                     CycleRange {
                         jumped: true,
@@ -44,13 +44,13 @@ fn main() {
                     },
                     true,
                 );
-                while let Some(ev) = evs.next() {
+                for ev in evs {
                     println!("=> {ev:?}")
                 }
             }
             {
                 println!("Iter2:");
-                let mut evs = buf.iter(
+                let evs = buf.iter(
                     &events,
                     CycleRange {
                         jumped: true,
@@ -61,7 +61,7 @@ fn main() {
                     },
                     true,
                 );
-                while let Some(ev) = evs.next() {
+                for ev in evs {
                     println!("=> {ev:?}")
                 }
             }

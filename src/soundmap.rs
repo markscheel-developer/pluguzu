@@ -89,7 +89,7 @@ fn make_pitch_list(mut notes: HashMap<SmolStr, Vec<String>>) -> SoundFiles {
             )
         })
         .collect();
-    pitches.sort_by(|a, b| a.0.cmp(&b.0));
+    pitches.sort_by_key(|a| a.0);
     SoundFiles::Pitches(pitches)
 }
 
