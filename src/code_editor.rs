@@ -2,10 +2,10 @@
 // SPDX-License-Identifier: GPL-3.0
 
 use crate::UzuKind;
-use crate::egui::{
+use crate::syntax;
+use egui::{
     Color32, FontId, TextFormat, style::ScrollStyle, text::LayoutJob, text_edit::TextEditOutput,
 };
-use crate::{egui, syntax};
 
 #[derive(Copy, Clone)]
 struct FontSize(f32);
@@ -27,6 +27,7 @@ fn highlight(ctx: &egui::Context, fontsize: f32, lang: UzuKind, code: &str) -> L
         mem.caches
             .cache::<egui::cache::FrameCache<LayoutJob, Highlighter>>()
             .get((FontSize(fontsize), lang, code))
+            .clone()
     })
 }
 
@@ -98,6 +99,7 @@ const SPECIAL: Color32 = Color32::from_rgb(0xf3, 0x96, 0x60); // orange
 const FUNC: Color32 = Color32::from_rgb(0x9e, 0xd0, 0x72); // green
 const STRS: Color32 = Color32::from_rgb(0xe7, 0xc6, 0x64); // yellow
 const FG: Color32 = Color32::from_rgb(0xe2, 0xe2, 0xe3);
+const BORDER: Color32 = Color32::from_rgb(0x76, 0xcc, 0xce);
 
 fn num_lines_layout(ctx: &egui::Context, fontsize: f32, rows: usize) -> LayoutJob {
     #[expect(non_local_definitions)]
@@ -128,6 +130,7 @@ fn num_lines_layout(ctx: &egui::Context, fontsize: f32, rows: usize) -> LayoutJo
         mem.caches
             .cache::<egui::cache::FrameCache<LayoutJob, Highlighter>>()
             .get((FontSize(fontsize), rows))
+            .clone()
     })
 }
 
@@ -139,7 +142,6 @@ fn show_numlines(ui: &mut egui::Ui, fontsize: f32, rows: usize) {
     let width = (rows.checked_ilog10().unwrap_or(0)) as f32 * fontsize;
     egui::TextEdit::multiline(&mut "")
         .interactive(false)
-        .frame(false)
         .desired_rows(rows)
         .desired_width(width)
         .layouter(&mut layouter)
@@ -170,7 +172,11 @@ pub fn show(
                             .lock_focus(true)
                             .desired_width(f32::INFINITY)
                             .background_color(BG)
-                            .frame(true)
+                            .frame(
+                                egui::Frame::new()
+                                    .fill(BG)
+                                    .stroke(egui::Stroke::new(1.0, BORDER)),
+                            )
                             .layouter(&mut layouter)
                             .show(ui)
                     })

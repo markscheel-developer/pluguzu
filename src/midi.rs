@@ -9,7 +9,7 @@ use crate::{
     Pluguzu, PluguzuTransport, debug,
     events::{EventSpan, MidiEvent},
 };
-use nih_plug::{midi::NoteEvent, nih_error, prelude::ProcessContext};
+use nice_plug::{midi::NoteEvent, nice_error, prelude::ProcessContext};
 
 #[derive(Debug)]
 pub struct FutureNoteOff {
@@ -123,9 +123,9 @@ impl PluguzuTransport {
                     "{}: sending event {:.4} {:.4} {} {:?}",
                     self.range.arc, span.start, span_start, offset, mev
                 );
-                nih_plug::util::permit_alloc(|| context.send_event(mev));
+                nice_plug::util::permit_alloc(|| context.send_event(mev));
             }
-            Err(err) => nih_error!("Couldn't decode {:?} {:?}", ev, err),
+            Err(err) => nice_error!("Couldn't decode {:?} {:?}", ev, err),
         }
     }
 }

@@ -73,7 +73,7 @@ impl CycleTransport {
     pub fn update_transport(
         &mut self,
         frames_count: i64,
-        transport: &nih_plug::prelude::Transport,
+        transport: &nice_plug::prelude::Transport,
     ) -> Option<CycleRange> {
         transport.pos_beats().and_then(|pos_beats| {
             transport.tempo.map(|tempo| {

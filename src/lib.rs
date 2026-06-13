@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0
 
 //! This module is the main entry point.
-//! It defines the Pluguzu struct which is instantiated by nih-plug as a standalone app or a DAW plugin.
+//! It defines the Pluguzu struct which is instantiated by nice-plug as a standalone app or a DAW plugin.
 
 mod code_editor;
 mod config;
@@ -25,8 +25,8 @@ use crossbeam::queue::ArrayQueue;
 pub(crate) use debug::{debug, info, pwarn};
 
 use atomic_float::{AtomicF32, AtomicF64};
-use nih_plug::prelude::*;
-use nih_plug_egui::{EguiState, egui};
+use nice_plug::prelude::*;
+use nice_plug_egui::EguiState;
 use std::collections::{HashMap, HashSet};
 use std::ops::DerefMut;
 use std::path::PathBuf;
@@ -80,7 +80,7 @@ impl PluguzuTransport {
     fn update(
         &mut self,
         frames_count: i64,
-        transport: &nih_plug::prelude::Transport,
+        transport: &nice_plug::prelude::Transport,
     ) -> TransportStatus {
         let synced = self.state.synced.load(Ordering::Relaxed);
 
@@ -222,7 +222,7 @@ pub struct Pluguzu {
 impl Default for Pluguzu {
     fn default() -> Self {
         #[cfg(not(feature = "debug"))]
-        nih_plug::log::set_max_level(nih_plug::log::LevelFilter::Info);
+        nice_plug::log::set_max_level(nice_plug::log::LevelFilter::Info);
 
         // load the soundmap on ctor
         let config = Config::new();
@@ -288,8 +288,8 @@ impl Pluguzu {
         // We must not de-allocate the events buffer in the audio callback.
         if let Some(stale) = buffer.stale.take() {
             // This should never happen because the background thread should always free the buffer after the sync.
-            nih_plug::util::permit_alloc(move || {
-                nih_warn!("Stale buffer is not free, de-allocating from audio callback...");
+            nice_plug::util::permit_alloc(move || {
+                nice_warn!("Stale buffer is not free, de-allocating from audio callback...");
                 std::mem::drop(stale);
             })
         }
@@ -311,7 +311,7 @@ impl Pluguzu {
         let buffer_start = self.haskell_state.buffer_start.load(Ordering::Relaxed);
         if self.haskell_state.updated.load(Ordering::Relaxed) && self.is_ready(ts, buffer_start) {
             let state = self.haskell_state.clone();
-            let mut buffer = nih_plug::util::permit_alloc(|| state.buffer.lock());
+            let mut buffer = nice_plug::util::permit_alloc(|| state.buffer.lock());
             self.sync_events_buffer(buffer.deref_mut());
             self.next_requested = false;
             self.haskell_state
@@ -410,9 +410,9 @@ impl Plugin for Pluguzu {
         context: &mut impl ProcessContext<Self>,
     ) -> ProcessStatus {
         // Update transport timings
-        let nih_transport = context.transport();
+        let nice_transport = context.transport();
         let frames_count = buffer.samples();
-        let ts = self.transport.update(frames_count as i64, nih_transport);
+        let ts = self.transport.update(frames_count as i64, nice_transport);
 
         // Pass through midi events:
         while let Some(event) = context.next_event() {
@@ -460,7 +460,7 @@ impl Plugin for Pluguzu {
             if new_events {
                 // Share the events with the UI. Note that this is not great to share a lock with the UI, and this
                 // doesn't have to be synchronous. Perhaps arc-swap can be used instead?
-                nih_plug::util::permit_alloc(|| {
+                nice_plug::util::permit_alloc(|| {
                     *self.background_state.events.lock().expect("lock") = events.clone();
                 });
                 self.background_state
@@ -522,7 +522,7 @@ impl Plugin for Pluguzu {
                     if !sl.has_sample(bank.clone(), &sev)
                         && let Err(e) = sl.load_sample(bank, &sev)
                     {
-                        nih_warn!("Couldn't load sample {}: {}", sev.name, e);
+                        nice_warn!("Couldn't load sample {}: {}", sev.name, e);
                     }
                 }
             })
@@ -544,7 +544,7 @@ impl Plugin for Pluguzu {
                 // Dispatch task to load missing samples
                 for (bank, sev) in missing.drain() {
                     if let Err(e) = tx.send((bank, sev)) {
-                        nih_warn!("Couldn't load sample: {}", e);
+                        nice_warn!("Couldn't load sample: {}", e);
                     }
                 }
             };
@@ -616,7 +616,7 @@ impl Plugin for Pluguzu {
                 PluguzuTask::SaveCode(path) => {
                     let code = code.lock().expect("lock");
                     if let Err(e) = std::fs::write(&path, code.as_bytes()) {
-                        nih_warn!("{}: couldn't save {e}", path.display())
+                        nice_warn!("{}: couldn't save {e}", path.display())
                     } else {
                         info!("{}: saved!", path.display())
                     }
@@ -631,7 +631,7 @@ impl Plugin for Pluguzu {
                                 do_update()
                             }
                         }
-                        Err(e) => nih_warn!("{}: couldn't load: {e}", path.display()),
+                        Err(e) => nice_warn!("{}: couldn't load: {e}", path.display()),
                     };
                 }
             }
@@ -688,6 +688,6 @@ impl Vst3Plugin for Pluguzu {
 }
 
 #[cfg(not(feature = "debug-plugin"))]
-nih_export_clap!(Pluguzu);
+nice_export_clap!(Pluguzu);
 #[cfg(not(feature = "debug-plugin"))]
-nih_export_vst3!(Pluguzu);
+nice_export_vst3!(Pluguzu);

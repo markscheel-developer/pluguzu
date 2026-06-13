@@ -6,7 +6,7 @@
 macro_rules! debug {
     ($($rest:tt)+) => {
         #[cfg(feature = "debug")]
-        nih_plug::util::permit_alloc(|| {
+        nice_plug::util::permit_alloc(|| {
             println!($($rest)*)
         })
     }
@@ -16,8 +16,8 @@ pub(crate) use debug;
 
 macro_rules! pwarn {
     ($($rest:tt)+) => {
-        nih_plug::util::permit_alloc(|| {
-            nih_plug::nih_warn!($($rest)*)
+        nice_plug::util::permit_alloc(|| {
+            nice_plug::nice_warn!($($rest)*)
         })
     }
 }
@@ -26,7 +26,7 @@ pub(crate) use pwarn;
 
 macro_rules! info {
     ($($rest:tt)+) => {
-        nih_plug::nih_log!($($rest)*)
+        nice_plug::nice_log!($($rest)*)
     }
 }
 

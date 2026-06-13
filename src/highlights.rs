@@ -3,7 +3,7 @@
 
 //! This module provides helper to manage the editor pixel positions
 
-use crate::egui::{Galley, Pos2, Rect, Vec2};
+use egui::{Galley, Pos2, Rect, Vec2};
 use std::ops::Add;
 
 pub struct EditorPixels<'a> {

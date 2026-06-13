@@ -16,7 +16,7 @@ Pluguzu can be used as a regular text editor, connecting directly to the system'
 audio and MIDI ports, but it can also be loaded inside a Digital Audio Workstation
 (DAW) as a CLAP plugin (or VST3).
 
-Pluguzu is powered by the [nih-plug][nih-plug] audio plugin framework and the
+Pluguzu is powered by the [nice-plug][nice-plug] audio plugin framework and the
 [egui][egui] graphical user interface.
 
 > Checkout the companion post: https://midirus.com/blog/haskell-foreign-library-dpf
@@ -24,7 +24,7 @@ Pluguzu is powered by the [nih-plug][nih-plug] audio plugin framework and the
 [tidal]: https://tidalcycles.org/
 [dough]: https://codeberg.org/uzu/dough
 [mondo]: https://codeberg.org/uzu/tidal/pulls/1233
-[nih-plug]: https://github.com/robbert-vdh/nih-plug
+[nice-plug]: https://codeberg.org/RustAudio/nice-plug
 [egui]: https://egui.rs
 
 ## Supported Platforms
@@ -111,7 +111,7 @@ Here are the important files:
 
 - [PluguzuCore.hs](./src/PluguzuCore.hs) contains the logic to convert tidal pattern into MIDI events.
 - [Pluguzu.hs](./Pluguzu.hs) is the foreign library called by the plugin.
-- [lib.rs](./src/lib.rs) is the nih-plug implementation.
+- [lib.rs](./src/lib.rs) is the nice-plug implementation.
 - [dough.rs](./src/dough.rs) is the dough sampler integration.
 - [ui.rs](./src/ui.rs) is the UI definition.
 - [pluguzu-presets.md](./pluguzu-presets.md) is the preset library.
@@ -139,7 +139,7 @@ Implemented:
 - [x] Update text editor language def to support Haskell syntax.
 - [x] Handle MIDI CC.
 - [x] Add presets.
-- [x] Replace DPF framework with nih-plug.
+- [x] Replace DPF framework with nice-plug.
 - [x] Highlight event locations.
 - [x] Integrate the dirt sampler.
 - [x] Loading code through the command line and file menu.

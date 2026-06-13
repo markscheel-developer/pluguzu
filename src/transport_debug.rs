@@ -4,7 +4,7 @@
 //! A test plugin to debug the cycle transport computation.
 
 use crate::transport::CycleTransport;
-use nih_plug::prelude::*;
+use nice_plug::prelude::*;
 use std::sync::Arc;
 
 #[derive(Default)]
@@ -112,6 +112,6 @@ impl Vst3Plugin for DebugTransport {
 }
 
 #[cfg(feature = "debug-plugin")]
-nih_export_clap!(DebugTransport);
+nice_export_clap!(DebugTransport);
 #[cfg(feature = "debug-plugin")]
-nih_export_vst3!(DebugTransport);
+nice_export_vst3!(DebugTransport);

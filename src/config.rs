@@ -3,7 +3,7 @@
 
 //! This module defines user config location.
 
-use nih_plug::nih_warn;
+use nice_plug::nice_warn;
 use std::path::PathBuf;
 
 pub struct Config(PathBuf);
@@ -14,7 +14,7 @@ impl Config {
             p.push("pluguzu");
             match std::fs::create_dir_all(&p) {
                 Err(err) => {
-                    nih_warn!("{:?}: Couldn't create config dir: {err}", p);
+                    nice_warn!("{:?}: Couldn't create config dir: {err}", p);
                     None
                 }
                 Ok(_) => Some(p),

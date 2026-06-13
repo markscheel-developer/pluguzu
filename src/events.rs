@@ -4,7 +4,7 @@
 //! This module defines the events produced by Haskell.
 
 use atomic_float::AtomicF64;
-use nih_plug::midi::NoteEvent;
+use nice_plug::midi::NoteEvent;
 use serde::Deserialize;
 use smol_str::SmolStr;
 use std::{collections::HashMap, sync::atomic::Ordering};

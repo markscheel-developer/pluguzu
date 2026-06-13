@@ -3,12 +3,9 @@
 
 //! The pluguzu UI.
 
-use nih_plug::prelude::*;
-use nih_plug_egui::{
-    create_egui_editor, egui,
-    egui::{FontId, RichText, TextStyle, Vec2, text_edit::TextEditOutput},
-    resizable_window::ResizableWindow,
-};
+use egui::{FontId, RichText, TextStyle, Vec2, text_edit::TextEditOutput};
+use nice_plug::prelude::*;
+use nice_plug_egui::{create_egui_editor, resizable_window::ResizableWindow};
 
 use std::ops::DerefMut;
 use std::path::PathBuf;
@@ -125,6 +122,7 @@ impl Pluguzu {
                 state.update_font_size(egui_ctx, state.font_size.load(Ordering::Relaxed));
             },
             move |egui_ctx, setter, _queue, state| {
+                let mut font_size_adjust = 0;
                 // TODO: handle input dropped_files!
                 ResizableWindow::new("res-wind")
                     .min_size(Vec2::new(80.0, 60.0))
@@ -149,10 +147,10 @@ impl Pluguzu {
                                     let style = ui.style_mut();
                                     style.spacing.item_spacing.x = 8.;
                                     if ui.button("+").clicked() {
-                                        state.adjust_font_size(egui_ctx, 1);
+                                        font_size_adjust = 1;
                                     }
                                     if state.editor.font_size > 4. && ui.button("-").clicked() {
-                                        state.adjust_font_size(egui_ctx, -1);
+                                        font_size_adjust = -1;
                                     }
 
                                     let dirty = state.editor.unsaved
@@ -223,6 +221,9 @@ impl Pluguzu {
                             }
                         };
                     });
+                if font_size_adjust != 0 {
+                    state.adjust_font_size(egui_ctx, font_size_adjust);
+                }
             },
         )
     }

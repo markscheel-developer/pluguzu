@@ -71,9 +71,9 @@ fn main() {
             && !path.starts_with('-')
         {
             // The args will be read when the plugin initialize.
-            // We need to remove it from what nih standalone expect.
+            // We need to remove it from what nice standalone expect.
             args.remove(1);
         }
-        nih_plug::prelude::nih_export_standalone_with_args::<pluguzu::Pluguzu, _>(args);
+        nice_plug::prelude::nice_export_standalone_with_args::<pluguzu::Pluguzu, _>(args);
     }
 }
