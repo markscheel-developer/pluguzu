@@ -248,8 +248,9 @@ dependencies = [
 
 [[package]]
 name = "baseview"
-version = "0.1.2"
-source = "git+https://github.com/RustAudio/baseview.git?rev=cf84df6eed662b0c5e13cd313f17792211f13822#cf84df6eed662b0c5e13cd313f17792211f13822"
+version = "0.1.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "09427eb7d4f0c82b619702e890be96283d327a239102f7d26a56de8124a230c1"
 dependencies = [
  "block2 0.6.2",
  "bytemuck",
@@ -845,8 +846,9 @@ dependencies = [
 
 [[package]]
 name = "egui-baseview"
-version = "0.2.4"
-source = "git+https://codeberg.org/TristanCacqueray/egui-baseview.git?rev=1b84da2017e499ccd9ca300ac30b344b0d37d1fc#1b84da2017e499ccd9ca300ac30b344b0d37d1fc"
+version = "0.2.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d6cb16bc376fa2a9039fb65b31d91940b853f9b64f49429b61b5eda830a1300c"
 dependencies = [
  "baseview",
  "copypasta",
@@ -1520,7 +1522,7 @@ dependencies = [
 [[package]]
 name = "nice-log"
 version = "0.2.4"
-source = "git+https://codeberg.org/TristanCacqueray/nice-plug.git?rev=d1b618ebcc092a54d21b415d2b2d96b6d5ba81c0#d1b618ebcc092a54d21b415d2b2d96b6d5ba81c0"
+source = "git+https://codeberg.org/TristanCacqueray/nice-plug.git?rev=715d56c07ae76233978d4a01c4bcbb4b086a859b#715d56c07ae76233978d4a01c4bcbb4b086a859b"
 dependencies = [
  "log",
  "once_cell",
@@ -1532,7 +1534,7 @@ dependencies = [
 [[package]]
 name = "nice-plug"
 version = "0.1.9"
-source = "git+https://codeberg.org/TristanCacqueray/nice-plug.git?rev=d1b618ebcc092a54d21b415d2b2d96b6d5ba81c0#d1b618ebcc092a54d21b415d2b2d96b6d5ba81c0"
+source = "git+https://codeberg.org/TristanCacqueray/nice-plug.git?rev=715d56c07ae76233978d4a01c4bcbb4b086a859b#715d56c07ae76233978d4a01c4bcbb4b086a859b"
 dependencies = [
  "anyhow",
  "anymap3",
@@ -1553,8 +1555,8 @@ dependencies = [
  "midir",
  "nice-assert-no-alloc",
  "nice-log",
- "nice-plug-core 0.1.4 (git+https://codeberg.org/TristanCacqueray/nice-plug.git?rev=d1b618ebcc092a54d21b415d2b2d96b6d5ba81c0)",
- "nice-plug-derive 0.1.2 (git+https://codeberg.org/TristanCacqueray/nice-plug.git?rev=d1b618ebcc092a54d21b415d2b2d96b6d5ba81c0)",
+ "nice-plug-core 0.1.4 (git+https://codeberg.org/TristanCacqueray/nice-plug.git?rev=715d56c07ae76233978d4a01c4bcbb4b086a859b)",
+ "nice-plug-derive 0.1.2 (git+https://codeberg.org/TristanCacqueray/nice-plug.git?rev=715d56c07ae76233978d4a01c4bcbb4b086a859b)",
  "objc2 0.6.4",
  "parking_lot",
  "raw-window-handle 0.5.2",
@@ -1587,7 +1589,7 @@ dependencies = [
 [[package]]
 name = "nice-plug-core"
 version = "0.1.4"
-source = "git+https://codeberg.org/TristanCacqueray/nice-plug.git?rev=d1b618ebcc092a54d21b415d2b2d96b6d5ba81c0#d1b618ebcc092a54d21b415d2b2d96b6d5ba81c0"
+source = "git+https://codeberg.org/TristanCacqueray/nice-plug.git?rev=715d56c07ae76233978d4a01c4bcbb4b086a859b#715d56c07ae76233978d4a01c4bcbb4b086a859b"
 dependencies = [
  "atomic_float",
  "atomic_refcell",
@@ -1596,7 +1598,7 @@ dependencies = [
  "log",
  "midi-consts",
  "nice-assert-no-alloc",
- "nice-plug-derive 0.1.2 (git+https://codeberg.org/TristanCacqueray/nice-plug.git?rev=d1b618ebcc092a54d21b415d2b2d96b6d5ba81c0)",
+ "nice-plug-derive 0.1.2 (git+https://codeberg.org/TristanCacqueray/nice-plug.git?rev=715d56c07ae76233978d4a01c4bcbb4b086a859b)",
  "parking_lot",
  "raw-window-handle 0.5.2",
  "serde",
@@ -1617,7 +1619,7 @@ dependencies = [
 [[package]]
 name = "nice-plug-derive"
 version = "0.1.2"
-source = "git+https://codeberg.org/TristanCacqueray/nice-plug.git?rev=d1b618ebcc092a54d21b415d2b2d96b6d5ba81c0#d1b618ebcc092a54d21b415d2b2d96b6d5ba81c0"
+source = "git+https://codeberg.org/TristanCacqueray/nice-plug.git?rev=715d56c07ae76233978d4a01c4bcbb4b086a859b#715d56c07ae76233978d4a01c4bcbb4b086a859b"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1627,12 +1629,12 @@ dependencies = [
 [[package]]
 name = "nice-plug-egui"
 version = "0.1.5"
-source = "git+https://codeberg.org/TristanCacqueray/nice-plug.git?rev=d1b618ebcc092a54d21b415d2b2d96b6d5ba81c0#d1b618ebcc092a54d21b415d2b2d96b6d5ba81c0"
+source = "git+https://codeberg.org/TristanCacqueray/nice-plug.git?rev=715d56c07ae76233978d4a01c4bcbb4b086a859b#715d56c07ae76233978d4a01c4bcbb4b086a859b"
 dependencies = [
  "crossbeam",
  "egui",
  "egui-baseview",
- "nice-plug-core 0.1.4 (git+https://codeberg.org/TristanCacqueray/nice-plug.git?rev=d1b618ebcc092a54d21b415d2b2d96b6d5ba81c0)",
+ "nice-plug-core 0.1.4 (git+https://codeberg.org/TristanCacqueray/nice-plug.git?rev=715d56c07ae76233978d4a01c4bcbb4b086a859b)",
  "parking_lot",
  "raw-window-handle 0.5.2",
  "serde",

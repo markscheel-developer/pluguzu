@@ -8,8 +8,8 @@ authors = ["TristanCacqueray"]
 
 [dependencies]
 # The audio pluging framework
-nice-plug = { git = "https://codeberg.org/TristanCacqueray/nice-plug.git", rev = "d1b618ebcc092a54d21b415d2b2d96b6d5ba81c0", features = ["assert_process_allocs", "standalone"] }
-nice-plug-egui = { git = "https://codeberg.org/TristanCacqueray/nice-plug.git", rev = "d1b618ebcc092a54d21b415d2b2d96b6d5ba81c0" }
+nice-plug = { git = "https://codeberg.org/TristanCacqueray/nice-plug.git", rev = "715d56c07ae76233978d4a01c4bcbb4b086a859b", features = ["assert_process_allocs", "standalone"] }
+nice-plug-egui = { git = "https://codeberg.org/TristanCacqueray/nice-plug.git", rev = "715d56c07ae76233978d4a01c4bcbb4b086a859b" }
 egui = { version = "0.34", features = ["default_fonts"] }
 epaint_default_fonts = "0.34"
 
