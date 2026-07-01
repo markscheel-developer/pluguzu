@@ -41,6 +41,9 @@ urlencoding = "2"
 lazy_static = "*"
 crossbeam = "*"
 
+[patch.crates-io]
+libsamplerate-sys = { git = "https://github.com/TristanCacqueray/libsamplerate-sys", rev = "bf289e8debdc9aab0d93257d66acaf1b84dbb91d" }
+
 [workspace]
 members = ["xtask"]
 

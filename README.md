@@ -53,6 +53,9 @@ sudo dnf install cmake alsa-lib-devel wayland-devel jack-audio-connection-kit-de
 # Install Debian system dependencies
 sudo apt-get install cmake libasound2-dev libwayland-dev libjack-dev libsamplerate0-dev libgl-dev libxext-dev libxrandr-dev libxfixes-dev libxkbcommon-x11-dev libdbus-1-dev libsndfile1-dev gcc g++ libgmp-dev libncurses-dev perl pkg-config git pipewire-jack
 
+# Arch
+sudo pacman -Sy base-devel make cmake glibc wayland-client libffi alsa-lib pipewire-jack
+
 # Install Haskell cabal
 curl --proto '=https' --tlsv1.2 -sSf https://get-ghcup.haskell.org | env BOOTSTRAP_HASKELL_GHC_VERSION=latest BOOTSTRAP_HASKELL_NONINTERACTIVE=1 sh
 source ~/.ghcup/env
